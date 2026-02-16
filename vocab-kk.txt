@@ -1,0 +1,96 @@
+access (verb) - қол жеткізу
+account - тіркелгі
+addon - қосымша
+address - адрес
+apply - іске асыру
+archive - архив
+array - массив
+arrow - бағдарша
+background - фон
+bold - жуан
+browse - шолу
+browser - браузер
+build - құрастыру
+button - батырма
+cancel - бас тарту
+click - шерту
+checksum - бақылау сомасы
+command - команда
+compression - сығу
+connector (line) - байланыстыратын сызық
+countdown - кері санау
+cursor - курсор
+database - дерекқор
+daemon - қызмет
+delete - өшіру
+destroy - жою
+dialog - сұхбат терезесі
+directory - бума
+disable - сөндіру
+donate - демеушілік ету
+download - жүктеп алу
+dump - дамп
+edit - түзету
+enable - іске қосу
+endnote - соңдық нұсқама
+extension - кеңейту
+field - өріс
+folder - бума
+font - қаріп
+footer - төменгі колонтитул
+footnote - нұсқама
+format - пішім
+global - глобалды
+header (in network requests) - тақырыптама
+header - жоғарғы колонтитул
+help - көмек
+horizontal - горизонталды
+icon - таңбаша
+image (disk image) - бейне
+image (graphical) - сурет
+index (in database) - индекс
+index - нұсқағыш
+insert - кірістіру
+key (like in keyboard) - перне
+key (like key thing or key to open a lock) - кілт
+keyboard - пернетақта
+layout - жайма
+lock (verb) - құлыптау
+mouse - тышқан
+object - объект
+option - опция
+package - десте
+passphrase - кілттік фраза
+password - пароль
+paste - кірістіру
+pause - аялдату
+playlist - ойнату тізімі
+privacy - жекелік
+preferences - баптаулар
+process (verb) - өңдеу
+range - ауқым
+remove - өшіру
+rename - атын өзгерту
+screenshot - скриншот
+separator - ажыратқыш
+shading - көлеңкелеу
+shell - қоршам
+shortcut - жарлық
+slide show - слайдшоу
+snapshot - снапшот
+software - бағдарламалық қамтама
+stopwatch - секунд өлшегіші
+stretch - созу
+symbol - таңба
+tab (like browser tab) - бет
+tool - сайман
+theme - тема
+tracker - трекер
+trash - қоқыс шелегі
+upload - жүктеп салу
+unit - юнит
+unlock - құлпын ашу
+update - жаңарту
+upgrade - жаңғырту
+vertical - вертикалды
+video - видео
