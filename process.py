@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 
 import argparse
+import asyncio
 import os
 import sys
 import math
-import time
 import xml.etree.ElementTree as ET
 from typing import Dict, List, Any
 
@@ -159,6 +159,39 @@ def parse_response(text: str) -> Dict[str, str]:
 # Main logic
 # ===========================
 
+async def generate_content_async(client: genai.Client, model: str, prompt: str) -> Any:
+    """Use Gemini async client when available, fallback to thread offload."""
+    if hasattr(client, "aio") and client.aio:
+        return await client.aio.models.generate_content(
+            model=model,
+            contents=prompt,
+        )
+    return await asyncio.to_thread(
+        client.models.generate_content,
+        model=model,
+        contents=prompt,
+    )
+
+
+async def generate_with_retry(
+    client: genai.Client,
+    model: str,
+    prompt: str,
+    batch_label: str,
+    max_attempts: int = 5,
+) -> Any:
+    for attempt in range(1, max_attempts + 1):
+        try:
+            return await generate_content_async(client, model, prompt)
+        except Exception as e:
+            print(f"\nAPI Error [{batch_label}] (Attempt {attempt}/{max_attempts}): {e}")
+            if attempt == max_attempts:
+                raise RuntimeError(f"Aborting [{batch_label}] due to repeated API errors.") from e
+            wait_time = 2 ** attempt
+            print(f"Retrying [{batch_label}] in {wait_time}s...")
+            await asyncio.sleep(wait_time)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="Pre-process and translate PO or TS files using Google Gemini"
@@ -168,6 +201,7 @@ def main() -> None:
     parser.add_argument("--target-lang", default="kk", help="Default: kk (Kazakh)")
     parser.add_argument("--model", default="gemini-3-flash-preview")
     parser.add_argument("--batch-size", type=int, default=1000)
+    parser.add_argument("--parallel-requests", type=int, default=10, help="Number of concurrent Gemini requests")
     parser.add_argument("--vocab", default="vocab-kk.txt", help="Optional vocabulary file")
 
     args = parser.parse_args()
@@ -175,6 +209,15 @@ def main() -> None:
     api_key = os.getenv("GOOGLE_API_KEY")
     if not api_key:
         sys.exit("ERROR: GOOGLE_API_KEY environment variable is not set")
+    if args.batch_size <= 0:
+        sys.exit("ERROR: --batch-size must be greater than 0")
+    if args.parallel_requests <= 0:
+        sys.exit("ERROR: --parallel-requests must be greater than 0")
+
+    print("Startup configuration:")
+    print(f"  Model: {args.model}")
+    print(f"  Parallel requests: {args.parallel_requests}")
+    print(f"  Batch size: {args.batch_size}")
 
     client = genai.Client(api_key=api_key)
 
@@ -231,110 +274,121 @@ def main() -> None:
         return
 
     batches = math.ceil(total / args.batch_size)
-    translated_count = 0
+    print(
+        f"Found {total} items to translate. "
+        f"Running up to {args.parallel_requests} batch requests in parallel."
+    )
 
-    print(f"Found {total} items to translate.")
+    async def process_batch(batch_index: int, batch: List[Any], sem: asyncio.Semaphore):
+        async with sem:
+            msg_map: Dict[str, str] = {}
+            for i, entry in enumerate(batch):
+                text = entry.msgid
+                if hasattr(entry, "msgid_plural") and entry.msgid_plural:
+                    text = f"Singular: {entry.msgid}\nPlural: {entry.msgid_plural}"
+                msg_map[str(i)] = text
 
-    for batch_index in range(batches):
-        batch = work_items[
-            batch_index * args.batch_size:
-            (batch_index + 1) * args.batch_size
+            prompt = build_prompt(
+                msg_map,
+                args.source_lang,
+                args.target_lang,
+                vocabulary_text,
+            )
+
+            response = await generate_with_retry(
+                client=client,
+                model=args.model,
+                prompt=prompt,
+                batch_label=f"batch {batch_index + 1}/{batches}",
+                max_attempts=5,
+            )
+            translations = parse_response(response.text or "")
+
+            missing_indices = [i for i in range(len(batch)) if str(i) not in translations]
+            if missing_indices:
+                print(
+                    f"  Warning [batch {batch_index + 1}/{batches}]: "
+                    f"{len(missing_indices)} items missing from response. Retrying them..."
+                )
+                retry_map: Dict[str, str] = {}
+                for idx in missing_indices:
+                    entry = batch[idx]
+                    text = entry.msgid
+                    if hasattr(entry, "msgid_plural") and entry.msgid_plural:
+                        text = f"Singular: {entry.msgid}\nPlural: {entry.msgid_plural}"
+                    retry_map[str(idx)] = text
+
+                retry_prompt = build_prompt(
+                    retry_map,
+                    args.source_lang,
+                    args.target_lang,
+                    vocabulary_text,
+                )
+
+                try:
+                    retry_resp = await generate_with_retry(
+                        client=client,
+                        model=args.model,
+                        prompt=retry_prompt,
+                        batch_label=f"batch {batch_index + 1}/{batches} missing-items",
+                        max_attempts=3,
+                    )
+                    retry_translations = parse_response(retry_resp.text or "")
+                    translations.update(retry_translations)
+                except Exception as e:
+                    print(f"  Retry failed [batch {batch_index + 1}/{batches}]: {e}")
+
+            return batch_index, batch, translations
+
+    async def run_translation() -> int:
+        translated_count = 0
+        sem = asyncio.Semaphore(args.parallel_requests)
+        all_batches = [
+            work_items[i * args.batch_size: (i + 1) * args.batch_size]
+            for i in range(batches)
         ]
 
-        msg_map: Dict[str, str] = {}
-        for i, entry in enumerate(batch):
-            text = entry.msgid
-            # Check for PO plural (polib.POEntry has msgid_plural)
-            if hasattr(entry, 'msgid_plural') and entry.msgid_plural:
-                # Present both forms to the LLM for context
-                text = f"Singular: {entry.msgid}\nPlural: {entry.msgid_plural}"
-            msg_map[str(i)] = text
+        tasks = [
+            asyncio.create_task(process_batch(batch_index, batch, sem))
+            for batch_index, batch in enumerate(all_batches)
+        ]
 
-        prompt = build_prompt(
-            msg_map,
-            args.source_lang,
-            args.target_lang,
-            vocabulary_text,
-        )
+        completed_batches = 0
+        for finished in asyncio.as_completed(tasks):
+            batch_index, batch, translations = await finished
+            batch_translated = 0
 
-        response = None
-        # Retry up to 5 times for 503/transient errors
-        for attempt in range(1, 6):
-            try:
-                response = client.models.generate_content(
-                    model=args.model,
-                    contents=prompt,
-                )
-                break
-            except Exception as e:
-                print(f"\nAPI Error (Attempt {attempt}/5): {e}")
-                if attempt == 5:
-                    sys.exit("Aborting due to repeated API errors.")
-                # Exponential backoff: 2, 4, 8, 16 seconds...
-                wait_time = 2 ** attempt
-                print(f"Retrying in {wait_time}s...")
-                time.sleep(wait_time)
+            for i, entry in enumerate(batch):
+                key = str(i)
+                if key in translations and translations[key]:
+                    val = translations[key]
+                    if hasattr(entry, "msgid_plural") and entry.msgid_plural:
+                        entry.msgstr_plural[0] = val
+                    else:
+                        entry.msgstr = val
 
-        translations = parse_response(response.text or "")
+                    if "fuzzy" not in entry.flags:
+                        entry.flags.append("fuzzy")
+                    batch_translated += 1
 
-        # --- RETRY LOGIC FOR MISSING ITEMS ---
-        missing_indices = []
-        for i in range(len(batch)):
-            if str(i) not in translations:
-                missing_indices.append(i)
-
-        if missing_indices:
-            print(f"  Warning: {len(missing_indices)} items missing from response. Retrying them...")
-            # Build mini-batch for missing items
-            retry_map = {}
-            for idx in missing_indices:
-                entry = batch[idx]
-                text = entry.msgid
-                if hasattr(entry, 'msgid_plural') and entry.msgid_plural:
-                    text = f"Singular: {entry.msgid}\nPlural: {entry.msgid_plural}"
-                retry_map[str(idx)] = text
-            
-            # Simple retry prompt
-            retry_prompt = build_prompt(
-                retry_map, args.source_lang, args.target_lang, vocabulary_text
+            translated_count += batch_translated
+            completed_batches += 1
+            percent = (translated_count / total) * 100
+            print(
+                f"Progress: {percent:.1f}% ({translated_count}/{total}), "
+                f"completed batches: {completed_batches}/{batches} "
+                f"(latest: {batch_index + 1}/{batches})"
             )
-            
-            try:
-                retry_resp = client.models.generate_content(
-                    model=args.model,
-                    contents=retry_prompt,
-                )
-                retry_translations = parse_response(retry_resp.text or "")
-                # Merge retry results
-                translations.update(retry_translations)
-            except Exception as e:
-                print(f"  Retry failed: {e}")
 
-        # --- APPLY TRANSLATIONS ---
-        for i, entry in enumerate(batch):
-            key = str(i)
-            if key in translations and translations[key]:
-                val = translations[key]
-                # Check for PO plural and assign correctly
-                if hasattr(entry, 'msgid_plural') and entry.msgid_plural:
-                    # For Kazakh (nplurals=1), we assign to index 0
-                    # If dealing with other languages, this might need logic based on nplurals
-                    entry.msgstr_plural[0] = val
-                else:
-                    entry.msgstr = val
+            if save_callback:
+                save_callback()
 
-                if "fuzzy" not in entry.flags:
-                    entry.flags.append("fuzzy")
-                translated_count += 1
+        return translated_count
 
-        percent = (translated_count / total) * 100
-        print(f"Progress: {percent:.1f}% ({translated_count}/{total})")
-
-        # Save progress after every batch to prevent total data loss on crash
-        if save_callback:
-            save_callback()
-
-        time.sleep(0.5)
+    try:
+        translated_count = asyncio.run(run_translation())
+    except RuntimeError as e:
+        sys.exit(str(e))
 
     if save_callback:
         save_callback()
