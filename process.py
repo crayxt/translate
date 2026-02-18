@@ -273,10 +273,49 @@ def main() -> None:
         print("No untranslated or fuzzy messages found.")
         return
 
-    batches = math.ceil(total / args.batch_size)
+    all_batches: List[List[Any]] = []
+    small_file_threshold = args.parallel_requests * args.batch_size
+    if total < small_file_threshold:
+        # For smaller files, split work evenly but keep >=50 items per worker.
+        if total >= args.parallel_requests * 50:
+            worker_count = args.parallel_requests
+        else:
+            worker_count = total // 50
+
+        if worker_count < 2:
+            all_batches = [work_items]
+            print(
+                f"Found {total} items to translate. "
+                "Small file mode: using 1 batch (minimum 50 items/worker not met)."
+            )
+        else:
+            base = total // worker_count
+            remainder = total % worker_count
+            start = 0
+            for worker_index in range(worker_count):
+                size = base + (1 if worker_index < remainder else 0)
+                end = start + size
+                all_batches.append(work_items[start:end])
+                start = end
+            print(
+                f"Found {total} items to translate. "
+                f"Small file mode: split evenly into {worker_count} parallel batches "
+                f"(min batch size: {min(len(b) for b in all_batches)})."
+            )
+    else:
+        batches = math.ceil(total / args.batch_size)
+        all_batches = [
+            work_items[i * args.batch_size: (i + 1) * args.batch_size]
+            for i in range(batches)
+        ]
+        print(
+            f"Found {total} items to translate. "
+            f"Running up to {args.parallel_requests} batch requests in parallel."
+        )
+
+    batches = len(all_batches)
     print(
-        f"Found {total} items to translate. "
-        f"Running up to {args.parallel_requests} batch requests in parallel."
+        f"Total batches: {batches}"
     )
 
     async def process_batch(batch_index: int, batch: List[Any], sem: asyncio.Semaphore):
@@ -343,10 +382,6 @@ def main() -> None:
     async def run_translation() -> int:
         translated_count = 0
         sem = asyncio.Semaphore(args.parallel_requests)
-        all_batches = [
-            work_items[i * args.batch_size: (i + 1) * args.batch_size]
-            for i in range(batches)
-        ]
 
         tasks = [
             asyncio.create_task(process_batch(batch_index, batch, sem))
