@@ -1,3 +1,13 @@
+# batching
+*.bat
+
+# translations
+*.mo
+*.po
+*.ts
+*.resx
+*.resources
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]
