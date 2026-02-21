@@ -1,3 +1,5 @@
+about (if single word) - осы туралы
+about - туралы
 access (verb) - қол жеткізу
 account - тіркелгі
 addon - қосымша
@@ -56,6 +58,7 @@ key (like key thing or key to open a lock) - кілт
 keyboard - пернетақта
 layout - жайма
 lock (verb) - құлыптау
+menu - мәзір
 mouse - тышқан
 object - объект
 option - опция
@@ -69,6 +72,7 @@ privacy - жекелік
 preferences - баптаулар
 process (verb) - өңдеу
 range - ауқым
+redo - қайталау
 remove - өшіру
 rename - атын өзгерту
 screenshot - скриншот
@@ -88,6 +92,7 @@ theme - тема
 tracker - трекер
 trash - қоқыс шелегі
 upload - жүктеп салу
+undo - болдырмау
 unit - юнит
 unlock - құлпын ашу
 update - жаңарту
