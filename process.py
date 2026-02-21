@@ -6,7 +6,8 @@ import os
 import sys
 import math
 import xml.etree.ElementTree as ET
-from typing import Dict, List, Any
+from enum import Enum
+from typing import Dict, List, Any, Callable, Tuple
 
 import polib
 from google import genai
@@ -75,6 +76,85 @@ class TSEntryAdapter:
             if item == "fuzzy":
                 return self.elem.get("type") == "unfinished"
             return super().__contains__(item)
+
+
+class ResxEntryAdapter:
+    """Adapts a .resx XML <data> element to look like a polib entry."""
+
+    def __init__(self, data_elem: ET.Element):
+        self.elem = data_elem
+        self.value_elem = data_elem.find("value")
+        self.comment_elem = data_elem.find("comment")
+        self._flags: List[str] = []
+
+        if self.value_elem is None:
+            self.value_elem = ET.SubElement(data_elem, "value")
+
+        self._translate = self._should_translate()
+
+    def _should_translate(self) -> bool:
+        if self.elem.get("type") or self.elem.get("mimetype"):
+            return False
+
+        value_text = self.msgid.strip()
+        if not value_text:
+            return False
+
+        comment_text = (self.comment_elem.text or "") if self.comment_elem is not None else ""
+        if "donottranslate" in comment_text.lower():
+            return False
+
+        if not any(ch.isalpha() for ch in value_text):
+            return False
+
+        return True
+
+    @property
+    def msgid(self) -> str:
+        return self.value_elem.text if self.value_elem is not None and self.value_elem.text else ""
+
+    @property
+    def msgstr(self) -> str:
+        return self.value_elem.text if self.value_elem is not None and self.value_elem.text else ""
+
+    @msgstr.setter
+    def msgstr(self, value: str):
+        self.value_elem.text = value
+
+    @property
+    def flags(self):
+        return self._flags
+
+    @property
+    def obsolete(self) -> bool:
+        return False
+
+    def translated(self) -> bool:
+        # RESX files do not track translation state; we treat translatable
+        # values as work items and skip obvious non-localizable entries.
+        return not self._translate
+
+
+class FileKind(str, Enum):
+    PO = "po"
+    TS = "ts"
+    RESX = "resx"
+
+
+DEFAULT_BATCH_SIZE = 1000
+DEFAULT_PARALLEL_REQUESTS = 10
+MIN_ITEMS_PER_WORKER = 50
+
+
+def detect_file_kind(file_path: str) -> FileKind:
+    lower_path = file_path.lower()
+    if lower_path.endswith(".po"):
+        return FileKind.PO
+    if lower_path.endswith(".ts"):
+        return FileKind.TS
+    if lower_path.endswith(".resx"):
+        return FileKind.RESX
+    raise ValueError("Unsupported file type. Use .po, .ts, or .resx")
 
 
 # ===========================
@@ -192,16 +272,85 @@ async def generate_with_retry(
             await asyncio.sleep(wait_time)
 
 
+def load_ts(file_path: str) -> Tuple[List[Any], Callable[[], None], str]:
+    print(f"Processing TS file: {file_path}")
+    tree = ET.parse(file_path)
+    root = tree.getroot()
+
+    entries: List[Any] = []
+    for message in root.findall(".//message"):
+        entries.append(TSEntryAdapter(message))
+
+    output_path = file_path[:-3] + ".ai-translated.ts"
+
+    def save_ts() -> None:
+        tree.write(output_path, encoding="utf-8", xml_declaration=True)
+
+    return entries, save_ts, output_path
+
+
+def load_resx(file_path: str) -> Tuple[List[Any], Callable[[], None], str]:
+    print(f"Processing RESX file: {file_path}")
+    tree = ET.parse(file_path)
+    root = tree.getroot()
+
+    entries: List[Any] = []
+    for data_node in root.findall("./data"):
+        entries.append(ResxEntryAdapter(data_node))
+
+    output_path = file_path[:-5] + ".ai-translated.resx"
+
+    def save_resx() -> None:
+        tree.write(output_path, encoding="utf-8", xml_declaration=True)
+
+    return entries, save_resx, output_path
+
+
+def load_po(file_path: str) -> Tuple[List[Any], Callable[[], None], str]:
+    print(f"Processing PO file: {file_path}")
+    po = polib.pofile(file_path)
+    entries = [e for e in po]
+    output_path = file_path.replace(".po", ".ai-translated.po")
+    return entries, lambda: po.save(output_path), output_path
+
+
+def resolve_runtime_limits(
+    total_items: int,
+    batch_size_arg: int | None,
+    parallel_arg: int | None,
+) -> Tuple[int, int, str]:
+    if batch_size_arg is not None and batch_size_arg <= 0:
+        raise ValueError("--batch-size must be greater than 0")
+    if parallel_arg is not None and parallel_arg <= 0:
+        raise ValueError("--parallel-requests must be greater than 0")
+
+    if batch_size_arg is None and parallel_arg is None:
+        return DEFAULT_BATCH_SIZE, DEFAULT_PARALLEL_REQUESTS, "defaults"
+    if batch_size_arg is not None and parallel_arg is not None:
+        return batch_size_arg, parallel_arg, "explicit"
+    if batch_size_arg is not None:
+        derived_parallel = max(
+            1,
+            min(DEFAULT_PARALLEL_REQUESTS, math.ceil(total_items / batch_size_arg)),
+        )
+        return batch_size_arg, derived_parallel, "auto parallel"
+
+    # Only parallel was provided.
+    assert parallel_arg is not None
+    derived_batch = max(MIN_ITEMS_PER_WORKER, math.ceil(total_items / parallel_arg))
+    return derived_batch, parallel_arg, "auto batch"
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Pre-process and translate PO or TS files using Google Gemini"
+        description="Pre-process and translate PO, TS, or RESX files using Google Gemini"
     )
-    parser.add_argument("file", help="Input .po or .ts file")
+    parser.add_argument("file", help="Input .po, .ts, or .resx file")
     parser.add_argument("--source-lang", default="en", help="Default: en")
     parser.add_argument("--target-lang", default="kk", help="Default: kk (Kazakh)")
     parser.add_argument("--model", default="gemini-3-flash-preview")
-    parser.add_argument("--batch-size", type=int, default=1000)
-    parser.add_argument("--parallel-requests", type=int, default=10, help="Number of concurrent Gemini requests")
+    parser.add_argument("--batch-size", type=int, default=None, help="Batch size (auto if omitted)")
+    parser.add_argument("--parallel-requests", type=int, default=None, help="Concurrent Gemini requests (auto if omitted)")
     parser.add_argument("--vocab", default="vocab-kk.txt", help="Optional vocabulary file")
 
     args = parser.parse_args()
@@ -209,15 +358,6 @@ def main() -> None:
     api_key = os.getenv("GOOGLE_API_KEY")
     if not api_key:
         sys.exit("ERROR: GOOGLE_API_KEY environment variable is not set")
-    if args.batch_size <= 0:
-        sys.exit("ERROR: --batch-size must be greater than 0")
-    if args.parallel_requests <= 0:
-        sys.exit("ERROR: --parallel-requests must be greater than 0")
-
-    print("Startup configuration:")
-    print(f"  Model: {args.model}")
-    print(f"  Parallel requests: {args.parallel_requests}")
-    print(f"  Batch size: {args.batch_size}")
 
     client = genai.Client(api_key=api_key)
 
@@ -230,36 +370,17 @@ def main() -> None:
             print(f"Warning: Vocabulary file '{args.vocab}' not found.")
 
     file_path = args.file
-    is_ts = file_path.endswith(".ts")
-    entries = []
-    save_callback = None
-    output_path = ""
+    try:
+        file_kind = detect_file_kind(file_path)
+    except ValueError as e:
+        sys.exit(f"ERROR: {e}")
 
-    if is_ts:
-        print(f"Processing TS file: {file_path}")
-        tree = ET.parse(file_path)
-        root = tree.getroot()
-        
-        # Find all message tags
-        # Structure is usually <context><message>...</message></context>
-        # but we just want all messages
-        for message in root.findall(".//message"):
-            entries.append(TSEntryAdapter(message))
-            
-        output_path = file_path.replace(".ts", ".ai-translated.ts")
-        
-        def save_ts():
-            tree.write(output_path, encoding="utf-8", xml_declaration=True)
-            
-        save_callback = save_ts
-
+    if file_kind == FileKind.TS:
+        entries, save_callback, output_path = load_ts(file_path)
+    elif file_kind == FileKind.RESX:
+        entries, save_callback, output_path = load_resx(file_path)
     else:
-        print(f"Processing PO file: {file_path}")
-        po = polib.pofile(file_path)
-        entries = [e for e in po] # Keep list reference mostly for consistent type hint, though filtering happens next
-        
-        output_path = file_path.replace(".po", ".ai-translated.po")
-        save_callback = lambda: po.save(output_path)
+        entries, save_callback, output_path = load_po(file_path)
 
     # Filter for untranslated items
     # Note: TSEntryAdapter implements .obsolete and .translated() to match polib
@@ -273,20 +394,35 @@ def main() -> None:
         print("No untranslated or fuzzy messages found.")
         return
 
+    try:
+        batch_size, parallel_requests, limits_mode = resolve_runtime_limits(
+            total_items=total,
+            batch_size_arg=args.batch_size,
+            parallel_arg=args.parallel_requests,
+        )
+    except ValueError as e:
+        sys.exit(f"ERROR: {e}")
+
+    print("Startup configuration:")
+    print(f"  Model: {args.model}")
+    print(f"  Parallel requests: {parallel_requests}")
+    print(f"  Batch size: {batch_size}")
+    print(f"  Limits mode: {limits_mode}")
+
     all_batches: List[List[Any]] = []
-    small_file_threshold = args.parallel_requests * args.batch_size
+    small_file_threshold = parallel_requests * batch_size
     if total < small_file_threshold:
         # For smaller files, split work evenly but keep >=50 items per worker.
-        if total >= args.parallel_requests * 50:
-            worker_count = args.parallel_requests
+        if total >= parallel_requests * MIN_ITEMS_PER_WORKER:
+            worker_count = parallel_requests
         else:
-            worker_count = total // 50
+            worker_count = total // MIN_ITEMS_PER_WORKER
 
         if worker_count < 2:
             all_batches = [work_items]
             print(
                 f"Found {total} items to translate. "
-                "Small file mode: using 1 batch (minimum 50 items/worker not met)."
+                "Small file mode: using 1 batch (minimum items/worker not met)."
             )
         else:
             base = total // worker_count
@@ -303,14 +439,14 @@ def main() -> None:
                 f"(min batch size: {min(len(b) for b in all_batches)})."
             )
     else:
-        batches = math.ceil(total / args.batch_size)
+        batches = math.ceil(total / batch_size)
         all_batches = [
-            work_items[i * args.batch_size: (i + 1) * args.batch_size]
+            work_items[i * batch_size: (i + 1) * batch_size]
             for i in range(batches)
         ]
         print(
             f"Found {total} items to translate. "
-            f"Running up to {args.parallel_requests} batch requests in parallel."
+            f"Running up to {parallel_requests} batch requests in parallel."
         )
 
     batches = len(all_batches)
@@ -381,7 +517,7 @@ def main() -> None:
 
     async def run_translation() -> int:
         translated_count = 0
-        sem = asyncio.Semaphore(args.parallel_requests)
+        sem = asyncio.Semaphore(parallel_requests)
 
         tasks = [
             asyncio.create_task(process_batch(batch_index, batch, sem))
