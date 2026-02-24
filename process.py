@@ -2,15 +2,18 @@
 
 import argparse
 import asyncio
+import json
 import os
 import sys
 import math
 import xml.etree.ElementTree as ET
+from dataclasses import dataclass, field
 from enum import Enum
 from typing import Dict, List, Any, Callable, Tuple
 
 import polib
 from google import genai
+from google.genai import types as genai_types
 
 
 # ===========================
@@ -177,6 +180,28 @@ STRICT RULES:
 - If the input contains 'Singular:' and 'Plural:', return only the single correct translation for Kazakh (which typically uses the singular form with numbers).
 """
 
+TRANSLATION_RESPONSE_SCHEMA = genai_types.Schema(
+    type=genai_types.Type.OBJECT,
+    properties={
+        "translations": genai_types.Schema(
+            type=genai_types.Type.ARRAY,
+            items=genai_types.Schema(
+                type=genai_types.Type.OBJECT,
+                properties={
+                    "id": genai_types.Schema(type=genai_types.Type.STRING),
+                    "text": genai_types.Schema(type=genai_types.Type.STRING),
+                    "plural_texts": genai_types.Schema(
+                        type=genai_types.Type.ARRAY,
+                        items=genai_types.Schema(type=genai_types.Type.STRING),
+                    ),
+                },
+                required=["id", "text"],
+            ),
+        ),
+    },
+    required=["translations"],
+)
+
 
 def build_prompt(
     messages: Dict[str, str],
@@ -185,12 +210,7 @@ def build_prompt(
     vocabulary: str | None,
 ) -> str:
     vocab_block = f"\nProject vocabulary (mandatory):\n{vocabulary}\n" if vocabulary else ""
-
-    blocks: List[str] = []
-    for msg_id, text in messages.items():
-        blocks.append(
-            f"<<<<MSG:{msg_id}>>>>\n{text}\n<<<<END>>>>"
-        )
+    messages_json = json.dumps(messages, ensure_ascii=False, indent=2)
 
     return f"""
 {SYSTEM_INSTRUCTION}
@@ -204,11 +224,13 @@ Target language: {target_lang}
 Instructions:
 - Translate each message independently
 - Do NOT merge messages
-- Return translations using the SAME markers and IDs
+- Return ONLY valid JSON, no Markdown fences or extra text
+- Keep each translation item's "id" exactly the same as the input key
+- Use "plural_texts" only for plural entries when you can provide explicit forms
 - Use consistent translation throughout the messages.
 
-Messages to translate:
-{chr(10).join(blocks)}
+Messages to translate (JSON map of id -> source):
+{messages_json}
 """
 
 
@@ -216,23 +238,129 @@ Messages to translate:
 # Gemini response parsing
 # ===========================
 
-def parse_response(text: str) -> Dict[str, str]:
-    results: Dict[str, str] = {}
-    current_id: str | None = None
-    buffer: List[str] = []
+@dataclass
+class TranslationResult:
+    text: str = ""
+    plural_texts: List[str] = field(default_factory=list)
 
-    for line in text.splitlines():
-        if line.startswith("<<<<MSG:"):
-            current_id = line.replace("<<<<MSG:", "").replace(">>>>", "").strip()
-            buffer = []
-        elif line.startswith("<<<<END>>>>"):
-            if current_id is not None:
-                results[current_id] = "\n".join(buffer).strip()
-            current_id = None
-        elif current_id is not None:
-            buffer.append(line)
+
+def _json_load_maybe(text: str) -> Any:
+    payload = text.strip()
+    if not payload:
+        return None
+
+    # Defensive fallback when a model still wraps JSON in fences.
+    if payload.startswith("```"):
+        lines = payload.splitlines()
+        if len(lines) >= 3 and lines[-1].strip() == "```":
+            payload = "\n".join(lines[1:-1]).strip()
+
+    try:
+        return json.loads(payload)
+    except json.JSONDecodeError:
+        return None
+
+
+def _normalize_translation_payload(payload: Any) -> Dict[str, TranslationResult]:
+    results: Dict[str, TranslationResult] = {}
+
+    if isinstance(payload, dict):
+        if "translations" in payload:
+            items = payload.get("translations")
+            if not isinstance(items, list):
+                return results
+            for item in items:
+                if not isinstance(item, dict):
+                    continue
+                msg_id = item.get("id")
+                if msg_id is None:
+                    continue
+                text = item.get("text")
+                if text is None:
+                    text = ""
+                if not isinstance(text, str):
+                    text = str(text)
+                plural_texts_raw = item.get("plural_texts")
+                plural_texts: List[str] = []
+                if isinstance(plural_texts_raw, list):
+                    for val in plural_texts_raw:
+                        if val is None:
+                            continue
+                        plural_texts.append(val if isinstance(val, str) else str(val))
+                results[str(msg_id)] = TranslationResult(text=text, plural_texts=plural_texts)
+            return results
+
+        # Backward-compatible fallback for map-style JSON {"0": "text"}.
+        for key, val in payload.items():
+            if isinstance(val, str):
+                results[str(key)] = TranslationResult(text=val)
+            elif isinstance(val, dict):
+                text = val.get("text")
+                if isinstance(text, str):
+                    results[str(key)] = TranslationResult(text=text)
+        return results
 
     return results
+
+
+def parse_response(response_payload: Any) -> Dict[str, TranslationResult]:
+    if isinstance(response_payload, (dict, list)):
+        return _normalize_translation_payload(response_payload)
+
+    if isinstance(response_payload, str):
+        return _normalize_translation_payload(_json_load_maybe(response_payload))
+
+    parsed_payload = getattr(response_payload, "parsed", None)
+    if parsed_payload is not None:
+        return _normalize_translation_payload(parsed_payload)
+
+    text_payload = getattr(response_payload, "text", None) or ""
+    return _normalize_translation_payload(_json_load_maybe(text_payload))
+
+
+def translation_has_content(result: TranslationResult | None) -> bool:
+    if result is None:
+        return False
+    if result.text:
+        return True
+    return any(bool(t) for t in result.plural_texts)
+
+
+def _plural_key_sort_key(key: Any) -> Tuple[int, Any]:
+    try:
+        return 0, int(key)
+    except (TypeError, ValueError):
+        return 1, str(key)
+
+
+def apply_translation_to_entry(entry: Any, result: TranslationResult) -> bool:
+    if hasattr(entry, "msgid_plural") and entry.msgid_plural:
+        plural_map = getattr(entry, "msgstr_plural", None)
+        if not isinstance(plural_map, dict):
+            return False
+
+        plural_keys = sorted(plural_map.keys(), key=_plural_key_sort_key)
+        if not plural_keys:
+            plural_keys = [0]
+
+        usable_forms = [s for s in result.plural_texts if s]
+        if usable_forms:
+            for idx, key in enumerate(plural_keys):
+                plural_map[key] = usable_forms[idx] if idx < len(usable_forms) else usable_forms[-1]
+            return True
+
+        if result.text:
+            for key in plural_keys:
+                plural_map[key] = result.text
+            return True
+
+        return False
+
+    if not result.text:
+        return False
+
+    entry.msgstr = result.text
+    return True
 
 
 # ===========================
@@ -241,15 +369,21 @@ def parse_response(text: str) -> Dict[str, str]:
 
 async def generate_content_async(client: genai.Client, model: str, prompt: str) -> Any:
     """Use Gemini async client when available, fallback to thread offload."""
+    config = genai_types.GenerateContentConfig(
+        response_mime_type="application/json",
+        response_schema=TRANSLATION_RESPONSE_SCHEMA,
+    )
     if hasattr(client, "aio") and client.aio:
         return await client.aio.models.generate_content(
             model=model,
             contents=prompt,
+            config=config,
         )
     return await asyncio.to_thread(
         client.models.generate_content,
         model=model,
         contents=prompt,
+        config=config,
     )
 
 
@@ -281,7 +415,7 @@ def load_ts(file_path: str) -> Tuple[List[Any], Callable[[], None], str]:
     for message in root.findall(".//message"):
         entries.append(TSEntryAdapter(message))
 
-    output_path = file_path[:-3] + ".ai-translated.ts"
+    output_path = build_output_path(file_path, FileKind.TS)
 
     def save_ts() -> None:
         tree.write(output_path, encoding="utf-8", xml_declaration=True)
@@ -298,7 +432,7 @@ def load_resx(file_path: str) -> Tuple[List[Any], Callable[[], None], str]:
     for data_node in root.findall("./data"):
         entries.append(ResxEntryAdapter(data_node))
 
-    output_path = file_path[:-5] + ".ai-translated.resx"
+    output_path = build_output_path(file_path, FileKind.RESX)
 
     def save_resx() -> None:
         tree.write(output_path, encoding="utf-8", xml_declaration=True)
@@ -310,8 +444,13 @@ def load_po(file_path: str) -> Tuple[List[Any], Callable[[], None], str]:
     print(f"Processing PO file: {file_path}")
     po = polib.pofile(file_path)
     entries = [e for e in po]
-    output_path = file_path.replace(".po", ".ai-translated.po")
+    output_path = build_output_path(file_path, FileKind.PO)
     return entries, lambda: po.save(output_path), output_path
+
+
+def build_output_path(file_path: str, file_kind: FileKind) -> str:
+    root, _ = os.path.splitext(file_path)
+    return f"{root}.ai-translated.{file_kind.value}"
 
 
 def resolve_runtime_limits(
@@ -477,9 +616,13 @@ def main() -> None:
                 batch_label=f"batch {batch_index + 1}/{batches}",
                 max_attempts=5,
             )
-            translations = parse_response(response.text or "")
+            translations = parse_response(response)
 
-            missing_indices = [i for i in range(len(batch)) if str(i) not in translations]
+            missing_indices = [
+                i
+                for i in range(len(batch))
+                if not translation_has_content(translations.get(str(i)))
+            ]
             if missing_indices:
                 print(
                     f"  Warning [batch {batch_index + 1}/{batches}]: "
@@ -508,7 +651,7 @@ def main() -> None:
                         batch_label=f"batch {batch_index + 1}/{batches} missing-items",
                         max_attempts=3,
                     )
-                    retry_translations = parse_response(retry_resp.text or "")
+                    retry_translations = parse_response(retry_resp)
                     translations.update(retry_translations)
                 except Exception as e:
                     print(f"  Retry failed [batch {batch_index + 1}/{batches}]: {e}")
@@ -531,13 +674,8 @@ def main() -> None:
 
             for i, entry in enumerate(batch):
                 key = str(i)
-                if key in translations and translations[key]:
-                    val = translations[key]
-                    if hasattr(entry, "msgid_plural") and entry.msgid_plural:
-                        entry.msgstr_plural[0] = val
-                    else:
-                        entry.msgstr = val
-
+                result = translations.get(key)
+                if result and apply_translation_to_entry(entry, result):
                     if "fuzzy" not in entry.flags:
                         entry.flags.append("fuzzy")
                     batch_translated += 1

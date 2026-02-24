@@ -1,30 +1,31 @@
 # Translate script
-My script for translation files in PO/TS/RESX format using Google Gemini API.
+Script for translating PO/TS/RESX localization files using Google Gemini API.
 
+# Setup
+Install dependencies:
 
-# Run method
+```
+pip install -r requirements.txt
+```
 
-
-Have a python-polib, google-genai installed
-
-
-Obtain Google API Key (you can get a trial from AI Studio).
-
-Edit process.py to set your language code, model and batch size.
-
+Obtain a Google API key (for example from AI Studio), then set:
 
 ```
 set GOOGLE_API_KEY=your_google_api_key
+```
+
+# Run
+
+```
 python process.py your_file.po
 python process.py your_file.ts
 python process.py your_file.resx
 ```
 
+Output files are written as `*.ai-translated.po`, `*.ai-translated.ts`, or `*.ai-translated.resx`.
 
-It will save translated files as `*.ai-translated.po`, `*.ai-translated.ts`, or `*.ai-translated.resx`.
+# Smoke tests
 
-
-Adjust your instruction and vocabulary.
-
-
-Good luck!
+```
+python -m unittest discover -s tests -p "test_*.py" -v
+```
