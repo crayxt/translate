@@ -203,13 +203,26 @@ TRANSLATION_RESPONSE_SCHEMA = genai_types.Schema(
 )
 
 
+def build_translation_generation_config() -> genai_types.GenerateContentConfig:
+    return genai_types.GenerateContentConfig(
+        response_mime_type="application/json",
+        response_schema=TRANSLATION_RESPONSE_SCHEMA,
+    )
+
+
 def build_prompt(
     messages: Dict[str, str],
     source_lang: str,
     target_lang: str,
     vocabulary: str | None,
+    translation_rules: str | None,
 ) -> str:
     vocab_block = f"\nProject vocabulary (mandatory):\n{vocabulary}\n" if vocabulary else ""
+    rules_block = (
+        f"\nProject translation rules/instructions (mandatory when present):\n{translation_rules}\n"
+        if translation_rules
+        else ""
+    )
     messages_json = json.dumps(messages, ensure_ascii=False, indent=2)
 
     return f"""
@@ -220,6 +233,7 @@ This is a software application UI localization project.
 Source language: {source_lang}
 Target language: {target_lang}
 {vocab_block}
+{rules_block}
 
 Instructions:
 - Translate each message independently
@@ -227,6 +241,8 @@ Instructions:
 - Return ONLY valid JSON, no Markdown fences or extra text
 - Keep each translation item's "id" exactly the same as the input key
 - Use "plural_texts" only for plural entries when you can provide explicit forms
+- Apply project translation rules when provided
+- If project rules conflict with STRICT RULES above, STRICT RULES win
 - Use consistent translation throughout the messages.
 
 Messages to translate (JSON map of id -> source):
@@ -367,12 +383,15 @@ def apply_translation_to_entry(entry: Any, result: TranslationResult) -> bool:
 # Main logic
 # ===========================
 
-async def generate_content_async(client: genai.Client, model: str, prompt: str) -> Any:
+async def generate_content_async(
+    client: genai.Client,
+    model: str,
+    prompt: str,
+    config: genai_types.GenerateContentConfig | None = None,
+) -> Any:
     """Use Gemini async client when available, fallback to thread offload."""
-    config = genai_types.GenerateContentConfig(
-        response_mime_type="application/json",
-        response_schema=TRANSLATION_RESPONSE_SCHEMA,
-    )
+    if config is None:
+        config = build_translation_generation_config()
     if hasattr(client, "aio") and client.aio:
         return await client.aio.models.generate_content(
             model=model,
@@ -393,10 +412,11 @@ async def generate_with_retry(
     prompt: str,
     batch_label: str,
     max_attempts: int = 5,
+    config: genai_types.GenerateContentConfig | None = None,
 ) -> Any:
     for attempt in range(1, max_attempts + 1):
         try:
-            return await generate_content_async(client, model, prompt)
+            return await generate_content_async(client, model, prompt, config=config)
         except Exception as e:
             print(f"\nAPI Error [{batch_label}] (Attempt {attempt}/{max_attempts}): {e}")
             if attempt == max_attempts:
@@ -453,6 +473,49 @@ def build_output_path(file_path: str, file_kind: FileKind) -> str:
     return f"{root}.ai-translated.{file_kind.value}"
 
 
+def read_optional_text_file(path: str | None, label: str) -> str | None:
+    if not path:
+        return None
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            content = f.read().strip()
+    except FileNotFoundError:
+        print(f"Warning: {label} file '{path}' not found.")
+        return None
+
+    if not content:
+        print(f"Warning: {label} file '{path}' is empty.")
+        return None
+    return content
+
+
+def merge_project_rules(file_rules: str | None, inline_rules: str | None) -> str | None:
+    parts: List[str] = []
+    if file_rules:
+        parts.append(file_rules.strip())
+    if inline_rules and inline_rules.strip():
+        parts.append(inline_rules.strip())
+    if not parts:
+        return None
+    return "\n\n".join(parts)
+
+
+def detect_rules_source(
+    rules_path: str | None,
+    file_rules: str | None,
+    inline_rules: str | None,
+) -> str | None:
+    sources: List[str] = []
+    if file_rules and rules_path:
+        sources.append(f"file:{rules_path}")
+    if inline_rules and inline_rules.strip():
+        sources.append("inline:--rules-str")
+
+    if not sources:
+        return None
+    return ", ".join(sources)
+
+
 def resolve_runtime_limits(
     total_items: int,
     batch_size_arg: int | None,
@@ -491,6 +554,8 @@ def main() -> None:
     parser.add_argument("--batch-size", type=int, default=None, help="Batch size (auto if omitted)")
     parser.add_argument("--parallel-requests", type=int, default=None, help="Concurrent Gemini requests (auto if omitted)")
     parser.add_argument("--vocab", default="vocab-kk.txt", help="Optional vocabulary file")
+    parser.add_argument("--rules", default="rules-kk.md", help="Optional translation rules/instructions file")
+    parser.add_argument("--rules-str", default=None, help="Optional inline translation rules/instructions")
 
     args = parser.parse_args()
 
@@ -500,13 +565,10 @@ def main() -> None:
 
     client = genai.Client(api_key=api_key)
 
-    vocabulary_text: str | None = None
-    if args.vocab:
-        try:
-            with open(args.vocab, "r", encoding="utf-8") as f:
-                vocabulary_text = f.read().strip()
-        except FileNotFoundError:
-            print(f"Warning: Vocabulary file '{args.vocab}' not found.")
+    vocabulary_text = read_optional_text_file(args.vocab, "Vocabulary")
+    rules_text = read_optional_text_file(args.rules, "Rules")
+    project_rules = merge_project_rules(rules_text, args.rules_str)
+    rules_source = detect_rules_source(args.rules, rules_text, args.rules_str)
 
     file_path = args.file
     try:
@@ -547,6 +609,8 @@ def main() -> None:
     print(f"  Parallel requests: {parallel_requests}")
     print(f"  Batch size: {batch_size}")
     print(f"  Limits mode: {limits_mode}")
+    if project_rules and rules_source:
+        print(f"  Rules source: {rules_source}")
 
     all_batches: List[List[Any]] = []
     small_file_threshold = parallel_requests * batch_size
@@ -607,6 +671,7 @@ def main() -> None:
                 args.source_lang,
                 args.target_lang,
                 vocabulary_text,
+                project_rules,
             )
 
             response = await generate_with_retry(
@@ -641,6 +706,7 @@ def main() -> None:
                     args.source_lang,
                     args.target_lang,
                     vocabulary_text,
+                    project_rules,
                 )
 
                 try:
