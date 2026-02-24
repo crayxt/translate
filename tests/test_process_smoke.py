@@ -12,6 +12,33 @@ class _DummyResponse:
 
 
 class ProcessSmokeTests(unittest.TestCase):
+    def test_merge_project_rules_combines_file_and_inline(self):
+        merged = process.merge_project_rules("Rule A", "Rule B")
+        self.assertEqual(merged, "Rule A\n\nRule B")
+
+    def test_detect_rules_source_file_only(self):
+        src = process.detect_rules_source("rules-kk.md", "Rule A", None)
+        self.assertEqual(src, "file:rules-kk.md")
+
+    def test_detect_rules_source_inline_only(self):
+        src = process.detect_rules_source("rules-kk.md", None, "Rule B")
+        self.assertEqual(src, "inline:--rules-str")
+
+    def test_detect_rules_source_file_and_inline(self):
+        src = process.detect_rules_source("rules-kk.md", "Rule A", "Rule B")
+        self.assertEqual(src, "file:rules-kk.md, inline:--rules-str")
+
+    def test_build_prompt_includes_rules_block(self):
+        prompt = process.build_prompt(
+            messages={"0": "Open file"},
+            source_lang="en",
+            target_lang="kk",
+            vocabulary="open - ashy",
+            translation_rules="Use imperative tone.",
+        )
+        self.assertIn("Project translation rules/instructions", prompt)
+        self.assertIn("Use imperative tone.", prompt)
+
     def test_parse_response_uses_parsed_payload(self):
         payload = {
             "translations": [
