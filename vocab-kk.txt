@@ -73,6 +73,7 @@ preferences - баптаулар
 process (verb) - өңдеу
 range - ауқым
 redo - қайталау
+regular expression - тұрақты өрнек
 remove - өшіру
 rename - атын өзгерту
 screenshot - скриншот
