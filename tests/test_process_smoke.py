@@ -36,7 +36,7 @@ class ProcessSmokeTests(unittest.TestCase):
 
     def test_build_prompt_includes_rules_block(self):
         prompt = process.build_prompt(
-            messages={"0": "Open file"},
+            messages={"0": {"source": "Open file", "context": "menu action"}},
             source_lang="en",
             target_lang="kk",
             vocabulary="open - ashy",
@@ -44,6 +44,24 @@ class ProcessSmokeTests(unittest.TestCase):
         )
         self.assertIn("Project translation rules/instructions", prompt)
         self.assertIn("Use imperative tone.", prompt)
+        self.assertIn('"context": "menu action"', prompt)
+
+    def test_build_entry_source_text_handles_plural(self):
+        entry = polib.POEntry(msgid="File", msgid_plural="Files")
+        text = process.build_entry_source_text(entry)
+        self.assertEqual(text, "Singular: File\nPlural: Files")
+
+    def test_build_prompt_message_payload_includes_context_and_notes(self):
+        entry = polib.POEntry(msgid="Save", msgctxt="Menu|File")
+        entry.tcomment = "Action label"
+        entry.occurrences = [("ui/main.py", "42")]
+
+        payload = process.build_prompt_message_payload(entry)
+
+        self.assertEqual(payload["source"], "Save")
+        self.assertEqual(payload["context"], "Menu|File")
+        self.assertIn("Action label", payload["note"])
+        self.assertIn("ui/main.py:42", payload["note"])
 
     def test_parse_response_uses_parsed_payload(self):
         payload = {

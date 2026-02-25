@@ -23,10 +23,13 @@ from google.genai import types as genai_types
 class TSEntryAdapter:
     """Adapts a Qt .ts XML <message> element to look like a polib entry."""
     
-    def __init__(self, message_elem: ET.Element):
+    def __init__(self, message_elem: ET.Element, context_name: str | None = None):
         self.elem = message_elem
         self.source_elem = message_elem.find("source")
         self.translation_elem = message_elem.find("translation")
+        self.comment_elem = message_elem.find("comment")
+        self.extracomment_elem = message_elem.find("extracomment")
+        self.context_name = context_name or ""
         
         # Ensure translation element exists
         if self.translation_elem is None:
@@ -61,6 +64,20 @@ class TSEntryAdapter:
         if t.get("type") == "unfinished":
             return False
         return True
+
+    @property
+    def prompt_context(self) -> str:
+        return self.context_name.strip()
+
+    @property
+    def prompt_note(self) -> str:
+        parts: List[str] = []
+        for elem in (self.comment_elem, self.extracomment_elem):
+            text = (elem.text or "") if elem is not None else ""
+            text = text.strip()
+            if text:
+                parts.append(text)
+        return " | ".join(parts)
 
     class _Flags(list):
         """Helper to mimic polib's flags list, mapping 'fuzzy' to type='unfinished'."""
@@ -137,6 +154,16 @@ class ResxEntryAdapter:
         # values as work items and skip obvious non-localizable entries.
         return not self._translate
 
+    @property
+    def prompt_context(self) -> str:
+        return (self.elem.get("name") or "").strip()
+
+    @property
+    def prompt_note(self) -> str:
+        if self.comment_elem is None or not self.comment_elem.text:
+            return ""
+        return self.comment_elem.text.strip()
+
 
 class FileKind(str, Enum):
     PO = "po"
@@ -147,6 +174,9 @@ class FileKind(str, Enum):
 DEFAULT_BATCH_SIZE = 1000
 DEFAULT_PARALLEL_REQUESTS = 10
 MIN_ITEMS_PER_WORKER = 50
+MAX_PROMPT_CONTEXT_CHARS = 180
+MAX_PROMPT_NOTE_CHARS = 300
+MAX_PROMPT_OCCURRENCES = 3
 
 
 def detect_file_kind(file_path: str) -> FileKind:
@@ -212,7 +242,7 @@ def build_translation_generation_config() -> genai_types.GenerateContentConfig:
 
 
 def build_prompt(
-    messages: Dict[str, str],
+    messages: Dict[str, Dict[str, str]],
     source_lang: str,
     target_lang: str,
     vocabulary: str | None,
@@ -242,11 +272,17 @@ Instructions:
 - Return ONLY valid JSON, no Markdown fences or extra text
 - Keep each translation item's "id" exactly the same as the input key
 - Use "plural_texts" only for plural entries when you can provide explicit forms
+- Use optional "context" and "note" fields only for disambiguation
+- Translate ONLY the "source" field for each item
+- Do NOT copy or translate the context/note metadata itself
 - Apply project translation rules when provided
 - If project rules conflict with STRICT RULES above, STRICT RULES win
 - Use consistent translation throughout the messages.
 
-Messages to translate (JSON map of id -> source):
+Messages to translate (JSON map of id -> item):
+- item.source: source text to translate
+- item.context: optional disambiguation context
+- item.note: optional developer/translator note
 {messages_json}
 """
 
@@ -380,6 +416,70 @@ def apply_translation_to_entry(entry: Any, result: TranslationResult) -> bool:
     return True
 
 
+def _normalize_prompt_hint(text: str, max_chars: int) -> str:
+    compact = " ".join(text.split())
+    if not compact:
+        return ""
+    if len(compact) <= max_chars:
+        return compact
+    return compact[: max_chars - 3].rstrip() + "..."
+
+
+def build_entry_source_text(entry: Any) -> str:
+    if hasattr(entry, "msgid_plural") and entry.msgid_plural:
+        return f"Singular: {entry.msgid}\nPlural: {entry.msgid_plural}"
+    return entry.msgid
+
+
+def get_entry_prompt_context_and_note(entry: Any) -> Tuple[str | None, str | None]:
+    context_parts: List[str] = []
+    note_parts: List[str] = []
+
+    def add_unique(items: List[str], value: str | None) -> None:
+        if value is None:
+            return
+        cleaned = " ".join(str(value).split())
+        if cleaned and cleaned not in items:
+            items.append(cleaned)
+
+    add_unique(context_parts, getattr(entry, "msgctxt", None))
+    add_unique(context_parts, getattr(entry, "prompt_context", None))
+    add_unique(note_parts, getattr(entry, "prompt_note", None))
+    add_unique(note_parts, getattr(entry, "tcomment", None))
+    add_unique(note_parts, getattr(entry, "comment", None))
+
+    occurrences = getattr(entry, "occurrences", None)
+    if isinstance(occurrences, list) and occurrences:
+        formatted: List[str] = []
+        for occurrence in occurrences[:MAX_PROMPT_OCCURRENCES]:
+            if not isinstance(occurrence, tuple) or not occurrence:
+                continue
+            file_part = str(occurrence[0]).strip() if occurrence[0] is not None else ""
+            if not file_part:
+                continue
+            line_part = ""
+            if len(occurrence) > 1 and occurrence[1] is not None and str(occurrence[1]).strip():
+                line_part = str(occurrence[1]).strip()
+            formatted.append(f"{file_part}:{line_part}" if line_part else file_part)
+        if formatted:
+            add_unique(note_parts, f"locations: {', '.join(formatted)}")
+
+    context = _normalize_prompt_hint(" | ".join(context_parts), MAX_PROMPT_CONTEXT_CHARS)
+    note = _normalize_prompt_hint(" | ".join(note_parts), MAX_PROMPT_NOTE_CHARS)
+
+    return (context or None), (note or None)
+
+
+def build_prompt_message_payload(entry: Any) -> Dict[str, str]:
+    payload: Dict[str, str] = {"source": build_entry_source_text(entry)}
+    context, note = get_entry_prompt_context_and_note(entry)
+    if context:
+        payload["context"] = context
+    if note:
+        payload["note"] = note
+    return payload
+
+
 # ===========================
 # Main logic
 # ===========================
@@ -433,7 +533,17 @@ def load_ts(file_path: str) -> Tuple[List[Any], Callable[[], None], str]:
     root = tree.getroot()
 
     entries: List[Any] = []
+    seen_messages: set[int] = set()
+    for context_node in root.findall(".//context"):
+        name_elem = context_node.find("./name")
+        context_name = (name_elem.text or "").strip() if name_elem is not None and name_elem.text else ""
+        for message in context_node.findall("./message"):
+            entries.append(TSEntryAdapter(message, context_name=context_name))
+            seen_messages.add(id(message))
+
     for message in root.findall(".//message"):
+        if id(message) in seen_messages:
+            continue
         entries.append(TSEntryAdapter(message))
 
     output_path = build_output_path(file_path, FileKind.TS)
@@ -741,12 +851,9 @@ def main() -> None:
 
     async def process_batch(batch_index: int, batch: List[Any], sem: asyncio.Semaphore):
         async with sem:
-            msg_map: Dict[str, str] = {}
+            msg_map: Dict[str, Dict[str, str]] = {}
             for i, entry in enumerate(batch):
-                text = entry.msgid
-                if hasattr(entry, "msgid_plural") and entry.msgid_plural:
-                    text = f"Singular: {entry.msgid}\nPlural: {entry.msgid_plural}"
-                msg_map[str(i)] = text
+                msg_map[str(i)] = build_prompt_message_payload(entry)
 
             prompt = build_prompt(
                 msg_map,
@@ -775,13 +882,10 @@ def main() -> None:
                     f"  Warning [batch {batch_index + 1}/{batches}]: "
                     f"{len(missing_indices)} items missing from response. Retrying them..."
                 )
-                retry_map: Dict[str, str] = {}
+                retry_map: Dict[str, Dict[str, str]] = {}
                 for idx in missing_indices:
                     entry = batch[idx]
-                    text = entry.msgid
-                    if hasattr(entry, "msgid_plural") and entry.msgid_plural:
-                        text = f"Singular: {entry.msgid}\nPlural: {entry.msgid_plural}"
-                    retry_map[str(idx)] = text
+                    retry_map[str(idx)] = build_prompt_message_payload(entry)
 
                 retry_prompt = build_prompt(
                     retry_map,
