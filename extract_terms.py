@@ -20,6 +20,7 @@ from process import (
     load_resx,
     load_ts,
     read_optional_text_file,
+    resolve_resource_path,
     resolve_runtime_limits,
 )
 
@@ -245,7 +246,11 @@ def main() -> None:
     parser.add_argument("--model", default="gemini-3-flash-preview")
     parser.add_argument("--batch-size", type=int, default=None, help="Batch size (auto if omitted)")
     parser.add_argument("--parallel-requests", type=int, default=None, help="Concurrent Gemini requests (auto if omitted)")
-    parser.add_argument("--vocab", default="vocab-kk.txt", help="Vocabulary file used as existing term baseline")
+    parser.add_argument(
+        "--vocab",
+        default=None,
+        help="Vocabulary file used as existing term baseline (auto: data/<target-lang>/vocab.txt)",
+    )
     parser.add_argument("--out", default=None, help="Output JSON path (default: <input>.missing-terms.json)")
     parser.add_argument("--max-terms-per-batch", type=int, default=80, help="Max term suggestions requested per batch")
     parser.add_argument("--max-attempts", type=int, default=5, help="Retry attempts per batch")
@@ -262,8 +267,14 @@ def main() -> None:
 
     client = genai.Client(api_key=api_key)
 
-    vocabulary_text = read_optional_text_file(args.vocab, "Vocabulary")
-    vocab_source = args.vocab if vocabulary_text else "none"
+    vocabulary_path = resolve_resource_path(
+        explicit_path=args.vocab,
+        prefix="vocab",
+        extension="txt",
+        target_lang=args.target_lang,
+    )
+    vocabulary_text = read_optional_text_file(vocabulary_path, "Vocabulary")
+    vocab_source = f"file:{vocabulary_path}" if vocabulary_text and vocabulary_path else "none"
 
     try:
         file_kind = detect_file_kind(args.file)

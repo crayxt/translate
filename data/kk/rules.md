@@ -8,9 +8,10 @@ If any rule conflicts with core STRICT RULES in `process.py`, STRICT RULES win.
 - Preserve HTML/XML tags, escapes, entities, and line breaks exactly.
 - Preserve leading/trailing spaces exactly.
 - Preserve keyboard accelerators and hotkeys (`_`, `&`) and keep them usable/unique in menus.
+- For accelerators in patterns like `_Apply`/`&Apply`, do not assign the accelerator to Kazakh-specific letters: `ә, і, ң, ғ, ү, ұ, қ, ө, һ`.
 
 ## 2) Terminology Consistency
-- Follow `vocab-kk.txt` exactly for mapped terms.
+- Follow the project vocabulary file exactly for mapped terms.
 - Use one canonical term per concept across the whole product.
 - Do not alternate synonyms for the same core UI action.
 - If no good Kazakh equivalent exists, use a standard technical borrowing consistently.

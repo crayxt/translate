@@ -169,15 +169,16 @@ You are a professional software localization translator.
 
 STRICT RULES:
 - Preserve all placeholders EXACTLY (%s, %d, %(name)s, {var}, {{var}})
-- % and _ placeholders in messages like '_Apply' should not be assigned to Kazakh letters "әіңғүұқөһ" in translation
+- Preserve keyboard accelerators/hotkeys EXACTLY (`_`, `&`) and keep them usable in target text
 - Preserve HTML/XML tags EXACTLY
 - Do NOT reorder placeholders
 - Do NOT add or remove content
 - Keep original punctuation and capitalization style
 - Use consistent terminology
 - Translate ONLY the message text
-- There Is No Camel Case in Kazakh. But ALL CAPS should be ALL CAPS.
-- If the input contains 'Singular:' and 'Plural:', return only the single correct translation for Kazakh (which typically uses the singular form with numbers).
+- Avoid unnatural CamelCase in the target language unless source uses intentional branded casing
+- If source text is ALL CAPS, keep translation ALL CAPS
+- If the input contains 'Singular:' and 'Plural:', provide a natural plural-aware translation for the target language.
 """
 
 TRANSLATION_RESPONSE_SCHEMA = genai_types.Schema(
@@ -489,6 +490,65 @@ def read_optional_text_file(path: str | None, label: str) -> str | None:
     return content
 
 
+def build_language_code_candidates(target_lang: str) -> List[str]:
+    raw = (target_lang or "").strip()
+    if not raw:
+        return []
+
+    seeds: List[str] = []
+    for candidate in (raw, raw.replace("-", "_"), raw.replace("_", "-")):
+        if candidate and candidate not in seeds:
+            seeds.append(candidate)
+
+    results: List[str] = []
+
+    def add(code: str | None) -> None:
+        if code and code not in results:
+            results.append(code)
+
+    for seed in seeds:
+        add(seed)
+        if "_" in seed:
+            add(seed.split("_", 1)[0])
+        if "-" in seed:
+            add(seed.split("-", 1)[0])
+
+    for value in list(results):
+        lower = value.lower()
+        add(lower)
+        if "_" in lower:
+            add(lower.split("_", 1)[0])
+        if "-" in lower:
+            add(lower.split("-", 1)[0])
+
+    return results
+
+
+def detect_default_text_resource(prefix: str, extension: str, target_lang: str) -> str | None:
+    for lang_code in build_language_code_candidates(target_lang):
+        candidate_path = os.path.join("data", lang_code, f"{prefix}.{extension}")
+        if os.path.isfile(candidate_path):
+            return candidate_path
+
+    # Backward compatibility with flat naming at repository root.
+    for lang_code in build_language_code_candidates(target_lang):
+        legacy_path = f"{prefix}-{lang_code}.{extension}"
+        if os.path.isfile(legacy_path):
+            return legacy_path
+    return None
+
+
+def resolve_resource_path(
+    explicit_path: str | None,
+    prefix: str,
+    extension: str,
+    target_lang: str,
+) -> str | None:
+    if explicit_path:
+        return explicit_path
+    return detect_default_text_resource(prefix, extension, target_lang)
+
+
 def merge_project_rules(file_rules: str | None, inline_rules: str | None) -> str | None:
     parts: List[str] = []
     if file_rules:
@@ -549,12 +609,20 @@ def main() -> None:
     )
     parser.add_argument("file", help="Input .po, .ts, or .resx file")
     parser.add_argument("--source-lang", default="en", help="Default: en")
-    parser.add_argument("--target-lang", default="kk", help="Default: kk (Kazakh)")
+    parser.add_argument("--target-lang", default="kk", help="Default: kk")
     parser.add_argument("--model", default="gemini-3-flash-preview")
     parser.add_argument("--batch-size", type=int, default=None, help="Batch size (auto if omitted)")
     parser.add_argument("--parallel-requests", type=int, default=None, help="Concurrent Gemini requests (auto if omitted)")
-    parser.add_argument("--vocab", default="vocab-kk.txt", help="Optional vocabulary file")
-    parser.add_argument("--rules", default="rules-kk.md", help="Optional translation rules/instructions file")
+    parser.add_argument(
+        "--vocab",
+        default=None,
+        help="Optional vocabulary file (auto: data/<target-lang>/vocab.txt)",
+    )
+    parser.add_argument(
+        "--rules",
+        default=None,
+        help="Optional translation rules/instructions file (auto: data/<target-lang>/rules.md)",
+    )
     parser.add_argument("--rules-str", default=None, help="Optional inline translation rules/instructions")
 
     args = parser.parse_args()
@@ -565,10 +633,24 @@ def main() -> None:
 
     client = genai.Client(api_key=api_key)
 
-    vocabulary_text = read_optional_text_file(args.vocab, "Vocabulary")
-    rules_text = read_optional_text_file(args.rules, "Rules")
+    vocabulary_path = resolve_resource_path(
+        explicit_path=args.vocab,
+        prefix="vocab",
+        extension="txt",
+        target_lang=args.target_lang,
+    )
+    rules_path = resolve_resource_path(
+        explicit_path=args.rules,
+        prefix="rules",
+        extension="md",
+        target_lang=args.target_lang,
+    )
+
+    vocabulary_text = read_optional_text_file(vocabulary_path, "Vocabulary")
+    rules_text = read_optional_text_file(rules_path, "Rules")
     project_rules = merge_project_rules(rules_text, args.rules_str)
-    rules_source = detect_rules_source(args.rules, rules_text, args.rules_str)
+    rules_source = detect_rules_source(rules_path, rules_text, args.rules_str)
+    vocabulary_source = f"file:{vocabulary_path}" if vocabulary_text and vocabulary_path else "none"
 
     file_path = args.file
     try:
@@ -609,8 +691,8 @@ def main() -> None:
     print(f"  Parallel requests: {parallel_requests}")
     print(f"  Batch size: {batch_size}")
     print(f"  Limits mode: {limits_mode}")
-    if project_rules and rules_source:
-        print(f"  Rules source: {rules_source}")
+    print(f"  Vocabulary source: {vocabulary_source}")
+    print(f"  Rules source: {rules_source or 'none'}")
 
     all_batches: List[List[Any]] = []
     small_file_threshold = parallel_requests * batch_size
@@ -775,3 +857,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+

@@ -24,10 +24,42 @@ python process.py your_file.resx
 
 Output files are written as `*.ai-translated.po`, `*.ai-translated.ts`, or `*.ai-translated.resx`.
 
-By default, vocabulary and project rules are loaded from:
+Set target language (default is `kk`):
 
-- `vocab-kk.txt`
-- `rules-kk.md`
+```
+python process.py your_file.po --target-lang fr
+python process.py your_file.po --target-lang fr_CA
+```
+
+By default, vocabulary and project rules are auto-detected from target language under `data/`:
+
+- `data/<target-lang>/vocab.txt`
+- `data/<target-lang>/rules.md`
+
+Recommended layout:
+
+```
+data/
+  kk/
+    vocab.txt
+    rules.md
+  fr/
+    vocab.txt
+    rules.md
+  fr_CA/
+    vocab.txt
+    rules.md
+```
+
+Locale fallback is supported:
+
+- for `--target-lang fr_CA`, the script first tries `data/fr_CA/vocab.txt` / `data/fr_CA/rules.md`
+- if not found, it falls back to `data/fr/vocab.txt` / `data/fr/rules.md`
+
+Legacy flat naming is still accepted as a fallback:
+
+- `vocab-<target-lang>.txt`
+- `rules-<target-lang>.md`
 
 Override them per run:
 
@@ -41,7 +73,12 @@ Quick inline rule override:
 python process.py your_file.po --rules-str "Use polite formal tone for settings labels."
 ```
 
-When rules are active, startup output prints `Rules source` (file path and/or `--rules-str`).
+`--rules-str` is merged with file-based rules when both are present.
+
+Startup output prints both:
+
+- `Vocabulary source` (`file:<path>` or `none`)
+- `Rules source` (`file:<path>`, `inline:--rules-str`, combined, or `none`)
 
 # Extract Missing Terms
 
@@ -54,10 +91,28 @@ python extract_terms.py your_file.po
 Optional controls:
 
 ```
-python extract_terms.py your_file.po --vocab vocab-kk.txt --out missing-terms.json --batch-size 200 --parallel-requests 4
+python extract_terms.py your_file.po --vocab data/kk/vocab.txt --out missing-terms.json --batch-size 200 --parallel-requests 4
 ```
 
 Output is saved as `<input>.missing-terms.json` unless `--out` is specified.
+
+# Notes
+
+## Gettext placeholder reordering (`%s`, `%d`)
+
+If Poedit complains after you change placeholder order, check the format flag on that entry:
+
+- `#, c-format`: reordering is allowed with positional placeholders, e.g. `%2$s`, `%1$s`.
+- `#, python-format`: positional `%2$s` is not valid; you cannot safely reorder plain `%s` placeholders.
+
+For `python-format` entries, reordering requires source-side named placeholders, for example:
+
+```po
+msgid "From %(src)s to %(dst)s"
+msgstr "%(dst)s konumuna %(src)s"
+```
+
+Always preserve the same placeholder set and types (`%s`, `%d`, names) between `msgid` and `msgstr`.
 
 # Smoke tests
 

@@ -1,4 +1,6 @@
 import unittest
+from unittest.mock import patch
+import os
 
 import polib
 
@@ -12,6 +14,10 @@ class _DummyResponse:
 
 
 class ProcessSmokeTests(unittest.TestCase):
+    def test_system_instruction_is_language_neutral(self):
+        self.assertNotIn("Kazakh", process.SYSTEM_INSTRUCTION)
+        self.assertIn("target language", process.SYSTEM_INSTRUCTION)
+
     def test_merge_project_rules_combines_file_and_inline(self):
         merged = process.merge_project_rules("Rule A", "Rule B")
         self.assertEqual(merged, "Rule A\n\nRule B")
@@ -91,6 +97,44 @@ class ProcessSmokeTests(unittest.TestCase):
         path = r"C:\po.files\sample.po"
         output = process.build_output_path(path, process.FileKind.PO)
         self.assertEqual(output, r"C:\po.files\sample.ai-translated.po")
+
+    def test_build_language_code_candidates_include_locale_and_base(self):
+        candidates = process.build_language_code_candidates("fr_CA")
+        self.assertIn("fr_CA", candidates)
+        self.assertIn("fr", candidates)
+
+    def test_detect_default_text_resource_prefers_exact_match(self):
+        with patch("process.os.path.isfile") as mocked_exists:
+            mocked_exists.side_effect = lambda path: path in {
+                os.path.join("data", "fr_CA", "rules.md"),
+                os.path.join("data", "fr", "rules.md"),
+            }
+            resolved = process.detect_default_text_resource("rules", "md", "fr_CA")
+
+        self.assertEqual(resolved, os.path.join("data", "fr_CA", "rules.md"))
+
+    def test_detect_default_text_resource_falls_back_to_base_language(self):
+        with patch("process.os.path.isfile") as mocked_exists:
+            mocked_exists.side_effect = lambda path: path in {
+                os.path.join("data", "fr", "rules.md")
+            }
+            resolved = process.detect_default_text_resource("rules", "md", "fr_CA")
+
+        self.assertEqual(resolved, os.path.join("data", "fr", "rules.md"))
+
+    def test_detect_default_text_resource_uses_legacy_fallback(self):
+        with patch("process.os.path.isfile") as mocked_exists:
+            mocked_exists.side_effect = lambda path: path == "rules-fr.md"
+            resolved = process.detect_default_text_resource("rules", "md", "fr_CA")
+
+        self.assertEqual(resolved, "rules-fr.md")
+
+    def test_resolve_resource_path_prefers_explicit_path(self):
+        with patch("process.detect_default_text_resource") as mocked_detect:
+            resolved = process.resolve_resource_path("custom-rules.md", "rules", "md", "fr")
+
+        mocked_detect.assert_not_called()
+        self.assertEqual(resolved, "custom-rules.md")
 
 
 if __name__ == "__main__":
