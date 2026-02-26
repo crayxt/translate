@@ -1,6 +1,7 @@
-import unittest
+﻿import unittest
 from unittest.mock import patch
 import os
+import xml.etree.ElementTree as ET
 
 import polib
 
@@ -63,6 +64,20 @@ class ProcessSmokeTests(unittest.TestCase):
         self.assertIn("Action label", payload["note"])
         self.assertIn("ui/main.py:42", payload["note"])
 
+    def test_build_prompt_message_payload_plural_adds_required_form_count(self):
+        message = ET.fromstring(
+            "<message numerus='yes'>"
+            "<source>%n file(s)</source>"
+            "<translation><numerusform></numerusform><numerusform></numerusform></translation>"
+            "</message>"
+        )
+        entry = process.TSEntryAdapter(message, context_name="Files")
+
+        payload = process.build_prompt_message_payload(entry)
+
+        self.assertEqual(payload["plural_forms"], 2)
+        self.assertIn("plural forms required: 2", payload["note"])
+
     def test_parse_response_uses_parsed_payload(self):
         payload = {
             "translations": [
@@ -111,6 +126,87 @@ class ProcessSmokeTests(unittest.TestCase):
         self.assertEqual(entry.msgstr_plural[1], "Kun")
         self.assertEqual(entry.msgstr_plural[2], "Kun")
 
+    def test_apply_translation_to_plural_entry_ignores_blank_plural_forms(self):
+        entry = polib.POEntry(msgid="Day", msgid_plural="Days")
+        entry.msgstr_plural = {0: "", 1: ""}
+
+        applied = process.apply_translation_to_entry(
+            entry,
+            process.TranslationResult(text="Kun", plural_texts=[" ", ""]),
+        )
+
+        self.assertTrue(applied)
+        self.assertEqual(entry.msgstr_plural[0], "Kun")
+        self.assertEqual(entry.msgstr_plural[1], "Kun")
+
+    def test_translation_has_content_ignores_whitespace(self):
+        self.assertFalse(
+            process.translation_has_content(
+                process.TranslationResult(text=" ", plural_texts=["", "  "])
+            )
+        )
+
+    def test_apply_translation_to_ts_plural_entry_writes_numerusform(self):
+        message = ET.fromstring(
+            "<message numerus='yes'>"
+            "<source>%n file(s)</source>"
+            "<translation type='unfinished'><numerusform></numerusform><numerusform></numerusform></translation>"
+            "</message>"
+        )
+        entry = process.TSEntryAdapter(message, context_name="Files")
+
+        applied = process.apply_translation_to_entry(
+            entry,
+            process.TranslationResult(
+                text="Fallback",
+                plural_texts=["%n file", "%n files"],
+            ),
+        )
+
+        self.assertTrue(applied)
+        self.assertEqual(entry.msgstr_plural[0], "%n file")
+        self.assertEqual(entry.msgstr_plural[1], "%n files")
+        forms = message.find("translation").findall("numerusform")
+        self.assertEqual(forms[0].text, "%n file")
+        self.assertEqual(forms[1].text, "%n files")
+
+    def test_apply_translation_to_ts_plural_entry_single_form_repeats_for_all_slots(self):
+        message = ET.fromstring(
+            "<message numerus='yes'>"
+            "<source>%n term</source>"
+            "<translation type='unfinished'><numerusform></numerusform><numerusform></numerusform></translation>"
+            "</message>"
+        )
+        entry = process.TSEntryAdapter(message, context_name="Animals")
+
+        applied = process.apply_translation_to_entry(
+            entry,
+            process.TranslationResult(
+                text="Fallback",
+                plural_texts=["%n TERM"],
+            ),
+        )
+
+        self.assertTrue(applied)
+        self.assertEqual(entry.msgstr_plural[0], "%n TERM")
+        self.assertEqual(entry.msgstr_plural[1], "%n TERM")
+        forms = message.find("translation").findall("numerusform")
+        self.assertEqual(forms[0].text, "%n TERM")
+        self.assertEqual(forms[1].text, "%n TERM")
+
+    def test_ts_plural_entry_translated_requires_all_forms(self):
+        message = ET.fromstring(
+            "<message numerus='yes'>"
+            "<source>%n file(s)</source>"
+            "<translation><numerusform>one</numerusform><numerusform></numerusform></translation>"
+            "</message>"
+        )
+        entry = process.TSEntryAdapter(message)
+        self.assertFalse(entry.translated())
+
+        message.find("translation").findall("numerusform")[1].text = "many"
+        self.assertTrue(entry.translated())
+
     def test_build_output_path_uses_splitext(self):
         path = r"C:\po.files\sample.po"
         output = process.build_output_path(path, process.FileKind.PO)
@@ -157,3 +253,4 @@ class ProcessSmokeTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+

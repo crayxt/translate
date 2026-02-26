@@ -10,6 +10,7 @@ array - массив
 arrow - бағдарша
 background - фон
 bold - жуан
+boolean - логикалық
 browse - шолу
 browser - браузер
 build - құрастыру
@@ -24,6 +25,7 @@ countdown - кері санау
 cursor - курсор
 database - дерекқор
 daemon - қызмет
+default - бастапқы | үнсіз келісім бойынша
 delete - өшіру
 destroy - жою
 dialog - сұхбат терезесі
@@ -34,8 +36,11 @@ download - жүктеп алу
 dump - дамп
 edit - түзету
 enable - іске қосу
+encrypted - шифрленген
+encryption - шифрлеу
 endnote - соңдық нұсқама
 extension - кеңейту
+failed - сәтсіз аяқталды
 field - өріс
 folder - бума
 font - қаріп
@@ -76,6 +81,8 @@ redo - қайталау
 regular expression - тұрақты өрнек
 remove - өшіру
 rename - атын өзгерту
+root (user) - әкімші
+root - түбір
 screenshot - скриншот
 separator - ажыратқыш
 shading - көлеңкелеу
@@ -88,6 +95,7 @@ stopwatch - секунд өлшегіші
 stretch - созу
 symbol - таңба
 tab (like browser tab) - бет
+target - мақсат
 tool - сайман
 theme - тема
 tracker - трекер

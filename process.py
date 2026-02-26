@@ -40,12 +40,41 @@ class TSEntryAdapter:
         return self.source_elem.text if self.source_elem is not None else ""
 
     @property
+    def msgid_plural(self) -> str:
+        if self.elem.get("numerus") == "yes":
+            # Qt TS stores only a single source string for numerus entries.
+            # Reuse it as a plural hint so downstream logic uses plural paths.
+            return self.msgid
+        return ""
+
+    @property
     def msgstr(self) -> str:
-        return self.translation_elem.text if self.translation_elem is not None else ""
+        if self.translation_elem is None:
+            return ""
+        if self.elem.get("numerus") == "yes":
+            forms = [self._clean_form_text(node.text) for node in self._numerusform_nodes()]
+            return forms[0] if forms else ""
+        return self.translation_elem.text if self.translation_elem.text else ""
 
     @msgstr.setter
     def msgstr(self, value: str):
+        if self.translation_elem is None:
+            return
+        if self.elem.get("numerus") == "yes":
+            plural_map = self.msgstr_plural
+            if plural_map:
+                for key in list(plural_map.keys()):
+                    plural_map[key] = value
+            else:
+                self._append_numerusform(value)
+            return
         self.translation_elem.text = value
+
+    @property
+    def msgstr_plural(self):
+        if self.elem.get("numerus") != "yes" or self.translation_elem is None:
+            return {}
+        return self._PluralMap(self)
 
     @property
     def flags(self):
@@ -58,10 +87,17 @@ class TSEntryAdapter:
 
     def translated(self) -> bool:
         t = self.translation_elem
-        if t is None or not t.text:
+        if t is None:
             return False
         # In TS, type="unfinished" means it's not fully translated/approved
         if t.get("type") == "unfinished":
+            return False
+        if self.elem.get("numerus") == "yes":
+            forms = self._numerusform_nodes()
+            if not forms:
+                return False
+            return all(bool(self._clean_form_text(node.text)) for node in forms)
+        if not t.text:
             return False
         return True
 
@@ -96,6 +132,50 @@ class TSEntryAdapter:
             if item == "fuzzy":
                 return self.elem.get("type") == "unfinished"
             return super().__contains__(item)
+
+    @staticmethod
+    def _clean_form_text(value: str | None) -> str:
+        return value if value else ""
+
+    def _numerusform_nodes(self) -> List[ET.Element]:
+        if self.translation_elem is None:
+            return []
+        return self.translation_elem.findall("numerusform")
+
+    def _append_numerusform(self, value: str) -> ET.Element:
+        if self.translation_elem is None:
+            self.translation_elem = ET.SubElement(self.elem, "translation")
+        node = ET.SubElement(self.translation_elem, "numerusform")
+        node.text = value
+        return node
+
+    class _PluralMap(dict):
+        """Dict-like view over Qt TS <numerusform> nodes."""
+
+        def __init__(self, adapter: "TSEntryAdapter"):
+            self.adapter = adapter
+            super().__init__()
+            for idx, node in enumerate(self.adapter._numerusform_nodes()):
+                super().__setitem__(idx, adapter._clean_form_text(node.text))
+
+        def _ensure_node(self, idx: int) -> ET.Element:
+            nodes = self.adapter._numerusform_nodes()
+            while len(nodes) <= idx:
+                self.adapter._append_numerusform("")
+                nodes = self.adapter._numerusform_nodes()
+            return nodes[idx]
+
+        def __setitem__(self, key, value):
+            try:
+                idx = int(key)
+            except (TypeError, ValueError):
+                idx = len(self)
+            if idx < 0:
+                idx = 0
+            text_value = value if isinstance(value, str) else str(value)
+            node = self._ensure_node(idx)
+            node.text = text_value
+            super().__setitem__(idx, text_value)
 
 
 class ResxEntryAdapter:
@@ -242,16 +322,23 @@ def build_translation_generation_config() -> genai_types.GenerateContentConfig:
 
 
 def build_prompt(
-    messages: Dict[str, Dict[str, str]],
+    messages: Dict[str, Dict[str, Any]],
     source_lang: str,
     target_lang: str,
     vocabulary: str | None,
     translation_rules: str | None,
+    force_non_empty: bool = False,
 ) -> str:
     vocab_block = f"\nProject vocabulary (mandatory):\n{vocabulary}\n" if vocabulary else ""
     rules_block = (
         f"\nProject translation rules/instructions (mandatory when present):\n{translation_rules}\n"
         if translation_rules
+        else ""
+    )
+    non_empty_block = (
+        "- Every translation must be non-empty.\n"
+        "- Never return empty strings. If uncertain, provide your best translation.\n"
+        if force_non_empty
         else ""
     )
     messages_json = json.dumps(messages, ensure_ascii=False, indent=2)
@@ -272,17 +359,24 @@ Instructions:
 - Return ONLY valid JSON, no Markdown fences or extra text
 - Keep each translation item's "id" exactly the same as the input key
 - Use "plural_texts" only for plural entries when you can provide explicit forms
+- For plural entries (source contains 'Singular:'/'Plural:' or item.plural_forms is present),
+  return non-empty "plural_texts" with exactly item.plural_forms forms (or at least 2 if absent)
+- If the target language effectively has one plural form but multiple slots are required,
+  repeat the same translation identically in all required plural slots
+- Keep "text" non-empty for every item, including plural entries
 - Use optional "context" and "note" fields only for disambiguation
 - Translate ONLY the "source" field for each item
 - Do NOT copy or translate the context/note metadata itself
 - Apply project translation rules when provided
 - If project rules conflict with STRICT RULES above, STRICT RULES win
 - Use consistent translation throughout the messages.
+{non_empty_block}
 
 Messages to translate (JSON map of id -> item):
 - item.source: source text to translate
 - item.context: optional disambiguation context
 - item.note: optional developer/translator note
+- item.plural_forms: optional count of plural forms required in output "plural_texts"
 {messages_json}
 """
 
@@ -371,12 +465,30 @@ def parse_response(response_payload: Any) -> Dict[str, TranslationResult]:
     return _normalize_translation_payload(_json_load_maybe(text_payload))
 
 
+def _is_non_empty_text(value: str | None) -> bool:
+    return isinstance(value, str) and bool(value.strip())
+
+
+def is_plural_entry(entry: Any) -> bool:
+    return bool(getattr(entry, "msgid_plural", None))
+
+
+def get_plural_form_count(entry: Any) -> int:
+    if not is_plural_entry(entry):
+        return 0
+
+    plural_map = getattr(entry, "msgstr_plural", None)
+    if isinstance(plural_map, dict) and plural_map:
+        return max(2, len(plural_map))
+    return 2
+
+
 def translation_has_content(result: TranslationResult | None) -> bool:
     if result is None:
         return False
-    if result.text:
+    if _is_non_empty_text(result.text):
         return True
-    return any(bool(t) for t in result.plural_texts)
+    return any(_is_non_empty_text(t) for t in result.plural_texts)
 
 
 def _plural_key_sort_key(key: Any) -> Tuple[int, Any]:
@@ -387,7 +499,7 @@ def _plural_key_sort_key(key: Any) -> Tuple[int, Any]:
 
 
 def apply_translation_to_entry(entry: Any, result: TranslationResult) -> bool:
-    if hasattr(entry, "msgid_plural") and entry.msgid_plural:
+    if is_plural_entry(entry):
         plural_map = getattr(entry, "msgstr_plural", None)
         if not isinstance(plural_map, dict):
             return False
@@ -396,13 +508,13 @@ def apply_translation_to_entry(entry: Any, result: TranslationResult) -> bool:
         if not plural_keys:
             plural_keys = [0]
 
-        usable_forms = [s for s in result.plural_texts if s]
+        usable_forms = [s for s in result.plural_texts if _is_non_empty_text(s)]
         if usable_forms:
             for idx, key in enumerate(plural_keys):
                 plural_map[key] = usable_forms[idx] if idx < len(usable_forms) else usable_forms[-1]
             return True
 
-        if result.text:
+        if _is_non_empty_text(result.text):
             for key in plural_keys:
                 plural_map[key] = result.text
             return True
@@ -426,7 +538,7 @@ def _normalize_prompt_hint(text: str, max_chars: int) -> str:
 
 
 def build_entry_source_text(entry: Any) -> str:
-    if hasattr(entry, "msgid_plural") and entry.msgid_plural:
+    if is_plural_entry(entry):
         return f"Singular: {entry.msgid}\nPlural: {entry.msgid_plural}"
     return entry.msgid
 
@@ -470,9 +582,14 @@ def get_entry_prompt_context_and_note(entry: Any) -> Tuple[str | None, str | Non
     return (context or None), (note or None)
 
 
-def build_prompt_message_payload(entry: Any) -> Dict[str, str]:
-    payload: Dict[str, str] = {"source": build_entry_source_text(entry)}
+def build_prompt_message_payload(entry: Any) -> Dict[str, Any]:
+    payload: Dict[str, Any] = {"source": build_entry_source_text(entry)}
     context, note = get_entry_prompt_context_and_note(entry)
+    if is_plural_entry(entry):
+        plural_forms = get_plural_form_count(entry)
+        payload["plural_forms"] = plural_forms
+        plural_note = f"plural forms required: {plural_forms}"
+        note = f"{note} | {plural_note}" if note else plural_note
     if context:
         payload["context"] = context
     if note:
@@ -851,7 +968,7 @@ def main() -> None:
 
     async def process_batch(batch_index: int, batch: List[Any], sem: asyncio.Semaphore):
         async with sem:
-            msg_map: Dict[str, Dict[str, str]] = {}
+            msg_map: Dict[str, Dict[str, Any]] = {}
             for i, entry in enumerate(batch):
                 msg_map[str(i)] = build_prompt_message_payload(entry)
 
@@ -882,7 +999,7 @@ def main() -> None:
                     f"  Warning [batch {batch_index + 1}/{batches}]: "
                     f"{len(missing_indices)} items missing from response. Retrying them..."
                 )
-                retry_map: Dict[str, Dict[str, str]] = {}
+                retry_map: Dict[str, Dict[str, Any]] = {}
                 for idx in missing_indices:
                     entry = batch[idx]
                     retry_map[str(idx)] = build_prompt_message_payload(entry)
@@ -893,6 +1010,7 @@ def main() -> None:
                     args.target_lang,
                     vocabulary_text,
                     project_rules,
+                    force_non_empty=True,
                 )
 
                 try:

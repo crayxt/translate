@@ -23,6 +23,9 @@ If any rule conflicts with core STRICT RULES in `process.py`, STRICT RULES win.
 - Use postpositions after noun phrases (not preposition-style order).
 - Use natural Kazakh possessive/genitive construction (possessor before possessed).
 - Avoid English/Russian word-order calques.
+- Rephrase prompts into proper Kazakh question forms before finalizing.
+- For yes/no questions, use interrogative clitic particles `ма/ме/ба/бе/па/пе` as separate words after the predicate or focus word: `керек пе?`, `барасыз ба?`.
+- Do not force interrogative particles in content (wh-) questions that already use interrogative words (`кім`, `не`, `қайда`, `қашан`, `неге`, `қалай`): `Бұл не?`, `Қайда барасыз?`.
 
 ## 4) Verb Form and Tone
 - Default to neutral action style for labels/menu items: verbal noun/infinitive.
