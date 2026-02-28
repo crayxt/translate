@@ -643,6 +643,32 @@ def _is_non_empty_text(value: str | None) -> bool:
     return isinstance(value, str) and bool(value.strip())
 
 
+def _normalize_model_escaped_text(source_text: str, candidate_text: str) -> str:
+    """Align escaped control-char style with source when model returns literal escapes."""
+    if not isinstance(candidate_text, str):
+        return candidate_text
+
+    normalized = candidate_text
+    replacements = (
+        ("\n", "\\n"),
+        ("\t", "\\t"),
+        ("\r", "\\r"),
+    )
+
+    for actual_char, escaped_seq in replacements:
+        source_uses_actual = actual_char in source_text and escaped_seq not in source_text
+        candidate_uses_literal = escaped_seq in normalized and actual_char not in normalized
+        if source_uses_actual and candidate_uses_literal:
+            normalized = normalized.replace(escaped_seq, actual_char)
+
+    source_uses_quote = '"' in source_text and '\\"' not in source_text
+    candidate_uses_escaped_quote = '\\"' in normalized and '"' not in normalized
+    if source_uses_quote and candidate_uses_escaped_quote:
+        normalized = normalized.replace('\\"', '"')
+
+    return normalized
+
+
 def is_plural_entry(entry: Any) -> bool:
     return bool(getattr(entry, "msgid_plural", None))
 
@@ -673,6 +699,8 @@ def _plural_key_sort_key(key: Any) -> Tuple[int, Any]:
 
 
 def apply_translation_to_entry(entry: Any, result: TranslationResult) -> bool:
+    source_text = build_entry_source_text(entry)
+
     if is_plural_entry(entry):
         plural_map = getattr(entry, "msgstr_plural", None)
         if not isinstance(plural_map, dict):
@@ -682,7 +710,11 @@ def apply_translation_to_entry(entry: Any, result: TranslationResult) -> bool:
         if not plural_keys:
             plural_keys = [0]
 
-        usable_forms = [s for s in result.plural_texts if _is_non_empty_text(s)]
+        usable_forms = [
+            _normalize_model_escaped_text(source_text, s)
+            for s in result.plural_texts
+            if _is_non_empty_text(s)
+        ]
         if usable_forms:
             for idx, key in enumerate(plural_keys):
                 plural_map[key] = usable_forms[idx] if idx < len(usable_forms) else usable_forms[-1]
@@ -691,8 +723,9 @@ def apply_translation_to_entry(entry: Any, result: TranslationResult) -> bool:
             return True
 
         if _is_non_empty_text(result.text):
+            normalized_text = _normalize_model_escaped_text(source_text, result.text)
             for key in plural_keys:
-                plural_map[key] = result.text
+                plural_map[key] = normalized_text
             if hasattr(entry, "mark_translated"):
                 entry.mark_translated()
             return True
@@ -702,7 +735,7 @@ def apply_translation_to_entry(entry: Any, result: TranslationResult) -> bool:
     if not result.text:
         return False
 
-    entry.msgstr = result.text
+    entry.msgstr = _normalize_model_escaped_text(source_text, result.text)
     if hasattr(entry, "mark_translated"):
         entry.mark_translated()
     return True

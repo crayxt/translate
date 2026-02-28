@@ -518,6 +518,35 @@ class ProcessSmokeTests(unittest.TestCase):
                 if os.path.exists(path):
                     os.remove(path)
 
+    def test_load_strings_normalizes_literal_escapes_from_model(self):
+        in_path = os.path.join(os.getcwd(), "_tmp_escape_norm.strings")
+        out_path = os.path.join(os.getcwd(), "_tmp_escape_norm.ai-translated.strings")
+        try:
+            content = '/* "a|newline" = "Line\\nTwo"; */\n'
+            with open(in_path, "w", encoding="utf-8", newline="") as f:
+                f.write(content)
+
+            entries, save_callback, out_path = process.load_strings(in_path)
+            self.assertEqual(len(entries), 1)
+            self.assertEqual(entries[0].msgid, "Line\nTwo")
+
+            # Simulate model returning a literal escape sequence instead of newline char.
+            applied = process.apply_translation_to_entry(
+                entries[0],
+                process.TranslationResult(text="AAA\\nBBB"),
+            )
+            self.assertTrue(applied)
+            save_callback()
+
+            with open(out_path, "r", encoding="utf-8") as f:
+                out_text = f.read()
+            self.assertIn('"a|newline" = "AAA\\nBBB";', out_text)
+            self.assertNotIn('"a|newline" = "AAA\\\\nBBB";', out_text)
+        finally:
+            for path in (in_path, out_path):
+                if os.path.exists(path):
+                    os.remove(path)
+
     def test_load_strings_attaches_leading_comments_to_active_entry(self):
         in_path = os.path.join(os.getcwd(), "_tmp_note_active.strings")
         out_path = os.path.join(os.getcwd(), "_tmp_note_active.ai-translated.strings")
