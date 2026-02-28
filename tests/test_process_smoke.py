@@ -212,6 +212,77 @@ class ProcessSmokeTests(unittest.TestCase):
         output = process.build_output_path(path, process.FileKind.PO)
         self.assertEqual(output, r"C:\po.files\sample.ai-translated.po")
 
+    def test_detect_file_kind_supports_strings(self):
+        self.assertEqual(
+            process.detect_file_kind(r"C:\tmp\sample.strings"),
+            process.FileKind.STRINGS,
+        )
+
+    def test_load_strings_treats_commented_entries_as_untranslated(self):
+        in_path = os.path.join(os.getcwd(), "_tmp_sample.strings")
+        out_path = os.path.join(os.getcwd(), "_tmp_sample.ai-translated.strings")
+        try:
+            content = (
+                '/* "app|Name" = "Document Viewer"; */\n'
+                '"app|Comment" = "Already translated";\n'
+            )
+            with open(in_path, "w", encoding="utf-16", newline="") as f:
+                f.write(content)
+
+            entries, save_callback, out_path = process.load_strings(in_path)
+            self.assertEqual(len(entries), 2)
+            self.assertFalse(entries[0].translated())
+            self.assertTrue(entries[1].translated())
+            self.assertEqual(entries[0].msgid, "Document Viewer")
+            self.assertEqual(entries[0].prompt_context, "app|Name")
+
+            applied = process.apply_translation_to_entry(
+                entries[0],
+                process.TranslationResult(text="Hujat korsetkishi"),
+            )
+            self.assertTrue(applied)
+            save_callback()
+
+            with open(out_path, "rb") as f:
+                head = f.read(2)
+            self.assertEqual(head, b"\xff\xfe")
+
+            with open(out_path, "r", encoding="utf-16") as f:
+                out_text = f.read()
+            self.assertIn('"app|Name" = "Hujat korsetkishi";', out_text)
+            self.assertIn('"app|Comment" = "Already translated";', out_text)
+        finally:
+            for path in (in_path, out_path):
+                if os.path.exists(path):
+                    os.remove(path)
+
+    def test_load_strings_decodes_and_reencodes_escaped_text(self):
+        in_path = os.path.join(os.getcwd(), "_tmp_escaped.strings")
+        out_path = os.path.join(os.getcwd(), "_tmp_escaped.ai-translated.strings")
+        try:
+            content = '/* "quote\\\\\\"key" = "Line\\\\nTwo"; */\n'
+            with open(in_path, "w", encoding="utf-8", newline="") as f:
+                f.write(content)
+
+            entries, save_callback, out_path = process.load_strings(in_path)
+            self.assertEqual(len(entries), 1)
+            self.assertEqual(entries[0].prompt_context, 'quote\\"key')
+            self.assertEqual(entries[0].msgid, "Line\\nTwo")
+
+            process.apply_translation_to_entry(
+                entries[0],
+                process.TranslationResult(text='A "quoted" line'),
+            )
+            save_callback()
+
+            with open(out_path, "r", encoding="utf-8") as f:
+                out_text = f.read()
+            self.assertIn('"quote\\\\\\"key" = "A \\"quoted\\" line";', out_text)
+        finally:
+            for path in (in_path, out_path):
+                if os.path.exists(path):
+                    os.remove(path)
+
     def test_build_language_code_candidates_include_locale_and_base(self):
         candidates = process.build_language_code_candidates("fr_CA")
         self.assertIn("fr_CA", candidates)

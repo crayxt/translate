@@ -1,5 +1,5 @@
 # Translate script
-Script for translating PO/TS/RESX localization files using Google Gemini API.
+Script for translating PO/TS/RESX/STRINGS localization files using Google Gemini API.
 
 # Setup
 Install dependencies:
@@ -20,9 +20,10 @@ set GOOGLE_API_KEY=your_google_api_key
 python process.py your_file.po
 python process.py your_file.ts
 python process.py your_file.resx
+python process.py your_file.strings
 ```
 
-Output files are written as `*.ai-translated.po`, `*.ai-translated.ts`, or `*.ai-translated.resx`.
+Output files are written as `*.ai-translated.po`, `*.ai-translated.ts`, `*.ai-translated.resx`, or `*.ai-translated.strings`.
 
 Set target language (default is `kk`):
 
@@ -95,6 +96,15 @@ python extract_terms.py your_file.po --vocab data/kk/vocab.txt --out missing-ter
 ```
 
 Output is saved as `<input>.missing-terms.json` unless `--out` is specified.
+
+## `.strings` behavior
+
+For `.strings` files, this project uses the following convention:
+
+- commented key/value entries (`/* "key" = "value"; */`) are treated as untranslated source entries
+- uncommented entries (`"key" = "value";`) are treated as already translated
+
+Translated output for `.strings` preserves file encoding (including UTF BOM when present) and writes translated entries as uncommented lines.
 
 # Notes
 

@@ -12,10 +12,17 @@ class _DummyResponse:
 
 
 class _DummyEntry:
-    def __init__(self, msgid: str, msgid_plural: str | None = None, obsolete: bool = False):
+    def __init__(
+        self,
+        msgid: str,
+        msgid_plural: str | None = None,
+        obsolete: bool = False,
+        include_in_term_extraction: bool = True,
+    ):
         self.msgid = msgid
         self.msgid_plural = msgid_plural
         self.obsolete = obsolete
+        self.include_in_term_extraction = include_in_term_extraction
 
 
 class ExtractTermsSmokeTests(unittest.TestCase):
@@ -34,6 +41,14 @@ class ExtractTermsSmokeTests(unittest.TestCase):
         ]
         messages = extract_terms.collect_source_messages(entries)
         self.assertEqual(messages, ["Open file", "Files", "Files plural"])
+
+    def test_collect_source_messages_skips_entries_marked_for_exclusion(self):
+        entries = [
+            _DummyEntry("Include me"),
+            _DummyEntry("Skip me", include_in_term_extraction=False),
+        ]
+        messages = extract_terms.collect_source_messages(entries)
+        self.assertEqual(messages, ["Include me"])
 
     def test_parse_term_response_from_parsed_payload(self):
         payload = {

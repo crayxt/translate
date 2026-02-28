@@ -18,6 +18,7 @@ from process import (
     generate_with_retry,
     load_po,
     load_resx,
+    load_strings,
     load_ts,
     read_optional_text_file,
     resolve_resource_path,
@@ -82,6 +83,8 @@ def collect_source_messages(entries: List[Any]) -> List[str]:
 
     for entry in entries:
         if getattr(entry, "obsolete", False):
+            continue
+        if not getattr(entry, "include_in_term_extraction", True):
             continue
         add_message(getattr(entry, "msgid", "") or "")
         plural_text = getattr(entry, "msgid_plural", None)
@@ -212,6 +215,9 @@ def load_entries_for_file(file_path: str, file_kind: FileKind) -> List[Any]:
     if file_kind == FileKind.RESX:
         entries, _, _ = load_resx(file_path)
         return entries
+    if file_kind == FileKind.STRINGS:
+        entries, _, _ = load_strings(file_path)
+        return entries
     entries, _, _ = load_po(file_path)
     return entries
 
@@ -238,9 +244,9 @@ def normalize_limits(
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Extract candidate missing vocabulary terms from PO/TS/RESX files using Gemini"
+        description="Extract candidate missing vocabulary terms from PO/TS/RESX/STRINGS files using Gemini"
     )
-    parser.add_argument("file", help="Input .po, .ts, or .resx file")
+    parser.add_argument("file", help="Input .po, .ts, .resx, or .strings file")
     parser.add_argument("--source-lang", default="en", help="Default: en")
     parser.add_argument("--target-lang", default="kk", help="Default: kk")
     parser.add_argument("--model", default="gemini-3-flash-preview")

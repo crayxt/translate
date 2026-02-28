@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 
 import argparse
+import ast
 import asyncio
 import json
+import re
 import os
 import sys
 import math
@@ -245,10 +247,112 @@ class ResxEntryAdapter:
         return self.comment_elem.text.strip()
 
 
+STRINGS_LINE_RE = re.compile(
+    r'^(?P<indent>\s*)"(?P<key>(?:\\.|[^"\\])*)"\s*=\s*"(?P<value>(?:\\.|[^"\\])*)"\s*;\s*$'
+)
+STRINGS_COMMENTED_LINE_RE = re.compile(
+    r'^(?P<indent>\s*)/\*\s*"(?P<key>(?:\\.|[^"\\])*)"\s*=\s*"(?P<value>(?:\\.|[^"\\])*)"\s*;\s*\*/\s*$'
+)
+
+
+def _decode_strings_literal(raw: str) -> str:
+    try:
+        return ast.literal_eval(f'"{raw}"')
+    except (SyntaxError, ValueError):
+        return raw
+
+
+def _encode_strings_literal(value: str) -> str:
+    return (
+        value.replace("\\", "\\\\")
+        .replace('"', '\\"')
+        .replace("\n", "\\n")
+        .replace("\r", "\\r")
+        .replace("\t", "\\t")
+    )
+
+
+def _detect_text_encoding(file_path: str) -> str:
+    with open(file_path, "rb") as f:
+        head = f.read(4)
+
+    if head.startswith(b"\xff\xfe") or head.startswith(b"\xfe\xff"):
+        return "utf-16"
+    if head.startswith(b"\xef\xbb\xbf"):
+        return "utf-8-sig"
+    return "utf-8"
+
+
+class StringsEntryAdapter:
+    """Adapts a .strings key/value line to look like a polib entry."""
+
+    def __init__(
+        self,
+        lines: List[str],
+        line_index: int,
+        line_ending: str,
+        indent: str,
+        key: str,
+        source_text: str,
+        commented: bool,
+    ):
+        self._lines = lines
+        self._line_index = line_index
+        self._line_ending = line_ending
+        self._indent = indent
+        self._key = key
+        self._source_text = source_text
+        self._commented = commented
+        self._flags: List[str] = []
+        self.include_in_term_extraction = commented
+
+    @property
+    def msgid(self) -> str:
+        return self._source_text
+
+    @property
+    def msgstr(self) -> str:
+        if self._commented:
+            return ""
+        return self._source_text
+
+    @msgstr.setter
+    def msgstr(self, value: str):
+        self._source_text = value
+        encoded_key = _encode_strings_literal(self._key)
+        encoded_value = _encode_strings_literal(value)
+        self._lines[self._line_index] = (
+            f'{self._indent}"{encoded_key}" = "{encoded_value}";{self._line_ending}'
+        )
+        self._commented = False
+        self.include_in_term_extraction = False
+
+    @property
+    def flags(self):
+        return self._flags
+
+    @property
+    def obsolete(self) -> bool:
+        return False
+
+    def translated(self) -> bool:
+        # Project convention: commented entries are untranslated source items.
+        return not self._commented
+
+    @property
+    def prompt_context(self) -> str:
+        return self._key
+
+    @property
+    def prompt_note(self) -> str:
+        return ""
+
+
 class FileKind(str, Enum):
     PO = "po"
     TS = "ts"
     RESX = "resx"
+    STRINGS = "strings"
 
 
 DEFAULT_BATCH_SIZE = 1000
@@ -267,7 +371,9 @@ def detect_file_kind(file_path: str) -> FileKind:
         return FileKind.TS
     if lower_path.endswith(".resx"):
         return FileKind.RESX
-    raise ValueError("Unsupported file type. Use .po, .ts, or .resx")
+    if lower_path.endswith(".strings"):
+        return FileKind.STRINGS
+    raise ValueError("Unsupported file type. Use .po, .ts, .resx, or .strings")
 
 
 # ===========================
@@ -696,6 +802,50 @@ def load_po(file_path: str) -> Tuple[List[Any], Callable[[], None], str]:
     return entries, lambda: po.save(output_path), output_path
 
 
+def load_strings(file_path: str) -> Tuple[List[Any], Callable[[], None], str]:
+    print(f"Processing STRINGS file: {file_path}")
+    encoding = _detect_text_encoding(file_path)
+    with open(file_path, "r", encoding=encoding) as f:
+        content = f.read()
+
+    lines = content.splitlines(keepends=True)
+    entries: List[Any] = []
+
+    for idx, line in enumerate(lines):
+        stripped = line.rstrip("\r\n")
+        line_ending = line[len(stripped):]
+
+        match = STRINGS_COMMENTED_LINE_RE.match(stripped)
+        commented = True
+        if not match:
+            match = STRINGS_LINE_RE.match(stripped)
+            commented = False
+        if not match:
+            continue
+
+        key = _decode_strings_literal(match.group("key"))
+        value = _decode_strings_literal(match.group("value"))
+        entries.append(
+            StringsEntryAdapter(
+                lines=lines,
+                line_index=idx,
+                line_ending=line_ending,
+                indent=match.group("indent"),
+                key=key,
+                source_text=value,
+                commented=commented,
+            )
+        )
+
+    output_path = build_output_path(file_path, FileKind.STRINGS)
+
+    def save_strings() -> None:
+        with open(output_path, "w", encoding=encoding, newline="") as f:
+            f.write("".join(lines))
+
+    return entries, save_strings, output_path
+
+
 def build_output_path(file_path: str, file_kind: FileKind) -> str:
     root, _ = os.path.splitext(file_path)
     return f"{root}.ai-translated.{file_kind.value}"
@@ -832,9 +982,9 @@ def resolve_runtime_limits(
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Pre-process and translate PO, TS, or RESX files using Google Gemini"
+        description="Pre-process and translate PO, TS, RESX, or STRINGS files using Google Gemini"
     )
-    parser.add_argument("file", help="Input .po, .ts, or .resx file")
+    parser.add_argument("file", help="Input .po, .ts, .resx, or .strings file")
     parser.add_argument("--source-lang", default="en", help="Default: en")
     parser.add_argument("--target-lang", default="kk", help="Default: kk")
     parser.add_argument("--model", default="gemini-3-flash-preview")
@@ -889,6 +1039,8 @@ def main() -> None:
         entries, save_callback, output_path = load_ts(file_path)
     elif file_kind == FileKind.RESX:
         entries, save_callback, output_path = load_resx(file_path)
+    elif file_kind == FileKind.STRINGS:
+        entries, save_callback, output_path = load_strings(file_path)
     else:
         entries, save_callback, output_path = load_po(file_path)
 
