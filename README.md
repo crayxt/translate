@@ -1,5 +1,5 @@
 # Translate script
-Script for translating PO/TS/RESX/STRINGS localization files using Google Gemini API.
+Script for translating PO/TS/RESX/STRINGS/TXT localization files using Google Gemini API.
 
 # Setup
 Install dependencies:
@@ -21,9 +21,10 @@ python process.py your_file.po
 python process.py your_file.ts
 python process.py your_file.resx
 python process.py your_file.strings
+python process.py your_file.txt
 ```
 
-Output files are written as `*.ai-translated.po`, `*.ai-translated.ts`, `*.ai-translated.resx`, or `*.ai-translated.strings`.
+Output files are written as `*.ai-translated.po`, `*.ai-translated.ts`, `*.ai-translated.resx`, `*.ai-translated.strings`, or `*.ai-translated.txt`.
 
 Set target language (default is `kk`):
 
@@ -106,6 +107,14 @@ For `.strings` files, this project uses the following convention:
 - leading `.strings` comments are passed to the model as contextual translator notes
 
 Translated output for `.strings` preserves file encoding (including UTF BOM when present) and writes translated entries as uncommented lines.
+
+## `.txt` behavior
+
+For `.txt` files:
+
+- each line is treated as one independent message
+- blank/whitespace-only lines are preserved and skipped
+- translated output preserves original line order and line breaks
 
 ## Internal Unified Entry Model
 

@@ -218,6 +218,12 @@ class ProcessSmokeTests(unittest.TestCase):
             process.FileKind.STRINGS,
         )
 
+    def test_detect_file_kind_supports_txt(self):
+        self.assertEqual(
+            process.detect_file_kind(r"C:\tmp\sample.txt"),
+            process.FileKind.TXT,
+        )
+
     def test_unified_entry_model_exposes_status_and_string_type(self):
         in_path = os.path.join(os.getcwd(), "_tmp_unified.strings")
         out_path = os.path.join(os.getcwd(), "_tmp_unified.ai-translated.strings")
@@ -293,6 +299,8 @@ class ProcessSmokeTests(unittest.TestCase):
         ts_out = os.path.join(os.getcwd(), "_tmp_unified.ai-translated.ts")
         resx_path = os.path.join(os.getcwd(), "_tmp_unified.resx")
         resx_out = os.path.join(os.getcwd(), "_tmp_unified.ai-translated.resx")
+        txt_path = os.path.join(os.getcwd(), "_tmp_unified.txt")
+        txt_out = os.path.join(os.getcwd(), "_tmp_unified.ai-translated.txt")
         try:
             po_content = (
                 'msgid ""\n'
@@ -329,27 +337,74 @@ class ProcessSmokeTests(unittest.TestCase):
             with open(resx_path, "w", encoding="utf-8", newline="") as f:
                 f.write(resx_content)
 
+            txt_content = "First line\n\nSecond line\n"
+            with open(txt_path, "w", encoding="utf-8", newline="") as f:
+                f.write(txt_content)
+
             po_entries, _, _ = process.load_po(po_path)
             ts_entries, _, _ = process.load_ts(ts_path)
             resx_entries, _, _ = process.load_resx(resx_path)
+            txt_entries, _, _ = process.load_txt(txt_path)
 
             self.assertTrue(po_entries)
             self.assertTrue(ts_entries)
             self.assertTrue(resx_entries)
+            self.assertTrue(txt_entries)
 
             self.assertTrue(all(isinstance(e, process.UnifiedEntry) for e in po_entries))
             self.assertTrue(all(isinstance(e, process.UnifiedEntry) for e in ts_entries))
             self.assertTrue(all(isinstance(e, process.UnifiedEntry) for e in resx_entries))
+            self.assertTrue(all(isinstance(e, process.UnifiedEntry) for e in txt_entries))
 
             self.assertEqual(po_entries[0].string_type, "po")
             self.assertEqual(ts_entries[0].string_type, "ts")
             self.assertEqual(resx_entries[0].string_type, "resx")
+            self.assertEqual(txt_entries[0].string_type, "txt")
 
             self.assertEqual(ts_entries[0].status, process.EntryStatus.FUZZY)
             self.assertEqual(resx_entries[0].status, process.EntryStatus.UNTRANSLATED)
             self.assertEqual(resx_entries[1].status, process.EntryStatus.SKIPPED)
+            self.assertEqual(txt_entries[0].status, process.EntryStatus.UNTRANSLATED)
+            self.assertEqual(txt_entries[1].status, process.EntryStatus.SKIPPED)
         finally:
-            for path in (po_path, po_out, ts_path, ts_out, resx_path, resx_out):
+            for path in (po_path, po_out, ts_path, ts_out, resx_path, resx_out, txt_path, txt_out):
+                if os.path.exists(path):
+                    os.remove(path)
+
+    def test_load_txt_translates_per_line_and_preserves_blank_lines(self):
+        in_path = os.path.join(os.getcwd(), "_tmp_lines.txt")
+        out_path = os.path.join(os.getcwd(), "_tmp_lines.ai-translated.txt")
+        try:
+            content = "Open file\n\nSave file\n"
+            with open(in_path, "w", encoding="utf-8", newline="") as f:
+                f.write(content)
+
+            entries, save_callback, out_path = process.load_txt(in_path)
+            self.assertEqual(len(entries), 3)
+            self.assertEqual(entries[0].msgid, "Open file")
+            self.assertEqual(entries[0].prompt_context, "line:1")
+            self.assertEqual(entries[1].msgid, "")
+            self.assertEqual(entries[1].status, process.EntryStatus.SKIPPED)
+            self.assertEqual(entries[2].msgid, "Save file")
+            self.assertEqual(entries[2].prompt_context, "line:3")
+
+            applied_0 = process.apply_translation_to_entry(
+                entries[0],
+                process.TranslationResult(text="Ashu fail"),
+            )
+            applied_2 = process.apply_translation_to_entry(
+                entries[2],
+                process.TranslationResult(text="Saqtau fail"),
+            )
+            self.assertTrue(applied_0)
+            self.assertTrue(applied_2)
+            save_callback()
+
+            with open(out_path, "r", encoding="utf-8") as f:
+                out_text = f.read()
+            self.assertEqual(out_text, "Ashu fail\n\nSaqtau fail\n")
+        finally:
+            for path in (in_path, out_path):
                 if os.path.exists(path):
                     os.remove(path)
 

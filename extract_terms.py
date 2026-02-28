@@ -19,6 +19,7 @@ from process import (
     load_po,
     load_resx,
     load_strings,
+    load_txt,
     load_ts,
     read_optional_text_file,
     resolve_resource_path,
@@ -218,6 +219,9 @@ def load_entries_for_file(file_path: str, file_kind: FileKind) -> List[Any]:
     if file_kind == FileKind.STRINGS:
         entries, _, _ = load_strings(file_path)
         return entries
+    if file_kind == FileKind.TXT:
+        entries, _, _ = load_txt(file_path)
+        return entries
     entries, _, _ = load_po(file_path)
     return entries
 
@@ -244,9 +248,9 @@ def normalize_limits(
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Extract candidate missing vocabulary terms from PO/TS/RESX/STRINGS files using Gemini"
+        description="Extract candidate missing vocabulary terms from PO/TS/RESX/STRINGS/TXT files using Gemini"
     )
-    parser.add_argument("file", help="Input .po, .ts, .resx, or .strings file")
+    parser.add_argument("file", help="Input .po, .ts, .resx, .strings, or .txt file")
     parser.add_argument("--source-lang", default="en", help="Default: en")
     parser.add_argument("--target-lang", default="kk", help="Default: kk")
     parser.add_argument("--model", default="gemini-3-flash-preview")

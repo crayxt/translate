@@ -1,8 +1,10 @@
 import unittest
+import os
 
 import polib
 
 import extract_terms
+import process
 
 
 class _DummyResponse:
@@ -98,6 +100,21 @@ class ExtractTermsSmokeTests(unittest.TestCase):
         entry = polib.POEntry(msgid="Save", msgid_plural="Saves")
         messages = extract_terms.collect_source_messages([entry])
         self.assertEqual(messages, ["Save", "Saves"])
+
+    def test_load_entries_for_txt_file(self):
+        in_path = os.path.join(os.getcwd(), "_tmp_terms.txt")
+        out_path = os.path.join(os.getcwd(), "_tmp_terms.ai-translated.txt")
+        try:
+            with open(in_path, "w", encoding="utf-8", newline="") as f:
+                f.write("Open file\n\nSave file\n")
+
+            entries = extract_terms.load_entries_for_file(in_path, process.FileKind.TXT)
+            messages = extract_terms.collect_source_messages(entries)
+            self.assertEqual(messages, ["Open file", "Save file"])
+        finally:
+            for path in (in_path, out_path):
+                if os.path.exists(path):
+                    os.remove(path)
 
 
 if __name__ == "__main__":
