@@ -103,8 +103,20 @@ For `.strings` files, this project uses the following convention:
 
 - commented key/value entries (`/* "key" = "value"; */`) are treated as untranslated source entries
 - uncommented entries (`"key" = "value";`) are treated as already translated
+- leading `.strings` comments are passed to the model as contextual translator notes
 
 Translated output for `.strings` preserves file encoding (including UTF BOM when present) and writes translated entries as uncommented lines.
+
+## Internal Unified Entry Model
+
+The translation pipeline now normalizes all formats (`.po`, `.ts`, `.resx`, `.strings`) into a shared internal entry model with common fields (message, context, note, status, flags, plural data, and string type), then syncs updates back to each native file format on save.
+
+Status values are normalized as:
+
+- `untranslated`: no translation content yet
+- `fuzzy`: review-required translations (for example PO `fuzzy` or TS `unfinished`)
+- `translated`: translated and not fuzzy
+- `skipped`: non-localizable entries (for example typed/binary `.resx` resources)
 
 # Notes
 

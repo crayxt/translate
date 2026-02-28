@@ -218,11 +218,148 @@ class ProcessSmokeTests(unittest.TestCase):
             process.FileKind.STRINGS,
         )
 
+    def test_unified_entry_model_exposes_status_and_string_type(self):
+        in_path = os.path.join(os.getcwd(), "_tmp_unified.strings")
+        out_path = os.path.join(os.getcwd(), "_tmp_unified.ai-translated.strings")
+        try:
+            content = (
+                '/* "app|Name" = "Document Viewer"; */\n'
+                '"app|Comment" = "Already translated";\n'
+            )
+            with open(in_path, "w", encoding="utf-8", newline="") as f:
+                f.write(content)
+
+            entries, _, _ = process.load_strings(in_path)
+            self.assertEqual(len(entries), 2)
+            self.assertIsInstance(entries[0], process.UnifiedEntry)
+            self.assertEqual(entries[0].string_type, "strings")
+            self.assertEqual(entries[0].status, process.EntryStatus.UNTRANSLATED)
+            self.assertEqual(entries[1].status, process.EntryStatus.TRANSLATED)
+
+            applied = process.apply_translation_to_entry(
+                entries[0],
+                process.TranslationResult(text="Hujat korsetkishi"),
+            )
+            self.assertTrue(applied)
+            self.assertEqual(entries[0].status, process.EntryStatus.TRANSLATED)
+        finally:
+            for path in (in_path, out_path):
+                if os.path.exists(path):
+                    os.remove(path)
+
+    def test_unified_entry_status_is_fuzzy_for_po_fuzzy_flag(self):
+        entry = polib.POEntry(msgid="Save", msgstr="Saqtau")
+        entry.flags = ["fuzzy"]
+        unified = process._build_unified_entry(
+            entry=entry,
+            file_kind=process.FileKind.PO,
+            commit_callback=lambda _: None,
+        )
+        self.assertEqual(unified.status, process.EntryStatus.FUZZY)
+
+    def test_unified_entry_status_is_fuzzy_for_ts_unfinished(self):
+        message = ET.fromstring(
+            "<message>"
+            "<source>Open</source>"
+            "<translation type='unfinished'>Ashu</translation>"
+            "</message>"
+        )
+        ts_entry = process.TSEntryAdapter(message, context_name="Main")
+        unified = process._build_unified_entry(
+            entry=ts_entry,
+            file_kind=process.FileKind.TS,
+            commit_callback=lambda _: None,
+        )
+        self.assertEqual(unified.status, process.EntryStatus.FUZZY)
+
+    def test_apply_translation_marks_fuzzy_entry_as_translated_status(self):
+        entry = process.UnifiedEntry(
+            file_kind=process.FileKind.PO,
+            msgid="Open",
+            msgstr="",
+            status=process.EntryStatus.FUZZY,
+        )
+        applied = process.apply_translation_to_entry(
+            entry,
+            process.TranslationResult(text="Ashu"),
+        )
+        self.assertTrue(applied)
+        self.assertEqual(entry.status, process.EntryStatus.TRANSLATED)
+
+    def test_loaders_return_unified_entries_for_po_ts_resx(self):
+        po_path = os.path.join(os.getcwd(), "_tmp_unified.po")
+        po_out = os.path.join(os.getcwd(), "_tmp_unified.ai-translated.po")
+        ts_path = os.path.join(os.getcwd(), "_tmp_unified.ts")
+        ts_out = os.path.join(os.getcwd(), "_tmp_unified.ai-translated.ts")
+        resx_path = os.path.join(os.getcwd(), "_tmp_unified.resx")
+        resx_out = os.path.join(os.getcwd(), "_tmp_unified.ai-translated.resx")
+        try:
+            po_content = (
+                'msgid ""\n'
+                'msgstr ""\n'
+                '"Language: en\\n"\n\n'
+                'msgid "Open file"\n'
+                'msgstr ""\n'
+            )
+            with open(po_path, "w", encoding="utf-8", newline="") as f:
+                f.write(po_content)
+
+            ts_content = (
+                '<?xml version="1.0" encoding="utf-8"?>\n'
+                "<TS version=\"2.1\" language=\"kk\">\n"
+                "  <context>\n"
+                "    <name>Main</name>\n"
+                "    <message>\n"
+                "      <source>Open</source>\n"
+                "      <translation type=\"unfinished\"></translation>\n"
+                "    </message>\n"
+                "  </context>\n"
+                "</TS>\n"
+            )
+            with open(ts_path, "w", encoding="utf-8", newline="") as f:
+                f.write(ts_content)
+
+            resx_content = (
+                '<?xml version="1.0" encoding="utf-8"?>\n'
+                "<root>\n"
+                '  <data name="Label.Text"><value>Open</value></data>\n'
+                '  <data name="Icon" type="System.Drawing.Bitmap"><value>icon.bmp</value></data>\n'
+                "</root>\n"
+            )
+            with open(resx_path, "w", encoding="utf-8", newline="") as f:
+                f.write(resx_content)
+
+            po_entries, _, _ = process.load_po(po_path)
+            ts_entries, _, _ = process.load_ts(ts_path)
+            resx_entries, _, _ = process.load_resx(resx_path)
+
+            self.assertTrue(po_entries)
+            self.assertTrue(ts_entries)
+            self.assertTrue(resx_entries)
+
+            self.assertTrue(all(isinstance(e, process.UnifiedEntry) for e in po_entries))
+            self.assertTrue(all(isinstance(e, process.UnifiedEntry) for e in ts_entries))
+            self.assertTrue(all(isinstance(e, process.UnifiedEntry) for e in resx_entries))
+
+            self.assertEqual(po_entries[0].string_type, "po")
+            self.assertEqual(ts_entries[0].string_type, "ts")
+            self.assertEqual(resx_entries[0].string_type, "resx")
+
+            self.assertEqual(ts_entries[0].status, process.EntryStatus.FUZZY)
+            self.assertEqual(resx_entries[0].status, process.EntryStatus.UNTRANSLATED)
+            self.assertEqual(resx_entries[1].status, process.EntryStatus.SKIPPED)
+        finally:
+            for path in (po_path, po_out, ts_path, ts_out, resx_path, resx_out):
+                if os.path.exists(path):
+                    os.remove(path)
+
     def test_load_strings_treats_commented_entries_as_untranslated(self):
         in_path = os.path.join(os.getcwd(), "_tmp_sample.strings")
         out_path = os.path.join(os.getcwd(), "_tmp_sample.ai-translated.strings")
         try:
             content = (
+                "/* File or program name: sample-app\n"
+                "   Entry type: Name */\n"
                 '/* "app|Name" = "Document Viewer"; */\n'
                 '"app|Comment" = "Already translated";\n'
             )
@@ -235,6 +372,8 @@ class ProcessSmokeTests(unittest.TestCase):
             self.assertTrue(entries[1].translated())
             self.assertEqual(entries[0].msgid, "Document Viewer")
             self.assertEqual(entries[0].prompt_context, "app|Name")
+            self.assertIn("File or program name: sample-app", entries[0].prompt_note)
+            self.assertIn("Entry type: Name", entries[0].prompt_note)
 
             applied = process.apply_translation_to_entry(
                 entries[0],
@@ -278,6 +417,28 @@ class ProcessSmokeTests(unittest.TestCase):
             with open(out_path, "r", encoding="utf-8") as f:
                 out_text = f.read()
             self.assertIn('"quote\\\\\\"key" = "A \\"quoted\\" line";', out_text)
+        finally:
+            for path in (in_path, out_path):
+                if os.path.exists(path):
+                    os.remove(path)
+
+    def test_load_strings_attaches_leading_comments_to_active_entry(self):
+        in_path = os.path.join(os.getcwd(), "_tmp_note_active.strings")
+        out_path = os.path.join(os.getcwd(), "_tmp_note_active.ai-translated.strings")
+        try:
+            content = (
+                "/* Section within .desktop file: Desktop Entry\n"
+                "   Entry type: Comment */\n"
+                '"app|Comment" = "Already translated";\n'
+            )
+            with open(in_path, "w", encoding="utf-8", newline="") as f:
+                f.write(content)
+
+            entries, _, _ = process.load_strings(in_path)
+            self.assertEqual(len(entries), 1)
+            self.assertTrue(entries[0].translated())
+            self.assertIn("Section within .desktop file: Desktop Entry", entries[0].prompt_note)
+            self.assertIn("Entry type: Comment", entries[0].prompt_note)
         finally:
             for path in (in_path, out_path):
                 if os.path.exists(path):

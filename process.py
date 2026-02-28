@@ -283,6 +283,17 @@ def _detect_text_encoding(file_path: str) -> str:
     return "utf-8"
 
 
+def _normalize_strings_comment_lines(lines: List[str]) -> str:
+    cleaned: List[str] = []
+    for line in lines:
+        text = line.strip()
+        if text.startswith("*"):
+            text = text[1:].lstrip()
+        if text:
+            cleaned.append(text)
+    return " ".join(cleaned).strip()
+
+
 class StringsEntryAdapter:
     """Adapts a .strings key/value line to look like a polib entry."""
 
@@ -295,6 +306,7 @@ class StringsEntryAdapter:
         key: str,
         source_text: str,
         commented: bool,
+        prompt_note: str = "",
     ):
         self._lines = lines
         self._line_index = line_index
@@ -303,6 +315,7 @@ class StringsEntryAdapter:
         self._key = key
         self._source_text = source_text
         self._commented = commented
+        self._prompt_note = prompt_note
         self._flags: List[str] = []
         self.include_in_term_extraction = commented
 
@@ -345,7 +358,7 @@ class StringsEntryAdapter:
 
     @property
     def prompt_note(self) -> str:
-        return ""
+        return self._prompt_note
 
 
 class FileKind(str, Enum):
@@ -353,6 +366,58 @@ class FileKind(str, Enum):
     TS = "ts"
     RESX = "resx"
     STRINGS = "strings"
+
+
+class EntryStatus(str, Enum):
+    UNTRANSLATED = "untranslated"
+    FUZZY = "fuzzy"
+    TRANSLATED = "translated"
+    SKIPPED = "skipped"
+
+
+@dataclass
+class UnifiedEntry:
+    """Format-agnostic localization entry used by translation/extraction pipeline."""
+
+    file_kind: FileKind
+    msgid: str
+    msgid_plural: str = ""
+    msgstr: str = ""
+    msgstr_plural: Dict[Any, str] = field(default_factory=dict)
+    msgctxt: str = ""
+    prompt_note_text: str = ""
+    occurrences: List[Tuple[str, str]] = field(default_factory=list)
+    flags: List[str] = field(default_factory=list)
+    obsolete: bool = False
+    include_in_term_extraction: bool = True
+    status: EntryStatus = EntryStatus.UNTRANSLATED
+    _commit_callback: Callable[["UnifiedEntry"], None] | None = field(
+        default=None,
+        repr=False,
+        compare=False,
+    )
+
+    @property
+    def prompt_context(self) -> str:
+        return self.msgctxt
+
+    @property
+    def prompt_note(self) -> str:
+        return self.prompt_note_text
+
+    @property
+    def string_type(self) -> str:
+        return self.file_kind.value
+
+    def translated(self) -> bool:
+        return self.status in (EntryStatus.FUZZY, EntryStatus.TRANSLATED, EntryStatus.SKIPPED)
+
+    def mark_translated(self) -> None:
+        self.status = EntryStatus.TRANSLATED
+
+    def commit(self) -> None:
+        if self._commit_callback is not None:
+            self._commit_callback(self)
 
 
 DEFAULT_BATCH_SIZE = 1000
@@ -618,11 +683,15 @@ def apply_translation_to_entry(entry: Any, result: TranslationResult) -> bool:
         if usable_forms:
             for idx, key in enumerate(plural_keys):
                 plural_map[key] = usable_forms[idx] if idx < len(usable_forms) else usable_forms[-1]
+            if hasattr(entry, "mark_translated"):
+                entry.mark_translated()
             return True
 
         if _is_non_empty_text(result.text):
             for key in plural_keys:
                 plural_map[key] = result.text
+            if hasattr(entry, "mark_translated"):
+                entry.mark_translated()
             return True
 
         return False
@@ -631,6 +700,8 @@ def apply_translation_to_entry(entry: Any, result: TranslationResult) -> bool:
         return False
 
     entry.msgstr = result.text
+    if hasattr(entry, "mark_translated"):
+        entry.mark_translated()
     return True
 
 
@@ -704,6 +775,109 @@ def build_prompt_message_payload(entry: Any) -> Dict[str, Any]:
 
 
 # ===========================
+# Unified Entry Adapters
+# ===========================
+
+def _entry_status_from_legacy(entry: Any) -> EntryStatus:
+    if isinstance(entry, ResxEntryAdapter) and not getattr(entry, "_translate", True):
+        return EntryStatus.SKIPPED
+    flags = getattr(entry, "flags", None)
+    if isinstance(flags, list) and "fuzzy" in flags:
+        return EntryStatus.FUZZY
+    return EntryStatus.TRANSLATED if entry.translated() else EntryStatus.UNTRANSLATED
+
+
+def _copy_legacy_plural_map(entry: Any) -> Dict[Any, str]:
+    plural_map = getattr(entry, "msgstr_plural", None)
+    if not isinstance(plural_map, dict):
+        return {}
+    copied: Dict[Any, str] = {}
+    for key, value in plural_map.items():
+        copied[key] = value if isinstance(value, str) else str(value)
+    return copied
+
+
+def _copy_legacy_occurrences(entry: Any) -> List[Tuple[str, str]]:
+    occurrences = getattr(entry, "occurrences", None)
+    if not isinstance(occurrences, list):
+        return []
+    copied: List[Tuple[str, str]] = []
+    for item in occurrences:
+        if isinstance(item, tuple) and len(item) >= 1:
+            file_part = str(item[0]) if item[0] is not None else ""
+            line_part = ""
+            if len(item) > 1 and item[1] is not None:
+                line_part = str(item[1])
+            copied.append((file_part, line_part))
+    return copied
+
+
+def _build_unified_entry(
+    entry: Any,
+    file_kind: FileKind,
+    commit_callback: Callable[[UnifiedEntry], None],
+) -> UnifiedEntry:
+    raw_msgid = getattr(entry, "msgid", "") or ""
+    raw_msgid_plural = getattr(entry, "msgid_plural", "") or ""
+    raw_msgstr = getattr(entry, "msgstr", "") or ""
+    context = (getattr(entry, "msgctxt", None) or getattr(entry, "prompt_context", None) or "").strip()
+    note = (getattr(entry, "prompt_note", None) or "").strip()
+    raw_flags = getattr(entry, "flags", []) or []
+    flags = [str(flag) for flag in raw_flags]
+    obsolete = bool(getattr(entry, "obsolete", False))
+    include_terms = bool(getattr(entry, "include_in_term_extraction", True))
+
+    return UnifiedEntry(
+        file_kind=file_kind,
+        msgid=str(raw_msgid),
+        msgid_plural=str(raw_msgid_plural),
+        msgstr=str(raw_msgstr),
+        msgstr_plural=_copy_legacy_plural_map(entry),
+        msgctxt=context,
+        prompt_note_text=note,
+        occurrences=_copy_legacy_occurrences(entry),
+        flags=flags,
+        obsolete=obsolete,
+        include_in_term_extraction=include_terms,
+        status=_entry_status_from_legacy(entry),
+        _commit_callback=commit_callback,
+    )
+
+
+def _translation_result_from_unified(entry: UnifiedEntry) -> TranslationResult:
+    plural_texts: List[str] = []
+    if entry.msgstr_plural:
+        for key in sorted(entry.msgstr_plural.keys(), key=_plural_key_sort_key):
+            plural_texts.append(entry.msgstr_plural[key])
+    return TranslationResult(text=entry.msgstr, plural_texts=plural_texts)
+
+
+def _commit_unified_to_legacy(entry: UnifiedEntry, legacy_entry: Any) -> None:
+    result = _translation_result_from_unified(entry)
+    if translation_has_content(result):
+        apply_translation_to_entry(legacy_entry, result)
+
+    legacy_flags = getattr(legacy_entry, "flags", None)
+    if isinstance(legacy_flags, list):
+        for flag in entry.flags:
+            if flag not in legacy_flags:
+                legacy_flags.append(flag)
+
+
+def _wrap_legacy_entries(entries: List[Any], file_kind: FileKind) -> List[UnifiedEntry]:
+    wrapped: List[UnifiedEntry] = []
+    for legacy_entry in entries:
+        wrapped.append(
+            _build_unified_entry(
+                entry=legacy_entry,
+                file_kind=file_kind,
+                commit_callback=lambda unified, le=legacy_entry: _commit_unified_to_legacy(unified, le),
+            )
+        )
+    return wrapped
+
+
+# ===========================
 # Main logic
 # ===========================
 
@@ -755,23 +929,27 @@ def load_ts(file_path: str) -> Tuple[List[Any], Callable[[], None], str]:
     tree = ET.parse(file_path)
     root = tree.getroot()
 
-    entries: List[Any] = []
+    legacy_entries: List[Any] = []
     seen_messages: set[int] = set()
     for context_node in root.findall(".//context"):
         name_elem = context_node.find("./name")
         context_name = (name_elem.text or "").strip() if name_elem is not None and name_elem.text else ""
         for message in context_node.findall("./message"):
-            entries.append(TSEntryAdapter(message, context_name=context_name))
+            legacy_entries.append(TSEntryAdapter(message, context_name=context_name))
             seen_messages.add(id(message))
 
     for message in root.findall(".//message"):
         if id(message) in seen_messages:
             continue
-        entries.append(TSEntryAdapter(message))
+        legacy_entries.append(TSEntryAdapter(message))
+
+    entries = _wrap_legacy_entries(legacy_entries, FileKind.TS)
 
     output_path = build_output_path(file_path, FileKind.TS)
 
     def save_ts() -> None:
+        for entry in entries:
+            entry.commit()
         tree.write(output_path, encoding="utf-8", xml_declaration=True)
 
     return entries, save_ts, output_path
@@ -782,13 +960,17 @@ def load_resx(file_path: str) -> Tuple[List[Any], Callable[[], None], str]:
     tree = ET.parse(file_path)
     root = tree.getroot()
 
-    entries: List[Any] = []
+    legacy_entries: List[Any] = []
     for data_node in root.findall("./data"):
-        entries.append(ResxEntryAdapter(data_node))
+        legacy_entries.append(ResxEntryAdapter(data_node))
+
+    entries = _wrap_legacy_entries(legacy_entries, FileKind.RESX)
 
     output_path = build_output_path(file_path, FileKind.RESX)
 
     def save_resx() -> None:
+        for entry in entries:
+            entry.commit()
         tree.write(output_path, encoding="utf-8", xml_declaration=True)
 
     return entries, save_resx, output_path
@@ -797,9 +979,16 @@ def load_resx(file_path: str) -> Tuple[List[Any], Callable[[], None], str]:
 def load_po(file_path: str) -> Tuple[List[Any], Callable[[], None], str]:
     print(f"Processing PO file: {file_path}")
     po = polib.pofile(file_path)
-    entries = [e for e in po]
+    legacy_entries = [e for e in po]
+    entries = _wrap_legacy_entries(legacy_entries, FileKind.PO)
     output_path = build_output_path(file_path, FileKind.PO)
-    return entries, lambda: po.save(output_path), output_path
+
+    def save_po() -> None:
+        for entry in entries:
+            entry.commit()
+        po.save(output_path)
+
+    return entries, save_po, output_path
 
 
 def load_strings(file_path: str) -> Tuple[List[Any], Callable[[], None], str]:
@@ -809,37 +998,86 @@ def load_strings(file_path: str) -> Tuple[List[Any], Callable[[], None], str]:
         content = f.read()
 
     lines = content.splitlines(keepends=True)
-    entries: List[Any] = []
+    legacy_entries: List[Any] = []
+    pending_notes: List[str] = []
+    in_block_comment = False
+    block_comment_lines: List[str] = []
+
+    def flush_block_comment() -> None:
+        if not block_comment_lines:
+            return
+        normalized = _normalize_strings_comment_lines(block_comment_lines)
+        if normalized:
+            pending_notes.append(normalized)
+        block_comment_lines.clear()
 
     for idx, line in enumerate(lines):
         stripped = line.rstrip("\r\n")
         line_ending = line[len(stripped):]
+        lstripped = stripped.lstrip()
+
+        if in_block_comment:
+            before, sep, _ = stripped.partition("*/")
+            block_comment_lines.append(before)
+            if sep:
+                in_block_comment = False
+                flush_block_comment()
+            continue
 
         match = STRINGS_COMMENTED_LINE_RE.match(stripped)
         commented = True
         if not match:
             match = STRINGS_LINE_RE.match(stripped)
             commented = False
-        if not match:
+        if match:
+            key = _decode_strings_literal(match.group("key"))
+            value = _decode_strings_literal(match.group("value"))
+            legacy_entries.append(
+                StringsEntryAdapter(
+                    lines=lines,
+                    line_index=idx,
+                    line_ending=line_ending,
+                    indent=match.group("indent"),
+                    key=key,
+                    source_text=value,
+                    commented=commented,
+                    prompt_note=" | ".join(pending_notes),
+                )
+            )
+            pending_notes = []
             continue
 
-        key = _decode_strings_literal(match.group("key"))
-        value = _decode_strings_literal(match.group("value"))
-        entries.append(
-            StringsEntryAdapter(
-                lines=lines,
-                line_index=idx,
-                line_ending=line_ending,
-                indent=match.group("indent"),
-                key=key,
-                source_text=value,
-                commented=commented,
-            )
-        )
+        if not lstripped:
+            continue
+
+        if lstripped.startswith("//"):
+            inline = lstripped[2:].strip()
+            if inline:
+                pending_notes.append(inline)
+            continue
+
+        if "/*" in lstripped:
+            _, _, after_open = stripped.partition("/*")
+            before_close, sep, _ = after_open.partition("*/")
+            block_comment_lines.append(before_close)
+            if sep:
+                flush_block_comment()
+            else:
+                in_block_comment = True
+            continue
+
+        pending_notes = []
+
+    if in_block_comment:
+        flush_block_comment()
+
+    entries = _wrap_legacy_entries(legacy_entries, FileKind.STRINGS)
 
     output_path = build_output_path(file_path, FileKind.STRINGS)
 
     def save_strings() -> None:
+        for entry in entries:
+            entry.commit()
         with open(output_path, "w", encoding=encoding, newline="") as f:
             f.write("".join(lines))
 
