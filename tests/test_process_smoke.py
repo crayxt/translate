@@ -224,6 +224,47 @@ class ProcessSmokeTests(unittest.TestCase):
             process.FileKind.TXT,
         )
 
+    def test_select_work_items_respects_retranslate_all(self):
+        entries = [
+            process.UnifiedEntry(
+                file_kind=process.FileKind.PO,
+                msgid="Untranslated",
+                status=process.EntryStatus.UNTRANSLATED,
+            ),
+            process.UnifiedEntry(
+                file_kind=process.FileKind.PO,
+                msgid="Fuzzy",
+                status=process.EntryStatus.FUZZY,
+            ),
+            process.UnifiedEntry(
+                file_kind=process.FileKind.PO,
+                msgid="Translated",
+                status=process.EntryStatus.TRANSLATED,
+            ),
+            process.UnifiedEntry(
+                file_kind=process.FileKind.PO,
+                msgid="",
+                status=process.EntryStatus.TRANSLATED,
+            ),
+            process.UnifiedEntry(
+                file_kind=process.FileKind.PO,
+                msgid="Skipped",
+                status=process.EntryStatus.SKIPPED,
+            ),
+            process.UnifiedEntry(
+                file_kind=process.FileKind.PO,
+                msgid="Obsolete",
+                status=process.EntryStatus.UNTRANSLATED,
+                obsolete=True,
+            ),
+        ]
+
+        default_items = process.select_work_items(entries, retranslate_all=False)
+        forced_items = process.select_work_items(entries, retranslate_all=True)
+
+        self.assertEqual([e.msgid for e in default_items], ["Untranslated"])
+        self.assertEqual([e.msgid for e in forced_items], ["Untranslated", "Fuzzy", "Translated"])
+
     def test_unified_entry_model_exposes_status_and_string_type(self):
         in_path = os.path.join(os.getcwd(), "_tmp_unified.strings")
         out_path = os.path.join(os.getcwd(), "_tmp_unified.ai-translated.strings")

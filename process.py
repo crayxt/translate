@@ -1269,6 +1269,31 @@ def resolve_runtime_limits(
     return derived_batch, parallel_arg, "auto batch"
 
 
+def _entry_has_source_text(entry: Any) -> bool:
+    return bool(str(getattr(entry, "msgid", "") or "").strip())
+
+
+def select_work_items(entries: List[Any], retranslate_all: bool = False) -> List[Any]:
+    selected: List[Any] = []
+    for entry in entries:
+        if bool(getattr(entry, "obsolete", False)):
+            continue
+
+        status = getattr(entry, "status", None)
+        if status == EntryStatus.SKIPPED:
+            continue
+
+        if retranslate_all:
+            if _entry_has_source_text(entry):
+                selected.append(entry)
+            continue
+
+        if not entry.translated():
+            selected.append(entry)
+
+    return selected
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="Pre-process and translate PO, TS, RESX, STRINGS, or TXT files using Google Gemini"
@@ -1290,6 +1315,11 @@ def main() -> None:
         help="Optional translation rules/instructions file (auto: data/<target-lang>/rules.md)",
     )
     parser.add_argument("--rules-str", default=None, help="Optional inline translation rules/instructions")
+    parser.add_argument(
+        "--retranslate-all",
+        action="store_true",
+        help="Force translation of all translatable messages, not only unfinished/fuzzy ones",
+    )
 
     args = parser.parse_args()
 
@@ -1335,16 +1365,14 @@ def main() -> None:
     else:
         entries, save_callback, output_path = load_po(file_path)
 
-    # Filter for untranslated items
-    # Note: TSEntryAdapter implements .obsolete and .translated() to match polib
-    work_items = [
-        entry for entry in entries
-        if not entry.obsolete and not entry.translated()
-    ]
+    work_items = select_work_items(entries, retranslate_all=args.retranslate_all)
 
     total = len(work_items)
     if total == 0:
-        print("No untranslated or fuzzy messages found.")
+        if args.retranslate_all:
+            print("No translatable messages found.")
+        else:
+            print("No untranslated or fuzzy messages found.")
         return
 
     try:
@@ -1361,6 +1389,7 @@ def main() -> None:
     print(f"  Parallel requests: {parallel_requests}")
     print(f"  Batch size: {batch_size}")
     print(f"  Limits mode: {limits_mode}")
+    print(f"  Retranslate all: {'yes' if args.retranslate_all else 'no'}")
     print(f"  Vocabulary source: {vocabulary_source}")
     print(f"  Rules source: {rules_source or 'none'}")
 

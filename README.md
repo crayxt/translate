@@ -33,6 +33,12 @@ python process.py your_file.po --target-lang fr
 python process.py your_file.po --target-lang fr_CA
 ```
 
+Force re-translation of all translatable messages:
+
+```
+python process.py your_file.po --retranslate-all
+```
+
 By default, vocabulary and project rules are auto-detected from target language under `data/`:
 
 - `data/<target-lang>/vocab.txt`
