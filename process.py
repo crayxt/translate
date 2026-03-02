@@ -269,6 +269,10 @@ def _encode_strings_literal(value: str) -> str:
         .replace("\n", "\\n")
         .replace("\r", "\\r")
         .replace("\t", "\\t")
+        .replace("\a", "\\a")
+        .replace("\b", "\\b")
+        .replace("\f", "\\f")
+        .replace("\v", "\\v")
     )
 
 
@@ -411,7 +415,7 @@ class UnifiedEntry:
         return self.file_kind.value
 
     def translated(self) -> bool:
-        return self.status in (EntryStatus.FUZZY, EntryStatus.TRANSLATED, EntryStatus.SKIPPED)
+        return self.status in (EntryStatus.TRANSLATED, EntryStatus.SKIPPED)
 
     def mark_translated(self) -> None:
         self.status = EntryStatus.TRANSLATED
@@ -653,6 +657,10 @@ def _normalize_model_escaped_text(source_text: str, candidate_text: str) -> str:
         ("\n", "\\n"),
         ("\t", "\\t"),
         ("\r", "\\r"),
+        ("\a", "\\a"),
+        ("\b", "\\b"),
+        ("\f", "\\f"),
+        ("\v", "\\v"),
     )
 
     for actual_char, escaped_seq in replacements:

@@ -262,7 +262,7 @@ class ProcessSmokeTests(unittest.TestCase):
         default_items = process.select_work_items(entries, retranslate_all=False)
         forced_items = process.select_work_items(entries, retranslate_all=True)
 
-        self.assertEqual([e.msgid for e in default_items], ["Untranslated"])
+        self.assertEqual([e.msgid for e in default_items], ["Untranslated", "Fuzzy"])
         self.assertEqual([e.msgid for e in forced_items], ["Untranslated", "Fuzzy", "Translated"])
 
     def test_unified_entry_model_exposes_status_and_string_type(self):
@@ -318,6 +318,7 @@ class ProcessSmokeTests(unittest.TestCase):
             commit_callback=lambda _: None,
         )
         self.assertEqual(unified.status, process.EntryStatus.FUZZY)
+        self.assertFalse(unified.translated())
 
     def test_apply_translation_marks_fuzzy_entry_as_translated_status(self):
         entry = process.UnifiedEntry(
@@ -542,6 +543,34 @@ class ProcessSmokeTests(unittest.TestCase):
                 out_text = f.read()
             self.assertIn('"a|newline" = "AAA\\nBBB";', out_text)
             self.assertNotIn('"a|newline" = "AAA\\\\nBBB";', out_text)
+        finally:
+            for path in (in_path, out_path):
+                if os.path.exists(path):
+                    os.remove(path)
+
+    def test_load_strings_normalizes_literal_bell_escape_from_model(self):
+        in_path = os.path.join(os.getcwd(), "_tmp_escape_bell.strings")
+        out_path = os.path.join(os.getcwd(), "_tmp_escape_bell.ai-translated.strings")
+        try:
+            content = '/* "a|bell" = "Beep\\aDone"; */\n'
+            with open(in_path, "w", encoding="utf-8", newline="") as f:
+                f.write(content)
+
+            entries, save_callback, out_path = process.load_strings(in_path)
+            self.assertEqual(len(entries), 1)
+            self.assertEqual(entries[0].msgid, "Beep\aDone")
+
+            applied = process.apply_translation_to_entry(
+                entries[0],
+                process.TranslationResult(text="AAA\\aBBB"),
+            )
+            self.assertTrue(applied)
+            save_callback()
+
+            with open(out_path, "r", encoding="utf-8") as f:
+                out_text = f.read()
+            self.assertIn('"a|bell" = "AAA\\aBBB";', out_text)
+            self.assertNotIn('"a|bell" = "AAA\\\\aBBB";', out_text)
         finally:
             for path in (in_path, out_path):
                 if os.path.exists(path):
