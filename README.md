@@ -39,6 +39,11 @@ Force re-translation of all translatable messages:
 python process.py your_file.po --retranslate-all
 ```
 
+Default processing behavior:
+
+- translates unfinished messages (`untranslated` + `fuzzy`/`unfinished`)
+- skips already translated messages unless `--retranslate-all` is used
+
 By default, vocabulary and project rules are auto-detected from target language under `data/`:
 
 - `data/<target-lang>/vocab.txt`
@@ -114,6 +119,8 @@ For `.strings` files, this project uses the following convention:
 
 Translated output for `.strings` preserves file encoding (including UTF BOM when present) and writes translated entries as uncommented lines.
 
+Escaped sequences are preserved in `.strings` output. The pipeline normalizes model-returned literal escapes to the source style for common control escapes (for example `\n`, `\t`, `\r`, `\a`, `\b`, `\f`, `\v`) to avoid accidental double-escaping like `\\n` or `\\a`.
+
 ## `.txt` behavior
 
 For `.txt` files:
@@ -124,7 +131,7 @@ For `.txt` files:
 
 ## Internal Unified Entry Model
 
-The translation pipeline now normalizes all formats (`.po`, `.ts`, `.resx`, `.strings`) into a shared internal entry model with common fields (message, context, note, status, flags, plural data, and string type), then syncs updates back to each native file format on save.
+The translation pipeline now normalizes all formats (`.po`, `.ts`, `.resx`, `.strings`, `.txt`) into a shared internal entry model with common fields (message, context, note, status, flags, plural data, and string type), then syncs updates back to each native file format on save.
 
 Status values are normalized as:
 
