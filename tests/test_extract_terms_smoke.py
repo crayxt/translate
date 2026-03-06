@@ -28,9 +28,14 @@ class _DummyEntry:
 
 
 class ExtractTermsSmokeTests(unittest.TestCase):
-    def test_build_term_output_path(self):
+    def test_build_term_output_path_defaults_to_all_po(self):
         path = r"C:\work\file.po"
         out = extract_terms.build_term_output_path(path)
+        self.assertEqual(out, r"C:\work\file.glossary.po")
+
+    def test_build_term_output_path_supports_missing_json(self):
+        path = r"C:\work\file.po"
+        out = extract_terms.build_term_output_path(path, output_format="json", mode="missing")
         self.assertEqual(out, r"C:\work\file.missing-terms.json")
 
     def test_collect_source_messages_dedupes_and_skips_non_alpha(self):
@@ -115,6 +120,36 @@ class ExtractTermsSmokeTests(unittest.TestCase):
             for path in (in_path, out_path):
                 if os.path.exists(path):
                     os.remove(path)
+
+    def test_save_terms_as_po_writes_msgid_msgstr_and_notes(self):
+        out_path = os.path.join(os.getcwd(), "_tmp_glossary.po")
+        try:
+            terms = [
+                extract_terms.TermCandidate(
+                    source_term="Addon",
+                    suggested_translation="Qosymsha",
+                    reason="UI noun",
+                    example_source="Install addon",
+                )
+            ]
+
+            extract_terms.save_terms_as_po(
+                terms=terms,
+                out_path=out_path,
+                source_lang="en",
+                target_lang="kk",
+            )
+
+            po = polib.pofile(out_path)
+            self.assertEqual(len(po), 1)
+            self.assertEqual(po[0].msgid, "Addon")
+            self.assertEqual(po[0].msgstr, "Qosymsha")
+            self.assertIn("fuzzy", po[0].flags)
+            self.assertIn("Reason: UI noun", po[0].tcomment)
+            self.assertIn("Example: Install addon", po[0].tcomment)
+        finally:
+            if os.path.exists(out_path):
+                os.remove(out_path)
 
 
 if __name__ == "__main__":

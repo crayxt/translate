@@ -7,8 +7,9 @@ import os
 import sys
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Literal, Tuple
 
+import polib
 from google import genai
 from google.genai import types as genai_types
 
@@ -25,6 +26,10 @@ from process import (
     resolve_resource_path,
     resolve_runtime_limits,
 )
+
+
+DiscoveryMode = Literal["all", "missing"]
+OutputFormat = Literal["po", "json"]
 
 
 TERM_DISCOVERY_SCHEMA = genai_types.Schema(
@@ -56,9 +61,14 @@ class TermCandidate:
     example_source: str = ""
 
 
-def build_term_output_path(file_path: str) -> str:
+def build_term_output_path(
+    file_path: str,
+    output_format: OutputFormat = "po",
+    mode: DiscoveryMode = "all",
+) -> str:
     root, _ = os.path.splitext(file_path)
-    return f"{root}.missing-terms.json"
+    suffix = "glossary" if mode == "all" else "missing-terms"
+    return f"{root}.{suffix}.{output_format}"
 
 
 def should_include_text(text: str) -> bool:
@@ -99,19 +109,36 @@ def build_terms_prompt(
     messages: Dict[str, str],
     source_lang: str,
     target_lang: str,
+    mode: DiscoveryMode,
     vocabulary: str | None,
     max_terms_per_batch: int,
 ) -> str:
-    vocab_block = vocabulary or "(No vocabulary provided)"
+    if vocabulary:
+        vocab_block = vocabulary
+    else:
+        vocab_block = "(No vocabulary provided)"
+
+    if mode == "all":
+        task_block = """
+Task:
+- Inspect source UI messages and extract a comprehensive project glossary.
+- Focus on product/domain/UI terms that should be standardized.
+- Exclude generic words and stop words.
+- If vocabulary is provided, use it for consistency but do not limit extraction to only missing terms.
+"""
+    else:
+        task_block = """
+Task:
+- Inspect source UI messages and find terms that are missing from the provided project vocabulary.
+- Focus on product/domain/UI terms that should be standardized in a glossary.
+- Exclude generic words, stop words, and terms already present in the vocabulary.
+"""
     messages_json = json.dumps(messages, ensure_ascii=False, indent=2)
 
     return f"""
 You are a software localization terminology analyst.
 
-Task:
-- Inspect source UI messages and find terms that are missing from the provided project vocabulary.
-- Focus on product/domain/UI terms that should be standardized in a glossary.
-- Exclude generic words, stop words, and terms already present in the vocabulary.
+{task_block}
 
 Output requirements:
 - Return ONLY valid JSON (no markdown).
@@ -209,6 +236,42 @@ def merge_term_candidates(candidates: List[TermCandidate]) -> List[TermCandidate
     return [merged[k] for k in order]
 
 
+def save_terms_as_po(
+    terms: List[TermCandidate],
+    out_path: str,
+    source_lang: str,
+    target_lang: str,
+) -> None:
+    po = polib.POFile()
+    po.metadata = {
+        "Project-Id-Version": "Glossary",
+        "Language": target_lang,
+        "X-Source-Language": source_lang,
+        "Content-Type": "text/plain; charset=utf-8",
+        "MIME-Version": "1.0",
+        "Generated-By": "extract_terms.py",
+    }
+
+    for item in terms:
+        entry = polib.POEntry(
+            msgid=item.source_term,
+            msgstr=item.suggested_translation,
+            flags=["fuzzy"],
+        )
+
+        notes: List[str] = []
+        if item.reason:
+            notes.append(f"Reason: {item.reason}")
+        if item.example_source:
+            notes.append(f"Example: {item.example_source}")
+        if notes:
+            entry.tcomment = "\n".join(notes)
+
+        po.append(entry)
+
+    po.save(out_path)
+
+
 def load_entries_for_file(file_path: str, file_kind: FileKind) -> List[Any]:
     if file_kind == FileKind.TS:
         entries, _, _ = load_ts(file_path)
@@ -248,20 +311,39 @@ def normalize_limits(
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Extract candidate missing vocabulary terms from PO/TS/RESX/STRINGS/TXT files using Gemini"
+        description=(
+            "Extract glossary term candidates from PO/TS/RESX/STRINGS/TXT files using Gemini "
+            "and save as PO or JSON"
+        )
     )
     parser.add_argument("file", help="Input .po, .ts, .resx, .strings, or .txt file")
     parser.add_argument("--source-lang", default="en", help="Default: en")
     parser.add_argument("--target-lang", default="kk", help="Default: kk")
-    parser.add_argument("--model", default="gemini-3-flash-preview")
+    parser.add_argument("--model", default="gemini-2.5-pro")
+    #parser.add_argument("--model", default="gemini-3-flash-preview")
     parser.add_argument("--batch-size", type=int, default=None, help="Batch size (auto if omitted)")
     parser.add_argument("--parallel-requests", type=int, default=None, help="Concurrent Gemini requests (auto if omitted)")
     parser.add_argument(
         "--vocab",
         default=None,
-        help="Vocabulary file used as existing term baseline (auto: data/<target-lang>/vocab.txt)",
+        help=(
+            "Vocabulary file (auto-loaded only for --mode missing). "
+            "In --mode all, optional reference for consistency."
+        ),
     )
-    parser.add_argument("--out", default=None, help="Output JSON path (default: <input>.missing-terms.json)")
+    parser.add_argument(
+        "--mode",
+        choices=["all", "missing"],
+        default="all",
+        help="all: build full glossary; missing: only terms missing from vocabulary",
+    )
+    parser.add_argument(
+        "--out-format",
+        choices=["po", "json"],
+        default="po",
+        help="Output format (default: po)",
+    )
+    parser.add_argument("--out", default=None, help="Output path (default depends on --mode and --out-format)")
     parser.add_argument("--max-terms-per-batch", type=int, default=80, help="Max term suggestions requested per batch")
     parser.add_argument("--max-attempts", type=int, default=5, help="Retry attempts per batch")
     args = parser.parse_args()
@@ -277,12 +359,14 @@ def main() -> None:
 
     client = genai.Client(api_key=api_key)
 
-    vocabulary_path = resolve_resource_path(
-        explicit_path=args.vocab,
-        prefix="vocab",
-        extension="txt",
-        target_lang=args.target_lang,
-    )
+    vocabulary_path = None
+    if args.mode == "missing" or args.vocab:
+        vocabulary_path = resolve_resource_path(
+            explicit_path=args.vocab,
+            prefix="vocab",
+            extension="txt",
+            target_lang=args.target_lang,
+        )
     vocabulary_text = read_optional_text_file(vocabulary_path, "Vocabulary")
     vocab_source = f"file:{vocabulary_path}" if vocabulary_text and vocabulary_path else "none"
 
@@ -313,7 +397,11 @@ def main() -> None:
         for i in range((total + batch_size - 1) // batch_size)
     ]
 
-    out_path = args.out or build_term_output_path(args.file)
+    out_path = args.out or build_term_output_path(
+        args.file,
+        output_format=args.out_format,
+        mode=args.mode,
+    )
     term_config = genai_types.GenerateContentConfig(
         response_mime_type="application/json",
         response_schema=TERM_DISCOVERY_SCHEMA,
@@ -324,6 +412,8 @@ def main() -> None:
     print(f"  Parallel requests: {parallel_requests}")
     print(f"  Batch size: {batch_size}")
     print(f"  Limits mode: {limits_mode}")
+    print(f"  Discovery mode: {args.mode}")
+    print(f"  Output format: {args.out_format}")
     print(f"  Vocabulary source: {vocab_source}")
     print(f"  Total source messages: {total}")
     print(f"  Total batches: {len(batches)}")
@@ -335,6 +425,7 @@ def main() -> None:
                 messages=msg_map,
                 source_lang=args.source_lang,
                 target_lang=args.target_lang,
+                mode=args.mode,
                 vocabulary=vocabulary_text,
                 max_terms_per_batch=args.max_terms_per_batch,
             )
@@ -380,6 +471,8 @@ def main() -> None:
     payload = {
         "source_file": args.file,
         "output_file": out_path,
+        "discovery_mode": args.mode,
+        "output_format": args.out_format,
         "model": args.model,
         "source_lang": args.source_lang,
         "target_lang": args.target_lang,
@@ -391,8 +484,16 @@ def main() -> None:
         "terms": [asdict(item) for item in merged_terms],
     }
 
-    with open(out_path, "w", encoding="utf-8") as f:
-        json.dump(payload, f, ensure_ascii=False, indent=2)
+    if args.out_format == "po":
+        save_terms_as_po(
+            terms=merged_terms,
+            out_path=out_path,
+            source_lang=args.source_lang,
+            target_lang=args.target_lang,
+        )
+    else:
+        with open(out_path, "w", encoding="utf-8") as f:
+            json.dump(payload, f, ensure_ascii=False, indent=2)
 
     print("\nTerm extraction complete.")
     print(f"Saved file: {out_path}")

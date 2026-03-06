@@ -93,9 +93,9 @@ Startup output prints both:
 - `Vocabulary source` (`file:<path>` or `none`)
 - `Rules source` (`file:<path>`, `inline:--rules-str`, combined, or `none`)
 
-# Extract Missing Terms
+# Extract Glossary Terms
 
-Run a terminology discovery pass that suggests missing glossary terms from source messages:
+Run a terminology discovery pass that builds a translated glossary (`msgid=term`, `msgstr=translation`) as PO:
 
 ```
 python extract_terms.py your_file.po
@@ -104,10 +104,20 @@ python extract_terms.py your_file.po
 Optional controls:
 
 ```
-python extract_terms.py your_file.po --vocab data/kk/vocab.txt --out missing-terms.json --batch-size 200 --parallel-requests 4
+python extract_terms.py your_file.po --out glossary.po --batch-size 200 --parallel-requests 4
 ```
 
-Output is saved as `<input>.missing-terms.json` unless `--out` is specified.
+Defaults:
+
+- mode: `--mode all` (extract full glossary)
+- output format: `--out-format po`
+- output path: `<input>.glossary.po`
+
+To get previous behavior (missing terms only, JSON output):
+
+```
+python extract_terms.py your_file.po --mode missing --out-format json --vocab data/kk/vocab.txt
+```
 
 ## `.strings` behavior
 
