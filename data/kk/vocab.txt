@@ -4,6 +4,7 @@ access (verb) - қол жеткізу
 account - тіркелгі
 addon - қосымша
 address - адрес
+alternate - балама
 apply - іске асыру
 archive - архив
 array - массив
@@ -13,16 +14,23 @@ bold - жуан
 boolean - логикалық
 browse - шолу
 browser - браузер
+brush - қылқалам
 build - құрастыру
 button - батырма
 cancel - бас тарту
 click - шерту
+channel - арна
 checksum - бақылау сомасы
+child (process) - еншілес (процесс)
+colored - түрлі-түсті
 command - команда
 compression - сығу
 connector (line) - байланыстыратын сызық
 countdown - кері санау
+critical - критикалық
+crop - қиып жіберу
 cursor - курсор
+curve - қисық (сызық)
 database - дерекқор
 daemon - қызмет
 default - бастапқы | үнсіз келісім бойынша
@@ -31,11 +39,13 @@ destroy - жою
 dialog - сұхбат терезесі
 directory - бума
 disable - сөндіру
+disabled - сөндірілген
 donate - демеушілік ету
 download - жүктеп алу
 dump - дамп
 edit - түзету
 enable - іске қосу
+enabled - іске қосылған
 encrypted - шифрленген
 encryption - шифрлеу
 endnote - соңдық нұсқама
@@ -57,6 +67,7 @@ image (disk image) - бейне
 image (graphical) - сурет
 index (in database) - индекс
 index - нұсқағыш
+indexed - индекстелген
 insert - кірістіру
 key (like in keyboard) - перне
 key (like key thing or key to open a lock) - кілт
@@ -64,6 +75,7 @@ keyboard - пернетақта
 layout - жайма
 lock (verb) - құлыптау
 menu - мәзір
+modifier - модификатор
 mouse - тышқан
 object - объект
 option - опция
@@ -73,6 +85,9 @@ password - пароль
 paste - кірістіру
 pause - аялдату
 playlist - ойнату тізімі
+plug-in - плагин
+plugin - плагин
+pointer - курсор
 privacy - жекелік
 preferences - баптаулар
 process (verb) - өңдеу
@@ -84,6 +99,7 @@ rename - атын өзгерту
 root (user) - әкімші
 root - түбір
 screenshot - скриншот
+separate - бөлек
 separator - ажыратқыш
 shading - көлеңкелеу
 shell - қоршам
