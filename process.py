@@ -548,6 +548,7 @@ Instructions:
 - Apply project translation rules when provided
 - If project rules conflict with STRICT RULES above, STRICT RULES win
 - Use consistent translation throughout the messages.
+- When the source string have \\n line wrapping marker within the text, try to wrap translated text to lines of similar length with the \\n marker.
 {non_empty_block}
 
 Messages to translate (JSON map of id -> item):
