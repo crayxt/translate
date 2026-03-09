@@ -2,6 +2,8 @@ about (if single word) - осы туралы
 about - туралы
 access (verb) - қол жеткізу
 account - тіркелгі
+action - әрекет
+active - белсенді
 addon - қосымша
 address - адрес
 alternate - балама
@@ -10,6 +12,7 @@ archive - архив
 array - массив
 arrow - бағдарша
 background - фон
+backup (noun) - сақтық көшірме
 bold - жуан
 boolean - логикалық
 browse - шолу
@@ -36,6 +39,8 @@ daemon - қызмет
 default - бастапқы | үнсіз келісім бойынша
 delete - өшіру
 destroy - жою
+develop - әзірлеу
+developer - әзірлеуші
 dialog - сұхбат терезесі
 directory - бума
 disable - сөндіру
@@ -52,6 +57,8 @@ endnote - соңдық нұсқама
 extension - кеңейту
 failed - сәтсіз аяқталды
 field - өріс
+filter - сүзгі
+filter (verb) - сүзгілеу
 folder - бума
 font - қаріп
 footer - төменгі колонтитул
@@ -61,10 +68,12 @@ global - глобалды
 header (in network requests) - тақырыптама
 header - жоғарғы колонтитул
 help - көмек
+highlight - түспен ерекшелеу
+history - тарих
 horizontal - горизонталды
 icon - таңбаша
 image (disk image) - бейне
-image (graphical) - сурет
+image - сурет
 index (in database) - индекс
 index - нұсқағыш
 indexed - индекстелген
@@ -98,6 +107,8 @@ remove - өшіру
 rename - атын өзгерту
 root (user) - әкімші
 root - түбір
+save - сақтау
+save as - қалайша сақтау
 screenshot - скриншот
 separate - бөлек
 separator - ажыратқыш
