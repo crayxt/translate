@@ -1,5 +1,6 @@
 import unittest
 import os
+from unittest.mock import patch
 
 import polib
 
@@ -150,6 +151,29 @@ class ExtractTermsSmokeTests(unittest.TestCase):
         finally:
             if os.path.exists(out_path):
                 os.remove(out_path)
+
+    def test_main_auto_loads_vocabulary_for_mode_all(self):
+        with (
+            patch.dict(os.environ, {"GOOGLE_API_KEY": "test-key"}, clear=False),
+            patch("extract_terms.genai.Client"),
+            patch(
+                "extract_terms.resolve_resource_path",
+                return_value=os.path.join("data", "kk", "vocab.txt"),
+            ) as resolve_mock,
+            patch("extract_terms.read_optional_text_file", return_value=None),
+            patch("extract_terms.detect_file_kind", return_value=process.FileKind.TXT),
+            patch("extract_terms.load_entries_for_file", return_value=[]),
+            patch("extract_terms.sys.argv", ["extract_terms.py", "input.po", "--mode", "all"]),
+            patch("builtins.print"),
+        ):
+            extract_terms.main()
+
+        resolve_mock.assert_called_once_with(
+            explicit_path=None,
+            prefix="vocab",
+            extension="txt",
+            target_lang="kk",
+        )
 
 
 if __name__ == "__main__":

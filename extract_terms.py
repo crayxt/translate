@@ -123,6 +123,7 @@ def build_terms_prompt(
 Task:
 - Inspect source UI messages and extract a comprehensive project glossary.
 - Focus on product/domain/UI terms that should be standardized.
+- Also extract generic IT terminology as we are updating our glossary.
 - Exclude generic words and stop words.
 - If vocabulary is provided, use it for consistency but do not limit extraction to only missing terms.
 """
@@ -144,6 +145,7 @@ Output requirements:
 - Return ONLY valid JSON (no markdown).
 - Use this schema exactly: {{"terms": [{{"source_term": "...", "suggested_translation": "...", "reason": "...", "example_source": "..."}}]}}
 - Keep "source_term" concise and canonical.
+- Keep source term and translation lowercase, in singular form.
 - Provide at most {max_terms_per_batch} terms for this batch.
 
 Project context:
@@ -319,22 +321,18 @@ def main() -> None:
     parser.add_argument("file", help="Input .po, .ts, .resx, .strings, or .txt file")
     parser.add_argument("--source-lang", default="en", help="Default: en")
     parser.add_argument("--target-lang", default="kk", help="Default: kk")
-    parser.add_argument("--model", default="gemini-2.5-pro")
-    #parser.add_argument("--model", default="gemini-3-flash-preview")
+    parser.add_argument("--model", default="gemini-3-flash-preview")
     parser.add_argument("--batch-size", type=int, default=None, help="Batch size (auto if omitted)")
     parser.add_argument("--parallel-requests", type=int, default=None, help="Concurrent Gemini requests (auto if omitted)")
     parser.add_argument(
         "--vocab",
         default=None,
-        help=(
-            "Vocabulary file (auto-loaded only for --mode missing). "
-            "In --mode all, optional reference for consistency."
-        ),
+        help="Optional vocabulary file (auto: data/<target-lang>/vocab.txt)",
     )
     parser.add_argument(
         "--mode",
         choices=["all", "missing"],
-        default="all",
+        default="missing",
         help="all: build full glossary; missing: only terms missing from vocabulary",
     )
     parser.add_argument(
@@ -359,14 +357,12 @@ def main() -> None:
 
     client = genai.Client(api_key=api_key)
 
-    vocabulary_path = None
-    if args.mode == "missing" or args.vocab:
-        vocabulary_path = resolve_resource_path(
-            explicit_path=args.vocab,
-            prefix="vocab",
-            extension="txt",
-            target_lang=args.target_lang,
-        )
+    vocabulary_path = resolve_resource_path(
+        explicit_path=args.vocab,
+        prefix="vocab",
+        extension="txt",
+        target_lang=args.target_lang,
+    )
     vocabulary_text = read_optional_text_file(vocabulary_path, "Vocabulary")
     vocab_source = f"file:{vocabulary_path}" if vocabulary_text and vocabulary_path else "none"
 
