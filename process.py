@@ -17,6 +17,8 @@ import polib
 from google import genai
 from google.genai import types as genai_types
 
+PO_WRAP_WIDTH = 78
+
 
 # ===========================
 # TS File Adapter
@@ -541,6 +543,9 @@ Instructions:
   return non-empty "plural_texts" with exactly item.plural_forms forms (or at least 2 if absent)
 - If the target language effectively has one plural form but multiple slots are required,
   repeat the same translation identically in all required plural slots
+- If the target language effectively has one plural form (for example Kazakh), prefer the source plural form as the basis for translation when it carries numeric placeholders or fuller wording than the singular form.
+- Do not derive the final wording from a singular-only source variant such as "one" when the plural source contains a numeric placeholder like %d or %n.
+- For such entries, keep the plural-source placeholder structure in the translation and use that plural-based wording in every required plural slot.
 - Keep "text" non-empty for every item, including plural entries
 - Use optional "context" and "note" fields only for disambiguation
 - Translate ONLY the "source" field for each item
@@ -549,6 +554,13 @@ Instructions:
 - If project rules conflict with STRICT RULES above, STRICT RULES win
 - Use consistent translation throughout the messages.
 - When the source string have \\n line wrapping marker within the text, try to wrap translated text to lines of similar length with the \\n marker.
+- When project vocabulary is supplied, it is mandatory, not advisory.
+- Treat each vocabulary pair as a required source_term -> target_term mapping.
+- First translate the message, then run a silent vocabulary audit on your own output before returning JSON.
+- If a source message contains a vocabulary term, the final translation must use the mapped target term, not a synonym or alternative wording.
+- If you used an alternative, rewrite the translation to use the approved term before returning the result.
+- Use the approved target term as the lexical choice; inflect it only as grammar requires.
+- Return only the corrected final JSON.
 {non_empty_block}
 
 Messages to translate (JSON map of id -> item):
@@ -758,7 +770,6 @@ def _normalize_prompt_hint(text: str, max_chars: int) -> str:
         return compact
     return compact[: max_chars - 3].rstrip() + "..."
 
-
 def build_entry_source_text(entry: Any) -> str:
     if is_plural_entry(entry):
         return f"Singular: {entry.msgid}\nPlural: {entry.msgid_plural}"
@@ -810,7 +821,12 @@ def build_prompt_message_payload(entry: Any) -> Dict[str, Any]:
     if is_plural_entry(entry):
         plural_forms = get_plural_form_count(entry)
         payload["plural_forms"] = plural_forms
-        plural_note = f"plural forms required: {plural_forms}"
+        plural_note = (
+            f"plural forms required: {plural_forms}"
+            " | for target languages with no plural difference (for example Kazakh),"
+            " prefer the source plural variant as the basis for translation and repeat"
+            " that wording in all required plural slots"
+        )
         note = f"{note} | {plural_note}" if note else plural_note
     if context:
         payload["context"] = context
@@ -1023,7 +1039,7 @@ def load_resx(file_path: str) -> Tuple[List[Any], Callable[[], None], str]:
 
 def load_po(file_path: str) -> Tuple[List[Any], Callable[[], None], str]:
     print(f"Processing PO file: {file_path}")
-    po = polib.pofile(file_path)
+    po = polib.pofile(file_path, wrapwidth=PO_WRAP_WIDTH)
     legacy_entries = [e for e in po]
     entries = _wrap_legacy_entries(legacy_entries, FileKind.PO)
     output_path = build_output_path(file_path, FileKind.PO)

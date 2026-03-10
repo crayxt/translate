@@ -15,6 +15,7 @@ from google.genai import types as genai_types
 
 from process import (
     FileKind,
+    PO_WRAP_WIDTH,
     detect_file_kind,
     generate_with_retry,
     load_po,
@@ -245,6 +246,7 @@ def save_terms_as_po(
     target_lang: str,
 ) -> None:
     po = polib.POFile()
+    po.wrapwidth = PO_WRAP_WIDTH
     po.metadata = {
         "Project-Id-Version": "Glossary",
         "Language": target_lang,

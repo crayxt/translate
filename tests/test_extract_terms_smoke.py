@@ -152,6 +152,41 @@ class ExtractTermsSmokeTests(unittest.TestCase):
             if os.path.exists(out_path):
                 os.remove(out_path)
 
+    def test_save_terms_as_po_sets_wrapwidth_78(self):
+        class _CapturePO:
+            def __init__(self):
+                self.wrapwidth = None
+                self.metadata = None
+                self.entries = []
+                self.saved_path = None
+
+            def append(self, entry):
+                self.entries.append(entry)
+
+            def save(self, path):
+                self.saved_path = path
+
+        fake_po = _CapturePO()
+
+        with patch("extract_terms.polib.POFile", return_value=fake_po):
+            extract_terms.save_terms_as_po(
+                terms=[
+                    extract_terms.TermCandidate(
+                        source_term="Addon",
+                        suggested_translation="Qosymsha",
+                        reason="UI noun",
+                        example_source="Install addon",
+                    )
+                ],
+                out_path="glossary.po",
+                source_lang="en",
+                target_lang="kk",
+            )
+
+        self.assertEqual(fake_po.wrapwidth, extract_terms.PO_WRAP_WIDTH)
+        self.assertEqual(fake_po.saved_path, "glossary.po")
+        self.assertEqual(len(fake_po.entries), 1)
+
     def test_main_auto_loads_vocabulary_for_mode_all(self):
         with (
             patch.dict(os.environ, {"GOOGLE_API_KEY": "test-key"}, clear=False),

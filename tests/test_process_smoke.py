@@ -46,6 +46,17 @@ class ProcessSmokeTests(unittest.TestCase):
         self.assertIn("Project translation rules/instructions", prompt)
         self.assertIn("Use imperative tone.", prompt)
         self.assertIn('"context": "menu action"', prompt)
+        self.assertIn("it is mandatory, not advisory", prompt)
+        self.assertIn("run a silent vocabulary audit", prompt)
+        self.assertIn("Return only the corrected final JSON.", prompt)
+        self.assertIn("prefer the source plural form as the basis for translation", prompt)
+        self.assertIn("numeric placeholder like %d or %n", prompt)
+
+    def test_load_po_uses_wrapwidth_78(self):
+        with patch("process.polib.pofile", return_value=polib.POFile()) as mocked_pofile:
+            process.load_po("sample.po")
+
+        mocked_pofile.assert_called_once_with("sample.po", wrapwidth=process.PO_WRAP_WIDTH)
 
     def test_build_entry_source_text_handles_plural(self):
         entry = polib.POEntry(msgid="File", msgid_plural="Files")
@@ -77,6 +88,16 @@ class ProcessSmokeTests(unittest.TestCase):
 
         self.assertEqual(payload["plural_forms"], 2)
         self.assertIn("plural forms required: 2", payload["note"])
+
+    def test_build_prompt_message_payload_plural_adds_plural_basis_note(self):
+        entry = polib.POEntry(msgid="One file deleted", msgid_plural="%d files deleted")
+        entry.msgstr_plural = {0: "", 1: ""}
+
+        payload = process.build_prompt_message_payload(entry)
+
+        self.assertEqual(payload["plural_forms"], 2)
+        self.assertIn("no plural difference", payload["note"])
+        self.assertIn("prefer the source plural variant as the basis for translation", payload["note"])
 
     def test_parse_response_uses_parsed_payload(self):
         payload = {
