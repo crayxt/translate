@@ -52,6 +52,59 @@ class ProcessSmokeTests(unittest.TestCase):
         self.assertIn("prefer the source plural form as the basis for translation", prompt)
         self.assertIn("numeric placeholder like %d or %n", prompt)
 
+    def test_read_optional_vocabulary_file_supports_po_glossary(self):
+        vocab_path = os.path.join(os.getcwd(), "_tmp_vocab_glossary.po")
+        try:
+            po = polib.POFile()
+            po.append(polib.POEntry(msgid="addon", msgstr="qosymsha"))
+            po.append(polib.POEntry(msgid="save as", msgstr="qalaysha saqtau"))
+            po.save(vocab_path)
+
+            vocabulary = process.read_optional_vocabulary_file(vocab_path)
+
+            self.assertEqual(vocabulary, "addon - qosymsha\nsave as - qalaysha saqtau")
+        finally:
+            if os.path.exists(vocab_path):
+                os.remove(vocab_path)
+
+    def test_parse_vocabulary_line_parses_source_target_pairs(self):
+        parsed = process.parse_vocabulary_line("save as - qalaysha saqtau")
+        self.assertEqual(parsed, ("save as", "qalaysha saqtau"))
+
+    def test_load_vocabulary_pairs_from_txt_ignores_comments_and_last_duplicate_wins(self):
+        vocab_path = os.path.join(os.getcwd(), "_tmp_vocab_pairs.txt")
+        try:
+            with open(vocab_path, "w", encoding="utf-8") as f:
+                f.write("# comment\n")
+                f.write("save - saqtau\n")
+                f.write("save - qoru\n")
+                f.write("open - ashu\n")
+
+            pairs = process.load_vocabulary_pairs(vocab_path)
+
+            self.assertEqual(pairs, [("save", "qoru"), ("open", "ashu")])
+        finally:
+            if os.path.exists(vocab_path):
+                os.remove(vocab_path)
+
+    def test_read_optional_vocabulary_file_skips_untranslated_fuzzy_and_obsolete_po_entries(self):
+        vocab_path = os.path.join(os.getcwd(), "_tmp_vocab_glossary_filtered.po")
+        try:
+            po = polib.POFile()
+            po.append(polib.POEntry(msgid="addon", msgstr="qosymsha"))
+            po.append(polib.POEntry(msgid="blank target", msgstr=""))
+            po.append(polib.POEntry(msgid="needs review", msgstr="tekseru", flags=["fuzzy"]))
+            obsolete = polib.POEntry(msgid="old term", msgstr="old target", obsolete=True)
+            po.append(obsolete)
+            po.save(vocab_path)
+
+            vocabulary = process.read_optional_vocabulary_file(vocab_path)
+
+            self.assertEqual(vocabulary, "addon - qosymsha")
+        finally:
+            if os.path.exists(vocab_path):
+                os.remove(vocab_path)
+
     def test_load_po_uses_wrapwidth_78(self):
         with patch("process.polib.pofile", return_value=polib.POFile()) as mocked_pofile:
             process.load_po("sample.po")

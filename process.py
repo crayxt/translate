@@ -437,7 +437,7 @@ MAX_PROMPT_OCCURRENCES = 3
 
 def detect_file_kind(file_path: str) -> FileKind:
     lower_path = file_path.lower()
-    if lower_path.endswith(".po"):
+    if lower_path.endswith((".po", ".pot")):
         return FileKind.PO
     if lower_path.endswith(".ts"):
         return FileKind.TS
@@ -1214,6 +1214,88 @@ def read_optional_text_file(path: str | None, label: str) -> str | None:
     return content
 
 
+def _normalize_vocabulary_cell(value: str | None) -> str:
+    return " ".join(str(value or "").split())
+
+
+def _is_translated_vocabulary_entry(entry: Any) -> bool:
+    translated_attr = getattr(entry, "translated", None)
+    if callable(translated_attr):
+        try:
+            return bool(translated_attr())
+        except TypeError:
+            return False
+    return False
+
+
+def parse_vocabulary_line(line: str) -> Tuple[str, str] | None:
+    stripped = str(line or "").strip()
+    if not stripped or stripped.startswith("#"):
+        return None
+
+    separator = " - "
+    if separator not in stripped:
+        return None
+
+    source_term, target_term = stripped.split(separator, 1)
+    source_term = _normalize_vocabulary_cell(source_term)
+    target_term = _normalize_vocabulary_cell(target_term)
+    if not source_term or not target_term:
+        return None
+    return source_term, target_term
+
+
+def load_vocabulary_pairs(path: str | None, label: str = "Vocabulary") -> List[Tuple[str, str]]:
+    if not path:
+        return []
+
+    if not path.lower().endswith(".po"):
+        content = read_optional_text_file(path, label)
+        if not content:
+            return []
+
+        pairs: List[Tuple[str, str]] = []
+        seen_indices: Dict[str, int] = {}
+        for raw_line in content.splitlines():
+            parsed = parse_vocabulary_line(raw_line)
+            if not parsed:
+                continue
+            source_term, target_term = parsed
+            key = source_term.lower()
+            if key in seen_indices:
+                pairs[seen_indices[key]] = (source_term, target_term)
+                continue
+            seen_indices[key] = len(pairs)
+            pairs.append((source_term, target_term))
+        return pairs
+
+    try:
+        glossary = polib.pofile(path, wrapwidth=PO_WRAP_WIDTH)
+    except FileNotFoundError:
+        print(f"Warning: {label} file '{path}' not found.")
+        return []
+
+    pairs: List[Tuple[str, str]] = []
+    for entry in glossary:
+        if not _is_translated_vocabulary_entry(entry):
+            continue
+        source_term = _normalize_vocabulary_cell(getattr(entry, "msgid", ""))
+        target_term = _normalize_vocabulary_cell(getattr(entry, "msgstr", ""))
+        if not source_term or not target_term:
+            continue
+        pairs.append((source_term, target_term))
+    return pairs
+
+
+def read_optional_vocabulary_file(path: str | None, label: str = "Vocabulary") -> str | None:
+    pairs = load_vocabulary_pairs(path, label)
+    if not pairs:
+        if path and path.lower().endswith(".po"):
+            print(f"Warning: {label} file '{path}' has no usable msgid/msgstr glossary pairs.")
+        return None
+    return "\n".join(f"{source_term} - {target_term}" for source_term, target_term in pairs)
+
+
 def build_language_code_candidates(target_lang: str) -> List[str]:
     raw = (target_lang or "").strip()
     if not raw:
@@ -1365,7 +1447,7 @@ def main() -> None:
     parser.add_argument(
         "--vocab",
         default=None,
-        help="Optional vocabulary file (auto: data/<target-lang>/vocab.txt)",
+        help="Optional vocabulary file (auto: data/<target-lang>/vocab.txt). Supports .txt and glossary .po",
     )
     parser.add_argument(
         "--rules",
@@ -1400,7 +1482,7 @@ def main() -> None:
         target_lang=args.target_lang,
     )
 
-    vocabulary_text = read_optional_text_file(vocabulary_path, "Vocabulary")
+    vocabulary_text = read_optional_vocabulary_file(vocabulary_path, "Vocabulary")
     rules_text = read_optional_text_file(rules_path, "Rules")
     project_rules = merge_project_rules(rules_text, args.rules_str)
     rules_source = detect_rules_source(rules_path, rules_text, args.rules_str)

@@ -187,6 +187,42 @@ class ExtractTermsSmokeTests(unittest.TestCase):
         self.assertEqual(fake_po.saved_path, "glossary.po")
         self.assertEqual(len(fake_po.entries), 1)
 
+    def test_save_terms_as_po_merges_base_vocabulary_pairs_first(self):
+        out_path = os.path.join(os.getcwd(), "_tmp_glossary_merged.po")
+        try:
+            extract_terms.save_terms_as_po(
+                terms=[
+                    extract_terms.TermCandidate(
+                        source_term="open",
+                        suggested_translation="ashu-new",
+                        reason="UI verb",
+                        example_source="Open file",
+                    ),
+                    extract_terms.TermCandidate(
+                        source_term="edit",
+                        suggested_translation="tuzetu",
+                        reason="UI verb",
+                        example_source="Edit menu",
+                    ),
+                ],
+                out_path=out_path,
+                source_lang="en",
+                target_lang="kk",
+                base_vocabulary_pairs=[("open", "ashu"), ("save", "saqtau")],
+            )
+
+            po = polib.pofile(out_path)
+            by_msgid = {entry.msgid: entry for entry in po}
+            self.assertEqual(len(po), 3)
+            self.assertEqual(by_msgid["open"].msgstr, "ashu")
+            self.assertNotIn("fuzzy", by_msgid["open"].flags)
+            self.assertEqual(by_msgid["save"].msgstr, "saqtau")
+            self.assertEqual(by_msgid["edit"].msgstr, "tuzetu")
+            self.assertIn("fuzzy", by_msgid["edit"].flags)
+        finally:
+            if os.path.exists(out_path):
+                os.remove(out_path)
+
     def test_main_auto_loads_vocabulary_for_mode_all(self):
         with (
             patch.dict(os.environ, {"GOOGLE_API_KEY": "test-key"}, clear=False),
@@ -195,7 +231,7 @@ class ExtractTermsSmokeTests(unittest.TestCase):
                 "extract_terms.resolve_resource_path",
                 return_value=os.path.join("data", "kk", "vocab.txt"),
             ) as resolve_mock,
-            patch("extract_terms.read_optional_text_file", return_value=None),
+            patch("extract_terms.read_optional_vocabulary_file", return_value=None),
             patch("extract_terms.detect_file_kind", return_value=process.FileKind.TXT),
             patch("extract_terms.load_entries_for_file", return_value=[]),
             patch("extract_terms.sys.argv", ["extract_terms.py", "input.po", "--mode", "all"]),
@@ -209,6 +245,27 @@ class ExtractTermsSmokeTests(unittest.TestCase):
             extension="txt",
             target_lang="kk",
         )
+
+    def test_main_missing_po_output_loads_vocabulary_pairs_for_merged_po(self):
+        with (
+            patch.dict(os.environ, {"GOOGLE_API_KEY": "test-key"}, clear=False),
+            patch("extract_terms.genai.Client"),
+            patch(
+                "extract_terms.resolve_resource_path",
+                return_value=os.path.join("data", "kk", "vocab.txt"),
+            ),
+            patch("extract_terms.read_optional_vocabulary_file", return_value="save - saqtau"),
+            patch("extract_terms.load_vocabulary_pairs", return_value=[("save", "saqtau")]) as load_pairs_mock,
+            patch("extract_terms.detect_file_kind", return_value=process.FileKind.TXT),
+            patch("extract_terms.load_entries_for_file", return_value=[_DummyEntry("Open file")]),
+            patch("extract_terms.normalize_limits", return_value=(100, 1, "manual")),
+            patch("extract_terms.generate_with_retry", return_value=_DummyResponse(parsed={"terms": []})),
+            patch("extract_terms.sys.argv", ["extract_terms.py", "input.po", "--mode", "missing", "--out-format", "po"]),
+            patch("builtins.print"),
+        ):
+            extract_terms.main()
+
+        load_pairs_mock.assert_called_once_with(os.path.join("data", "kk", "vocab.txt"), "Vocabulary")
 
 
 if __name__ == "__main__":

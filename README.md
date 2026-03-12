@@ -80,6 +80,14 @@ Override them per run:
 python process.py your_file.po --vocab custom-vocab.txt --rules custom-rules.md
 ```
 
+`--vocab` also accepts a glossary `.po` file. Only entries that are actually translated
+(so untranslated, fuzzy, and obsolete entries are ignored) are converted to vocabulary pairs
+and injected into the translation prompt:
+
+```
+python process.py your_file.po --vocab approved-glossary.po
+```
+
 Quick inline rule override:
 
 ```
@@ -112,6 +120,29 @@ Defaults:
 - mode: `--mode all` (extract full glossary)
 - output format: `--out-format po`
 - output path: `<input>.glossary.po`
+
+The generated glossary `.po` can be reviewed and then reused directly during translation:
+
+```
+python process.py your_file.po --vocab your_file.glossary.po
+```
+
+When you run missing-term extraction with `--vocab` and `--out-format po`, the output PO is merged automatically:
+
+```
+python extract_terms.py your_file.po --mode missing --vocab data/kk/vocab.txt --out-format po
+```
+
+That PO contains:
+
+- translated entries imported from the supplied vocabulary
+- newly extracted missing terms as `fuzzy` entries for review
+
+So the resulting file can be passed straight back into translation:
+
+```
+python process.py your_file.po --vocab your_file.missing-terms.po
+```
 
 To get previous behavior (missing terms only, JSON output):
 

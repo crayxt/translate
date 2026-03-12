@@ -23,7 +23,8 @@ from process import (
     load_strings,
     load_txt,
     load_ts,
-    read_optional_text_file,
+    load_vocabulary_pairs,
+    read_optional_vocabulary_file,
     resolve_resource_path,
     resolve_runtime_limits,
 )
@@ -244,6 +245,7 @@ def save_terms_as_po(
     out_path: str,
     source_lang: str,
     target_lang: str,
+    base_vocabulary_pairs: List[Tuple[str, str]] | None = None,
 ) -> None:
     po = polib.POFile()
     po.wrapwidth = PO_WRAP_WIDTH
@@ -256,7 +258,27 @@ def save_terms_as_po(
         "Generated-By": "extract_terms.py",
     }
 
+    seen_terms: set[str] = set()
+
+    def remember_key(text: str) -> str:
+        return " ".join(str(text or "").split()).lower()
+
+    for source_term, target_term in base_vocabulary_pairs or []:
+        key = remember_key(source_term)
+        if not key or key in seen_terms:
+            continue
+        po.append(
+            polib.POEntry(
+                msgid=source_term,
+                msgstr=target_term,
+            )
+        )
+        seen_terms.add(key)
+
     for item in terms:
+        key = remember_key(item.source_term)
+        if not key or key in seen_terms:
+            continue
         entry = polib.POEntry(
             msgid=item.source_term,
             msgstr=item.suggested_translation,
@@ -272,6 +294,7 @@ def save_terms_as_po(
             entry.tcomment = "\n".join(notes)
 
         po.append(entry)
+        seen_terms.add(key)
 
     po.save(out_path)
 
@@ -329,7 +352,7 @@ def main() -> None:
     parser.add_argument(
         "--vocab",
         default=None,
-        help="Optional vocabulary file (auto: data/<target-lang>/vocab.txt)",
+        help="Optional vocabulary file (auto: data/<target-lang>/vocab.txt). Supports .txt and glossary .po",
     )
     parser.add_argument(
         "--mode",
@@ -365,7 +388,10 @@ def main() -> None:
         extension="txt",
         target_lang=args.target_lang,
     )
-    vocabulary_text = read_optional_text_file(vocabulary_path, "Vocabulary")
+    vocabulary_text = read_optional_vocabulary_file(vocabulary_path, "Vocabulary")
+    vocabulary_pairs: List[Tuple[str, str]] = []
+    if args.mode == "missing" and args.out_format == "po" and vocabulary_path:
+        vocabulary_pairs = load_vocabulary_pairs(vocabulary_path, "Vocabulary")
     vocab_source = f"file:{vocabulary_path}" if vocabulary_text and vocabulary_path else "none"
 
     try:
@@ -488,6 +514,7 @@ def main() -> None:
             out_path=out_path,
             source_lang=args.source_lang,
             target_lang=args.target_lang,
+            base_vocabulary_pairs=vocabulary_pairs,
         )
     else:
         with open(out_path, "w", encoding="utf-8") as f:
