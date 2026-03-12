@@ -1,5 +1,6 @@
 about (if single word) - осы туралы
 about - туралы
+accelerate - үдету
 access (verb) - қол жеткізу
 account - тіркелгі
 action - әрекет
