@@ -494,11 +494,50 @@ TRANSLATION_RESPONSE_SCHEMA = genai_types.Schema(
 )
 
 
-def build_translation_generation_config() -> genai_types.GenerateContentConfig:
-    return genai_types.GenerateContentConfig(
-        response_mime_type="application/json",
-        response_schema=TRANSLATION_RESPONSE_SCHEMA,
+THINKING_LEVEL_CHOICES = ("minimal", "low", "medium", "high")
+
+
+def add_thinking_level_argument(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--thinking-level",
+        choices=THINKING_LEVEL_CHOICES,
+        default=None,
+        help="Gemini thinking level (default: provider/model default)",
     )
+
+
+def build_thinking_config(thinking_level: str | None) -> genai_types.ThinkingConfig | None:
+    if thinking_level is None:
+        return None
+
+    normalized = str(thinking_level).strip().lower()
+    thinking_level_map = {
+        "minimal": genai_types.ThinkingLevel.MINIMAL,
+        "low": genai_types.ThinkingLevel.LOW,
+        "medium": genai_types.ThinkingLevel.MEDIUM,
+        "high": genai_types.ThinkingLevel.HIGH,
+    }
+    resolved = thinking_level_map.get(normalized)
+    if resolved is None:
+        raise ValueError(
+            f"Unsupported thinking level: {thinking_level!r}. "
+            f"Expected one of: {', '.join(THINKING_LEVEL_CHOICES)}"
+        )
+
+    return genai_types.ThinkingConfig(thinking_level=resolved)
+
+
+def build_translation_generation_config(
+    thinking_level: str | None = None,
+) -> genai_types.GenerateContentConfig:
+    config_kwargs: Dict[str, Any] = {
+        "response_mime_type": "application/json",
+        "response_schema": TRANSLATION_RESPONSE_SCHEMA,
+    }
+    thinking_config = build_thinking_config(thinking_level)
+    if thinking_config is not None:
+        config_kwargs["thinking_config"] = thinking_config
+    return genai_types.GenerateContentConfig(**config_kwargs)
 
 
 def build_prompt(
@@ -1442,6 +1481,7 @@ def main() -> None:
     parser.add_argument("--source-lang", default="en", help="Default: en")
     parser.add_argument("--target-lang", default="kk", help="Default: kk")
     parser.add_argument("--model", default="gemini-3-flash-preview")
+    add_thinking_level_argument(parser)
     parser.add_argument("--batch-size", type=int, default=None, help="Batch size (auto if omitted)")
     parser.add_argument("--parallel-requests", type=int, default=None, help="Concurrent Gemini requests (auto if omitted)")
     parser.add_argument(
@@ -1524,8 +1564,11 @@ def main() -> None:
     except ValueError as e:
         sys.exit(f"ERROR: {e}")
 
+    translation_config = build_translation_generation_config(args.thinking_level)
+
     print("Startup configuration:")
     print(f"  Model: {args.model}")
+    print(f"  Thinking level: {args.thinking_level or 'provider default'}")
     print(f"  Parallel requests: {parallel_requests}")
     print(f"  Batch size: {batch_size}")
     print(f"  Limits mode: {limits_mode}")
@@ -1598,6 +1641,7 @@ def main() -> None:
                 prompt=prompt,
                 batch_label=f"batch {batch_index + 1}/{batches}",
                 max_attempts=5,
+                config=translation_config,
             )
             translations = parse_response(response)
 
@@ -1632,6 +1676,7 @@ def main() -> None:
                         prompt=retry_prompt,
                         batch_label=f"batch {batch_index + 1}/{batches} missing-items",
                         max_attempts=3,
+                        config=translation_config,
                     )
                     retry_translations = parse_response(retry_resp)
                     translations.update(retry_translations)

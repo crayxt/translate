@@ -4,6 +4,7 @@ import os
 import xml.etree.ElementTree as ET
 
 import polib
+from google.genai import types as genai_types
 
 import process
 
@@ -51,6 +52,17 @@ class ProcessSmokeTests(unittest.TestCase):
         self.assertIn("Return only the corrected final JSON.", prompt)
         self.assertIn("prefer the source plural form as the basis for translation", prompt)
         self.assertIn("numeric placeholder like %d or %n", prompt)
+
+    def test_build_thinking_config_maps_cli_value(self):
+        config = process.build_thinking_config("high")
+        self.assertEqual(config.thinking_level, genai_types.ThinkingLevel.HIGH)
+
+    def test_build_translation_generation_config_includes_thinking_level(self):
+        config = process.build_translation_generation_config("minimal")
+        self.assertEqual(
+            config.thinking_config.thinking_level,
+            genai_types.ThinkingLevel.MINIMAL,
+        )
 
     def test_read_optional_vocabulary_file_supports_po_glossary(self):
         vocab_path = os.path.join(os.getcwd(), "_tmp_vocab_glossary.po")

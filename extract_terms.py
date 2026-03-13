@@ -16,6 +16,8 @@ from google.genai import types as genai_types
 from process import (
     FileKind,
     PO_WRAP_WIDTH,
+    add_thinking_level_argument,
+    build_thinking_config,
     detect_file_kind,
     generate_with_retry,
     load_po,
@@ -240,6 +242,19 @@ def merge_term_candidates(candidates: List[TermCandidate]) -> List[TermCandidate
     return [merged[k] for k in order]
 
 
+def build_term_generation_config(
+    thinking_level: str | None = None,
+) -> genai_types.GenerateContentConfig:
+    config_kwargs: Dict[str, Any] = {
+        "response_mime_type": "application/json",
+        "response_schema": TERM_DISCOVERY_SCHEMA,
+    }
+    thinking_config = build_thinking_config(thinking_level)
+    if thinking_config is not None:
+        config_kwargs["thinking_config"] = thinking_config
+    return genai_types.GenerateContentConfig(**config_kwargs)
+
+
 def save_terms_as_po(
     terms: List[TermCandidate],
     out_path: str,
@@ -347,6 +362,7 @@ def main() -> None:
     parser.add_argument("--source-lang", default="en", help="Default: en")
     parser.add_argument("--target-lang", default="kk", help="Default: kk")
     parser.add_argument("--model", default="gemini-3-flash-preview")
+    add_thinking_level_argument(parser)
     parser.add_argument("--batch-size", type=int, default=None, help="Batch size (auto if omitted)")
     parser.add_argument("--parallel-requests", type=int, default=None, help="Concurrent Gemini requests (auto if omitted)")
     parser.add_argument(
@@ -426,13 +442,11 @@ def main() -> None:
         output_format=args.out_format,
         mode=args.mode,
     )
-    term_config = genai_types.GenerateContentConfig(
-        response_mime_type="application/json",
-        response_schema=TERM_DISCOVERY_SCHEMA,
-    )
+    term_config = build_term_generation_config(args.thinking_level)
 
     print("Startup configuration:")
     print(f"  Model: {args.model}")
+    print(f"  Thinking level: {args.thinking_level or 'provider default'}")
     print(f"  Parallel requests: {parallel_requests}")
     print(f"  Batch size: {batch_size}")
     print(f"  Limits mode: {limits_mode}")

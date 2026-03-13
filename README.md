@@ -31,6 +31,7 @@ Set target language (default is `kk`):
 ```
 python process.py your_file.po --target-lang fr
 python process.py your_file.po --target-lang fr_CA
+python process.py your_file.po --thinking-level medium
 ```
 
 Force re-translation of all translatable messages:
@@ -100,6 +101,7 @@ Startup output prints both:
 
 - `Vocabulary source` (`file:<path>` or `none`)
 - `Rules source` (`file:<path>`, `inline:--rules-str`, combined, or `none`)
+- `Thinking level` (`minimal`, `low`, `medium`, `high`, or provider default)
 
 # Extract Glossary Terms
 
@@ -113,6 +115,7 @@ Optional controls:
 
 ```
 python extract_terms.py your_file.po --out glossary.po --batch-size 200 --parallel-requests 4
+python extract_terms.py your_file.po --thinking-level high
 ```
 
 Defaults:

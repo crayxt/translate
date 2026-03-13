@@ -8,7 +8,7 @@ If any rule conflicts with core STRICT RULES in `process.py`, STRICT RULES win.
 - Preserve HTML/XML tags, escapes, entities, and line breaks exactly.
 - Preserve leading/trailing spaces exactly.
 - Preserve keyboard accelerators and hotkeys (`_`, `&`) and keep them usable/unique in menus.
-- For accelerators in patterns like `_Apply`/`&Apply`, do not assign the accelerator to Kazakh-specific letters: `ә, і, ң, ғ, ү, ұ, қ, ө, һ`.
+- For accelerators in patterns like `_Apply`/`&Apply`, assign the accelerator to cyrillic letter except the Kazakh-specific ones: `ә, і, ң, ғ, ү, ұ, қ, ө, һ`.
 
 ## 2) Terminology Consistency
 - Follow the project vocabulary file exactly for mapped terms.

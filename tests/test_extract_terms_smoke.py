@@ -3,6 +3,7 @@ import os
 from unittest.mock import patch
 
 import polib
+from google.genai import types as genai_types
 
 import extract_terms
 import process
@@ -57,6 +58,13 @@ class ExtractTermsSmokeTests(unittest.TestCase):
         ]
         messages = extract_terms.collect_source_messages(entries)
         self.assertEqual(messages, ["Include me"])
+
+    def test_build_term_generation_config_includes_thinking_level(self):
+        config = extract_terms.build_term_generation_config("medium")
+        self.assertEqual(
+            config.thinking_config.thinking_level,
+            genai_types.ThinkingLevel.MEDIUM,
+        )
 
     def test_parse_term_response_from_parsed_payload(self):
         payload = {
