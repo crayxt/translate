@@ -150,6 +150,43 @@ To get previous behavior (missing terms only, JSON output):
 python extract_terms.py your_file.po --mode missing --out-format json --vocab data/kk/vocab.txt
 ```
 
+# Check Translated PO Files
+
+Run a QA pass on an already translated `.po` file. The checker sends structured `source` / `translation`
+pairs to Gemini and merges model findings with deterministic local checks for placeholders, tags,
+accelerators, plural slots, and approved vocabulary usage:
+
+```
+python check_translations.py your_file.po
+```
+
+Default output path:
+
+```
+your_file.translation-check.json
+```
+
+Optional controls:
+
+```
+python check_translations.py your_file.po --probe 25
+python check_translations.py your_file.po --out report.json --batch-size 100 --parallel-requests 4
+python check_translations.py your_file.po --vocab approved-glossary.po --rules custom-rules.md
+python check_translations.py your_file.po --rules-str "Keep menu labels short and imperative."
+python check_translations.py your_file.po --thinking-level low
+```
+
+`--probe` and `--num-messages` are aliases. They limit how many translated messages are sent to Gemini,
+which is useful for prompt testing and quick validation runs.
+
+Defaults follow the same resource lookup as the translation script:
+
+- `data/<target-lang>/vocab.txt`
+- `data/<target-lang>/rules.md`
+
+`--vocab` also accepts a glossary `.po` file, so you can point the checker at a reviewed glossary PO
+directly.
+
 ## `.strings` behavior
 
 For `.strings` files, this project uses the following convention:
