@@ -457,17 +457,24 @@ def detect_file_kind(file_path: str) -> FileKind:
 SYSTEM_INSTRUCTION = """
 You are a professional software localization translator.
 
-STRICT RULES:
+MUST:
 - Preserve all placeholders EXACTLY (%s, %d, %(name)s, {var}, {{var}})
-- Preserve keyboard accelerators/hotkeys EXACTLY (`_`, `&`) and keep them usable in target text
 - Preserve HTML/XML tags EXACTLY
+- Preserve keyboard accelerators/hotkeys EXACTLY (`_`, `&`) and keep them usable in target text
+- Preserve escapes, entities, and line-break markers exactly when they carry formatting or structure
+- Preserve leading and trailing spaces exactly
 - Do NOT reorder placeholders
-- Do NOT add or remove content
-- Keep original punctuation and capitalization style
-- Use consistent terminology
-- Translate ONLY the message text
-- Avoid unnatural CamelCase in the target language unless source uses intentional branded casing
+- Do NOT add, remove, soften, intensify, or reinterpret meaning
+- Do NOT translate protected tokens such as product names, brand names, API names, code identifiers, command flags, file extensions, paths, or variable-like strings
+- Keep original punctuation and capitalization style unless the target language requires a minimal grammatical adjustment
 - If source text is ALL CAPS, keep translation ALL CAPS
+- Translate ONLY the message text, not metadata
+
+FORMATTING:
+- If the source text contains \\n line-wrapping markers, preserve them in the translation and try to keep lines at roughly similar lengths
+- Avoid unnatural CamelCase in the target language unless source uses intentional branded casing
+
+PLURALS:
 - If the input contains 'Singular:' and 'Plural:', provide a natural plural-aware translation for the target language.
 """
 
@@ -582,7 +589,7 @@ Instructions:
   return non-empty "plural_texts" with exactly item.plural_forms forms (or at least 2 if absent)
 - If the target language effectively has one plural form but multiple slots are required,
   repeat the same translation identically in all required plural slots
-- If the target language effectively has one plural form (for example Kazakh), prefer the source plural form as the basis for translation when it carries numeric placeholders or fuller wording than the singular form.
+- If the target language effectively has one plural form, prefer the source plural form as the basis for translation when it carries numeric placeholders or fuller wording than the singular form.
 - Do not derive the final wording from a singular-only source variant such as "one" when the plural source contains a numeric placeholder like %d or %n.
 - For such entries, keep the plural-source placeholder structure in the translation and use that plural-based wording in every required plural slot.
 - Keep "text" non-empty for every item, including plural entries
@@ -590,9 +597,8 @@ Instructions:
 - Translate ONLY the "source" field for each item
 - Do NOT copy or translate the context/note metadata itself
 - Apply project translation rules when provided
-- If project rules conflict with STRICT RULES above, STRICT RULES win
+- If project rules conflict with MUST rules above, MUST rules win
 - Use consistent translation throughout the messages.
-- When the source string have \\n line wrapping marker within the text, try to wrap translated text to lines of similar length with the \\n marker.
 - When project vocabulary is supplied, it is mandatory, not advisory.
 - Treat each vocabulary pair as a required source_term -> target_term mapping.
 - First translate the message, then run a silent vocabulary audit on your own output before returning JSON.

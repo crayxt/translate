@@ -18,7 +18,8 @@ class _DummyResponse:
 class ProcessSmokeTests(unittest.TestCase):
     def test_system_instruction_is_language_neutral(self):
         self.assertNotIn("Kazakh", process.SYSTEM_INSTRUCTION)
-        self.assertIn("target language", process.SYSTEM_INSTRUCTION)
+        self.assertIn("MUST:", process.SYSTEM_INSTRUCTION)
+        self.assertIn("line-wrapping markers", process.SYSTEM_INSTRUCTION)
 
     def test_merge_project_rules_combines_file_and_inline(self):
         merged = process.merge_project_rules("Rule A", "Rule B")

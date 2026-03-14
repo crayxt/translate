@@ -1,61 +1,47 @@
-# Kazakh Translation Rules
+# Kazakh UI Translation Rules
 
-Apply these project rules for all UI localization.
-If any rule conflicts with core STRICT RULES in `process.py`, STRICT RULES win.
+Apply these rules for Kazakh software UI localization.
+If any rule conflicts with the system MUST rules, the system MUST rules win.
 
-## 1) Safety and Preservation
-- Keep placeholders exactly as-is: `%s`, `%d`, `%(name)s`, `{name}`, `{{name}}`.
-- Preserve HTML/XML tags, escapes, entities, and line breaks exactly.
-- Preserve leading/trailing spaces exactly.
-- Preserve keyboard accelerators and hotkeys (`_`, `&`) and keep them usable/unique in menus.
-- For accelerators in patterns like `_Apply`/`&Apply`, assign the accelerator to cyrillic letter except the Kazakh-specific ones: `ә, і, ң, ғ, ү, ұ, қ, ө, һ`.
-
-## 2) Terminology Consistency
-- Follow the project vocabulary file exactly for mapped terms.
-- Use one canonical term per concept across the whole product.
-- Do not alternate synonyms for the same core UI action.
+## Script
+- Use real Kazakh Cyrillic.
+- Do not use Latin transliteration or mixed-script lookalikes.
+- Do not transliterate blindly when a standard Kazakh localized term already exists.
 - If no good Kazakh equivalent exists, use a standard technical borrowing consistently.
 
-## 3) Kazakh Grammar and Word Order
-- Use natural Kazakh SOV order in full sentences (main verb near sentence end).
-- Use modifier-before-noun order in noun phrases.
-- Keep participial/relative modifiers before the noun they modify.
-- Use postpositions after noun phrases (not preposition-style order).
-- Use natural Kazakh possessive/genitive construction (possessor before possessed).
-- Avoid English/Russian word-order calques.
-- Rephrase prompts into proper Kazakh question forms before finalizing.
-- For yes/no questions, use interrogative clitic particles `ма/ме/ба/бе/па/пе` as separate words after the predicate or focus word: `керек пе?`, `барасыз ба?`.
-- Do not force interrogative particles in content (wh-) questions that already use interrogative words (`кім`, `не`, `қайда`, `қашан`, `неге`, `қалай`): `Бұл не?`, `Қайда барасыз?`.
+## Grammar and Word Order
+- Prefer natural Kazakh word order and avoid English/Russian calques.
+- Use natural Kazakh SOV structure in full sentences where appropriate.
+- Keep modifiers before the noun where natural.
+- Keep participial or relative modifiers before the noun they modify.
+- Use postpositions after noun phrases, not preposition-style calques.
+- Use natural Kazakh possessive and genitive constructions.
 
-## 4) Verb Form and Tone
-- Default to neutral action style for labels/menu items: verbal noun/infinitive.
-- Prefer `Бетті жабу`, `Файлды ашу`, `Параметрлерді сақтау` over polite imperative forms.
-- Prefer `Бетті жабу` instead of `Бетті жабыңыз` in most UI command labels.
-- Use polite imperative only when source clearly addresses the user directly (instruction/warning).
-- Keep tone consistent within one screen/module; do not mix styles arbitrarily.
+## Questions
+- Rephrase prompts into proper natural Kazakh question forms before finalizing.
+- For yes/no questions, use interrogative particles `ма/ме/ба/бе/па/пе` naturally as separate words after the predicate or focus word.
+- Do not force interrogative particles in wh-questions that already contain words such as `кім`, `не`, `қайда`, `қашан`, `неге`, `қалай`.
 
-## 5) Number, Plural, and Morphology
-- After numerals, keep noun form natural for Kazakh UI usage (usually singular base form).
-- For plural-capable messages, use natural Kazakh forms and avoid forced literal plural calques.
-- Keep case endings correct for object, direction, location, and source roles.
+## UI Wording and Tone
+- Default to neutral action style for labels and menu items: verbal noun or infinitive style.
+- Prefer forms like `Бетті жабу`, `Файлды ашу`, `Параметрлерді сақтау` over polite imperative forms in typical UI commands.
+- Use polite imperative only when the source clearly addresses the user directly, such as in instructions or warnings.
+- Keep tone consistent within the same screen or module.
+- Keep Kazakh UI text concise and natural.
+- Keep button and menu labels short action phrases.
 
-## 6) UI Style and Brevity
-- Use concise UI language; avoid unnecessary explanatory additions.
-- Keep sentence case unless source is ALL CAPS.
-- Keep punctuation and emphasis close to source (`:`, `...`, `?`, `!`) unless grammar requires small adjustments.
-- Use guillemet quotes `«...»` for quoted text when quotes are needed.
-- For nested quotes, use `„...“` inside `«...»`; two levels are enough.
-- Keep button/menu labels short action phrases; avoid long full sentences in compact UI controls.
+## Number and Morphology
+- After numerals, prefer natural Kazakh noun forms, usually the singular base form where appropriate in UI usage.
+- For plural-capable messages, use natural Kazakh wording and avoid forced literal plural calques.
+- Keep case endings correct for object, direction, location, source, and other grammatical roles.
 
-## 7) Non-Translatable and Protected Content
-- Do not translate product names, brand names, API names, code identifiers, command flags, or file extensions.
-- Do not alter technical tokens, paths, or variable-like strings.
+## Typography
+- When quotes are needed, prefer `«...»`.
+- For nested quotes, use `„...“` inside `«...»`.
 
-## 8) Meaning Fidelity
-- Do not add/remove meaning.
-- Do not soften/intensify modality (`must`, `cannot`, `optional`) unless source does.
-- If source is ambiguous, choose the most neutral reusable UI translation.
+## Accelerators
+- For accelerators in patterns like `_Apply` or `&Apply`, assign the accelerator to a natural Cyrillic letter.
+- Avoid using Kazakh-specific letters `ә, і, ң, ғ, ү, ұ, қ, ө, һ` for accelerator assignment where a more practical Cyrillic alternative is available.
 
-## 9) Prohibited Patterns
-- Do not add words not present in source for explanation.
-- Do not transliterate blindly when a standard localized term already exists.
+## Meaning
+- Choose the most neutral reusable Kazakh UI translation when the source is ambiguous.
