@@ -190,6 +190,44 @@ Defaults follow the same resource lookup as the translation script:
 `--vocab` also accepts a glossary `.po` file, so you can point the checker at a reviewed glossary PO
 directly.
 
+# Revise Existing Translations
+
+Run an instruction-driven revision pass on an already translated file. The script reviews each
+existing source/translation pair, keeps entries that already satisfy the instruction, and updates
+only the entries that actually need a change.
+
+For formats that keep source and translation in the same file (`.po`, `.ts`):
+
+```
+python revise_translations.py your_file.po --instruction "Change the translation of Save to Store"
+python revise_translations.py your_file.ts --instruction "Use a shorter translation for Close"
+```
+
+For formats where the translated file no longer retains the original source text (`.strings`, `.resx`, `.txt`),
+pass both the translated file and the original source file:
+
+```
+python revise_translations.py translated.ai-translated.strings --source-file original.strings --instruction "Change the translation of viewer to browser only where needed"
+python revise_translations.py translated.ai-translated.resx --source-file original.resx --instruction "Replace toolbar with command bar when the source says toolbar"
+python revise_translations.py translated.txt --source-file source.txt --instruction "Use formal tone for the word Exit"
+```
+
+Behavior:
+
+- default output path: `<input>.revised.<ext>`
+- default output path: `<input>-revised.<ext>`
+- original file is left untouched unless `--in-place` is used
+- `--dry-run` previews the review without writing a file
+- changed AI-reviewed entries are marked as `fuzzy` / `unfinished` for human review
+
+Useful controls:
+
+```
+python revise_translations.py your_file.po --instruction "Replace preferences with settings" --dry-run --probe 50
+python revise_translations.py your_file.po --instruction "Use the term archive instead of package" --out revised.po
+python revise_translations.py translated.ai-translated.strings --source-file original.strings --instruction "Shorten app names where possible" --batch-size 80 --parallel-requests 4
+```
+
 ## `.strings` behavior
 
 For `.strings` files, this project uses the following convention:
