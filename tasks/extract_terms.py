@@ -10,24 +10,28 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List, Literal, Tuple
 
 import polib
-from google import genai
+from google import genai  # compatibility for tests patching old client location
 from google.genai import types as genai_types
 
-from tasks.translate import (
+from core.formats import (
     FileKind,
     PO_WRAP_WIDTH,
-    add_thinking_level_argument,
-    build_thinking_config,
     detect_file_kind,
-    generate_with_retry,
     load_po,
     load_resx,
     load_strings,
     load_txt,
     load_ts,
+)
+from core.providers import GEMINI_PROVIDER
+from core.providers import get_translation_provider
+from core.resources import (
     load_vocabulary_pairs,
     read_optional_vocabulary_file,
     resolve_resource_path,
+)
+from core.runtime import (
+    add_thinking_level_argument,
     resolve_runtime_limits,
 )
 
@@ -245,14 +249,29 @@ def merge_term_candidates(candidates: List[TermCandidate]) -> List[TermCandidate
 def build_term_generation_config(
     thinking_level: str | None = None,
 ) -> genai_types.GenerateContentConfig:
-    config_kwargs: Dict[str, Any] = {
-        "response_mime_type": "application/json",
-        "response_schema": TERM_DISCOVERY_SCHEMA,
-    }
-    thinking_config = build_thinking_config(thinking_level)
-    if thinking_config is not None:
-        config_kwargs["thinking_config"] = thinking_config
-    return genai_types.GenerateContentConfig(**config_kwargs)
+    return GEMINI_PROVIDER.build_translation_config(
+        thinking_level=thinking_level,
+        response_schema=TERM_DISCOVERY_SCHEMA,
+    )
+
+
+async def generate_with_retry(
+    *,
+    client: Any,
+    model: str,
+    prompt: str,
+    batch_label: str,
+    max_attempts: int = 5,
+    config: Any = None,
+) -> Any:
+    return await GEMINI_PROVIDER.generate_with_retry(
+        client=client,
+        model=model,
+        prompt=prompt,
+        batch_label=batch_label,
+        max_attempts=max_attempts,
+        config=config,
+    )
 
 
 def save_terms_as_po(
@@ -354,17 +373,18 @@ def normalize_limits(
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(
         description=(
-            "Extract glossary term candidates from PO/TS/RESX/STRINGS/TXT files using Gemini "
+            "Extract glossary term candidates from PO/TS/RESX/STRINGS/TXT files using the configured provider "
             "and save as PO or JSON"
         )
     )
     parser.add_argument("file", help="Input .po, .ts, .resx, .strings, or .txt file")
     parser.add_argument("--source-lang", default="en", help="Default: en")
     parser.add_argument("--target-lang", default="kk", help="Default: kk")
+    parser.add_argument("--provider", default=GEMINI_PROVIDER.name, help="Model provider (default: gemini)")
     parser.add_argument("--model", default="gemini-3-flash-preview")
     add_thinking_level_argument(parser)
     parser.add_argument("--batch-size", type=int, default=None, help="Batch size (auto if omitted)")
-    parser.add_argument("--parallel-requests", type=int, default=None, help="Concurrent Gemini requests (auto if omitted)")
+    parser.add_argument("--parallel-requests", type=int, default=None, help="Concurrent requests (auto if omitted)")
     parser.add_argument(
         "--vocab",
         default=None,
@@ -392,11 +412,8 @@ def main(argv: list[str] | None = None) -> None:
     if args.max_attempts <= 0:
         sys.exit("ERROR: --max-attempts must be greater than 0")
 
-    api_key = os.getenv("GOOGLE_API_KEY")
-    if not api_key:
-        sys.exit("ERROR: GOOGLE_API_KEY environment variable is not set")
-
-    client = genai.Client(api_key=api_key)
+    provider = get_translation_provider(args.provider)
+    client = provider.create_client_from_env()
 
     vocabulary_path = resolve_resource_path(
         explicit_path=args.vocab,
@@ -442,9 +459,13 @@ def main(argv: list[str] | None = None) -> None:
         output_format=args.out_format,
         mode=args.mode,
     )
-    term_config = build_term_generation_config(args.thinking_level)
+    term_config = provider.build_translation_config(
+        thinking_level=args.thinking_level,
+        response_schema=TERM_DISCOVERY_SCHEMA,
+    )
 
     print("Startup configuration:")
+    print(f"  Provider: {provider.name}")
     print(f"  Model: {args.model}")
     print(f"  Thinking level: {args.thinking_level or 'provider default'}")
     print(f"  Parallel requests: {parallel_requests}")
@@ -511,6 +532,7 @@ def main(argv: list[str] | None = None) -> None:
         "output_file": out_path,
         "discovery_mode": args.mode,
         "output_format": args.out_format,
+        "provider": provider.name,
         "model": args.model,
         "source_lang": args.source_lang,
         "target_lang": args.target_lang,

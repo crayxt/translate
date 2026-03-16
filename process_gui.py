@@ -16,11 +16,14 @@ from tkinter.scrolledtext import ScrolledText
 from typing import TextIO
 
 from core.formats import FileKind, detect_file_kind
+from core.providers import SUPPORTED_TRANSLATION_PROVIDERS, get_translation_provider
 from tasks.translate import build_language_code_candidates
 
 
 DEFAULT_SOURCE_LANG = "en"
 DEFAULT_TARGET_LANG = "kk"
+DEFAULT_PROVIDER = "gemini"
+SUPPORTED_PROVIDER_CHOICES = tuple(sorted(SUPPORTED_TRANSLATION_PROVIDERS))
 DEFAULT_MODEL = "gemini-3-flash-preview"
 THINKING_LEVEL_CHOICES = ("", "minimal", "low", "medium", "high")
 EXTRACT_MODE_CHOICES = ("missing", "all")
@@ -63,6 +66,7 @@ class ProcessGuiConfig:
     input_file: str = ""
     source_lang: str = DEFAULT_SOURCE_LANG
     target_lang: str = DEFAULT_TARGET_LANG
+    provider: str = DEFAULT_PROVIDER
     model: str = DEFAULT_MODEL
     thinking_level: str = ""
     batch_size: str = ""
@@ -79,6 +83,7 @@ class ExtractGuiConfig:
     input_file: str = ""
     source_lang: str = DEFAULT_SOURCE_LANG
     target_lang: str = DEFAULT_TARGET_LANG
+    provider: str = DEFAULT_PROVIDER
     model: str = DEFAULT_MODEL
     thinking_level: str = ""
     batch_size: str = ""
@@ -97,6 +102,7 @@ class CheckGuiConfig:
     input_file: str = ""
     source_lang: str = DEFAULT_SOURCE_LANG
     target_lang: str = DEFAULT_TARGET_LANG
+    provider: str = DEFAULT_PROVIDER
     model: str = DEFAULT_MODEL
     thinking_level: str = ""
     batch_size: str = ""
@@ -117,6 +123,7 @@ class ReviseGuiConfig:
     source_file: str = ""
     source_lang: str = DEFAULT_SOURCE_LANG
     target_lang: str = DEFAULT_TARGET_LANG
+    provider: str = DEFAULT_PROVIDER
     model: str = DEFAULT_MODEL
     thinking_level: str = ""
     batch_size: str = ""
@@ -182,22 +189,6 @@ def build_script_path(script_name: str, base_dir: str | None = None) -> str:
 
 def build_cli_script_path(base_dir: str | None = None) -> str:
     return build_script_path("translate_cli.py", base_dir=base_dir)
-
-
-def build_process_script_path(base_dir: str | None = None) -> str:
-    return build_script_path("process.py", base_dir=base_dir)
-
-
-def build_extract_script_path(base_dir: str | None = None) -> str:
-    return build_script_path("extract_terms.py", base_dir=base_dir)
-
-
-def build_check_script_path(base_dir: str | None = None) -> str:
-    return build_script_path("check_translations.py", base_dir=base_dir)
-
-
-def build_revise_script_path(base_dir: str | None = None) -> str:
-    return build_script_path("revise_translations.py", base_dir=base_dir)
 
 
 def _sanitize_log_name(value: str) -> str:
@@ -310,6 +301,7 @@ def _validate_base_config(
     input_file: str,
     source_lang: str,
     target_lang: str,
+    provider: str,
     model: str,
     thinking_level: str,
     batch_size: str,
@@ -325,6 +317,7 @@ def _validate_base_config(
     cleaned_input = _clean(input_file)
     cleaned_source = _clean(source_lang)
     cleaned_target = _clean(target_lang)
+    cleaned_provider = _clean(provider)
     cleaned_model = _clean(model)
     cleaned_vocab = _clean(vocab_path)
     cleaned_rules = _clean(rules_path)
@@ -340,6 +333,14 @@ def _validate_base_config(
 
     if not cleaned_target:
         errors.append("Target language is required.")
+
+    if not cleaned_provider:
+        errors.append("Provider is required.")
+    else:
+        try:
+            get_translation_provider(cleaned_provider)
+        except ValueError as exc:
+            errors.append(str(exc))
 
     if not cleaned_model:
         errors.append("Model is required.")
@@ -364,10 +365,17 @@ def _validate_base_config(
     if cleaned_rules and not os.path.isfile(cleaned_rules):
         errors.append(f"Rules file does not exist: {cleaned_rules}")
 
-    if not cleaned_api_key and not env.get("GOOGLE_API_KEY"):
-        errors.append(
-            "GOOGLE_API_KEY is not set. Provide an API key in the GUI or the environment."
-        )
+    if cleaned_provider:
+        try:
+            provider_spec = get_translation_provider(cleaned_provider)
+        except ValueError:
+            provider_spec = None
+        if provider_spec is not None:
+            api_key_env = getattr(provider_spec, "api_key_env", None)
+            if api_key_env and not cleaned_api_key and not env.get(api_key_env):
+                errors.append(
+                    f"{api_key_env} is not set. Provide an API key in the GUI or the environment."
+                )
 
     return errors
 
@@ -380,6 +388,7 @@ def validate_process_gui_config(
         input_file=config.input_file,
         source_lang=config.source_lang,
         target_lang=config.target_lang,
+        provider=config.provider,
         model=config.model,
         thinking_level=config.thinking_level,
         batch_size=config.batch_size,
@@ -399,6 +408,7 @@ def validate_extract_gui_config(
         input_file=config.input_file,
         source_lang=config.source_lang,
         target_lang=config.target_lang,
+        provider=config.provider,
         model=config.model,
         thinking_level=config.thinking_level,
         batch_size=config.batch_size,
@@ -438,6 +448,7 @@ def validate_check_gui_config(
         input_file=config.input_file,
         source_lang=config.source_lang,
         target_lang=config.target_lang,
+        provider=config.provider,
         model=config.model,
         thinking_level=config.thinking_level,
         batch_size=config.batch_size,
@@ -484,6 +495,7 @@ def validate_revise_gui_config(
         input_file=config.input_file,
         source_lang=config.source_lang,
         target_lang=config.target_lang,
+        provider=config.provider,
         model=config.model,
         thinking_level=config.thinking_level,
         batch_size=config.batch_size,
@@ -531,6 +543,7 @@ def _append_common_cli_args(
     *,
     source_lang: str,
     target_lang: str,
+    provider: str,
     model: str,
     thinking_level: str,
     batch_size: str,
@@ -543,6 +556,8 @@ def _append_common_cli_args(
             _clean(source_lang),
             "--target-lang",
             _clean(target_lang),
+            "--provider",
+            _clean(provider) or DEFAULT_PROVIDER,
             "--model",
             _clean(model),
         ]
@@ -592,6 +607,7 @@ def build_process_command(
         command,
         source_lang=config.source_lang,
         target_lang=config.target_lang,
+        provider=config.provider,
         model=config.model,
         thinking_level=config.thinking_level,
         batch_size=config.batch_size,
@@ -637,6 +653,7 @@ def build_extract_command(
         command,
         source_lang=config.source_lang,
         target_lang=config.target_lang,
+        provider=config.provider,
         model=config.model,
         thinking_level=config.thinking_level,
         batch_size=config.batch_size,
@@ -690,6 +707,7 @@ def build_check_command(
         command,
         source_lang=config.source_lang,
         target_lang=config.target_lang,
+        provider=config.provider,
         model=config.model,
         thinking_level=config.thinking_level,
         batch_size=config.batch_size,
@@ -755,6 +773,7 @@ def build_revise_command(
         command,
         source_lang=config.source_lang,
         target_lang=config.target_lang,
+        provider=config.provider,
         model=config.model,
         thinking_level=config.thinking_level,
         batch_size=config.batch_size,
@@ -803,12 +822,15 @@ def build_revise_command(
 
 def build_script_env(
     api_key: str,
+    provider: str = DEFAULT_PROVIDER,
     base_env: dict[str, str] | None = None,
 ) -> dict[str, str]:
     env = dict(base_env if base_env is not None else os.environ)
     cleaned_api_key = _clean(api_key)
-    if cleaned_api_key:
-        env["GOOGLE_API_KEY"] = cleaned_api_key
+    provider_spec = get_translation_provider(provider)
+    api_key_env = getattr(provider_spec, "api_key_env", None)
+    if cleaned_api_key and api_key_env:
+        env[api_key_env] = cleaned_api_key
     return env
 
 
@@ -816,7 +838,7 @@ def build_process_env(
     config: ProcessGuiConfig,
     base_env: dict[str, str] | None = None,
 ) -> dict[str, str]:
-    return build_script_env(config.api_key, base_env=base_env)
+    return build_script_env(config.api_key, provider=config.provider, base_env=base_env)
 
 
 class BaseToolTab(ttk.Frame):
@@ -848,6 +870,7 @@ class BaseToolTab(ttk.Frame):
         self.input_file_var = tk.StringVar()
         self.source_lang_var = tk.StringVar(value=DEFAULT_SOURCE_LANG)
         self.target_lang_var = tk.StringVar(value=DEFAULT_TARGET_LANG)
+        self.provider_var = tk.StringVar(value=DEFAULT_PROVIDER)
         self.model_var = tk.StringVar(value=DEFAULT_MODEL)
         self.thinking_level_var = tk.StringVar()
         self.batch_size_var = tk.StringVar()
@@ -870,6 +893,7 @@ class BaseToolTab(ttk.Frame):
         self._load_rules_preview()
 
         self.api_key_var.trace_add("write", self._on_api_key_changed)
+        self.provider_var.trace_add("write", self._on_provider_changed)
         self.target_lang_var.trace_add("write", self._on_target_lang_changed)
         self.rules_path_var.trace_add("write", self._on_rules_path_changed)
 
@@ -901,6 +925,14 @@ class BaseToolTab(ttk.Frame):
         self._add_entry_row(form, row=row, label="Source lang", variable=self.source_lang_var)
         row += 1
         self._add_entry_row(form, row=row, label="Target lang", variable=self.target_lang_var)
+        row += 1
+        self._add_combo_row(
+            form,
+            row=row,
+            label="Provider",
+            variable=self.provider_var,
+            values=SUPPORTED_PROVIDER_CHOICES,
+        )
         row += 1
         self._add_entry_row(form, row=row, label="Model", variable=self.model_var)
         row += 1
@@ -1107,6 +1139,9 @@ class BaseToolTab(ttk.Frame):
     def _on_api_key_changed(self, *_args: object) -> None:
         self._refresh_api_status()
 
+    def _on_provider_changed(self, *_args: object) -> None:
+        self._refresh_api_status()
+
     def _on_target_lang_changed(self, *_args: object) -> None:
         self._apply_default_resources()
 
@@ -1114,15 +1149,27 @@ class BaseToolTab(ttk.Frame):
         self._load_rules_preview()
 
     def _refresh_api_status(self) -> None:
+        provider_name = _clean(self.provider_var.get()) or DEFAULT_PROVIDER
+        try:
+            provider_spec = get_translation_provider(provider_name)
+        except ValueError:
+            self.api_status_var.set(f"API key source: invalid provider ({provider_name})")
+            return
+
+        api_key_env = getattr(provider_spec, "api_key_env", None)
+        if not api_key_env:
+            self.api_status_var.set("API key source: not required")
+            return
+
         if _clean(self.api_key_var.get()):
-            self.api_status_var.set("API key source: GUI field")
+            self.api_status_var.set(f"API key source: GUI field ({api_key_env})")
             return
 
-        if os.environ.get("GOOGLE_API_KEY"):
-            self.api_status_var.set("API key source: GOOGLE_API_KEY environment variable")
+        if os.environ.get(api_key_env):
+            self.api_status_var.set(f"API key source: {api_key_env} environment variable")
             return
 
-        self.api_status_var.set("API key source: missing")
+        self.api_status_var.set(f"API key source: missing ({api_key_env})")
 
     def _apply_default_resources(self, force: bool = False) -> None:
         vocab_path, rules_path = detect_default_resource_paths(
@@ -1198,7 +1245,7 @@ class BaseToolTab(ttk.Frame):
         self.log_text.configure(state="disabled")
 
     def build_env(self) -> dict[str, str]:
-        return build_script_env(self.api_key_var.get())
+        return build_script_env(self.api_key_var.get(), provider=self.provider_var.get())
 
     def build_command(self) -> list[str]:
         raise NotImplementedError
@@ -1211,8 +1258,8 @@ class ProcessToolTab(BaseToolTab):
             app,
             notebook,
             tool_key="process",
-            title="Translate with process.py",
-            script_name="process.py",
+            title="Translate",
+            script_name="translate_cli.py",
             input_filetypes=TRANSLATABLE_FILETYPES,
             supports_vocab=True,
             supports_rules=True,
@@ -1231,6 +1278,7 @@ class ProcessToolTab(BaseToolTab):
             input_file=self.input_file_var.get(),
             source_lang=self.source_lang_var.get(),
             target_lang=self.target_lang_var.get(),
+            provider=self.provider_var.get(),
             model=self.model_var.get(),
             thinking_level=self.thinking_level_var.get(),
             batch_size=self.batch_size_var.get(),
@@ -1257,8 +1305,8 @@ class ExtractToolTab(BaseToolTab):
             app,
             notebook,
             tool_key="extract",
-            title="Extract glossary terms with extract_terms.py",
-            script_name="extract_terms.py",
+            title="Extract Terms",
+            script_name="translate_cli.py",
             input_filetypes=TRANSLATABLE_FILETYPES,
             supports_vocab=True,
             supports_rules=False,
@@ -1316,6 +1364,7 @@ class ExtractToolTab(BaseToolTab):
             input_file=self.input_file_var.get(),
             source_lang=self.source_lang_var.get(),
             target_lang=self.target_lang_var.get(),
+            provider=self.provider_var.get(),
             model=self.model_var.get(),
             thinking_level=self.thinking_level_var.get(),
             batch_size=self.batch_size_var.get(),
@@ -1343,8 +1392,8 @@ class CheckToolTab(BaseToolTab):
             app,
             notebook,
             tool_key="check",
-            title="Review translations with check_translations.py",
-            script_name="check_translations.py",
+            title="Check Translations",
+            script_name="translate_cli.py",
             input_filetypes=CHECK_FILETYPES,
             supports_vocab=True,
             supports_rules=True,
@@ -1391,6 +1440,7 @@ class CheckToolTab(BaseToolTab):
             input_file=self.input_file_var.get(),
             source_lang=self.source_lang_var.get(),
             target_lang=self.target_lang_var.get(),
+            provider=self.provider_var.get(),
             model=self.model_var.get(),
             thinking_level=self.thinking_level_var.get(),
             batch_size=self.batch_size_var.get(),
@@ -1422,8 +1472,8 @@ class ReviseToolTab(BaseToolTab):
             app,
             notebook,
             tool_key="revise",
-            title="Revise translations with revise_translations.py",
-            script_name="revise_translations.py",
+            title="Revise Translations",
+            script_name="translate_cli.py",
             input_filetypes=TRANSLATABLE_FILETYPES,
             supports_vocab=True,
             supports_rules=True,
@@ -1514,6 +1564,7 @@ class ReviseToolTab(BaseToolTab):
             source_file=self.source_file_var.get(),
             source_lang=self.source_lang_var.get(),
             target_lang=self.target_lang_var.get(),
+            provider=self.provider_var.get(),
             model=self.model_var.get(),
             thinking_level=self.thinking_level_var.get(),
             batch_size=self.batch_size_var.get(),

@@ -19,6 +19,8 @@ from core.formats import (
     EntryStatus,
     FileKind,
     UnifiedEntry,
+    _detect_text_encoding,
+    _write_text_with_encoding_fallback,
     build_entry_source_text,
     detect_file_kind,
     get_entry_prompt_context_and_note,
@@ -27,23 +29,25 @@ from core.formats import (
     load_strings,
     load_ts,
 )
+from core.entries import normalize_model_escaped_text
+from core.providers import GEMINI_PROVIDER
+from core.providers import get_translation_provider
 from core.resources import (
+    build_language_code_candidates,
     detect_rules_source,
     merge_project_rules,
     read_optional_text_file,
     read_optional_vocabulary_file,
     resolve_resource_path,
 )
+from core.runtime import add_thinking_level_argument
 from core.review_flow import (
     has_reviewable_translation as has_shared_reviewable_translation,
     limit_items,
     normalize_limits as normalize_review_limits,
 )
-from google import genai
+from google import genai  # compatibility for tests patching old client location
 from google.genai import types as genai_types
-
-from tasks import translate as process
-from tasks.translate import add_thinking_level_argument, build_thinking_config, generate_with_retry
 
 
 DEFAULT_REVISION_BATCH_SIZE = 120
@@ -108,14 +112,29 @@ class ReviewBundle:
 def build_revision_generation_config(
     thinking_level: str | None = None,
 ) -> genai_types.GenerateContentConfig:
-    config_kwargs: Dict[str, Any] = {
-        "response_mime_type": "application/json",
-        "response_schema": REVISION_RESPONSE_SCHEMA,
-    }
-    thinking_config = build_thinking_config(thinking_level)
-    if thinking_config is not None:
-        config_kwargs["thinking_config"] = thinking_config
-    return genai_types.GenerateContentConfig(**config_kwargs)
+    return GEMINI_PROVIDER.build_translation_config(
+        thinking_level=thinking_level,
+        response_schema=REVISION_RESPONSE_SCHEMA,
+    )
+
+
+async def generate_with_retry(
+    *,
+    client: Any,
+    model: str,
+    prompt: str,
+    batch_label: str,
+    max_attempts: int = 5,
+    config: Any = None,
+) -> Any:
+    return await GEMINI_PROVIDER.generate_with_retry(
+        client=client,
+        model=model,
+        prompt=prompt,
+        batch_label=batch_label,
+        max_attempts=max_attempts,
+        config=config,
+    )
 
 
 def configure_stdio() -> None:
@@ -460,8 +479,8 @@ def build_paired_bundle(
 
 
 def load_paired_txt_bundle(source_file: str, translated_file: str) -> ReviewBundle:
-    source_encoding = process._detect_text_encoding(source_file)
-    translated_encoding = process._detect_text_encoding(translated_file)
+    source_encoding = _detect_text_encoding(source_file)
+    translated_encoding = _detect_text_encoding(translated_file)
 
     with open(source_file, "r", encoding=source_encoding) as handle:
         source_lines = handle.read().splitlines(keepends=True)
@@ -530,7 +549,7 @@ def load_paired_txt_bundle(source_file: str, translated_file: str) -> ReviewBund
     def save_txt() -> None:
         for entry in entries:
             entry.commit()
-        process._write_text_with_encoding_fallback(
+        _write_text_with_encoding_fallback(
             generated_output_path,
             "".join(translated_lines),
             translated_encoding,
@@ -582,7 +601,7 @@ def load_review_bundle(
 
 def build_candidate_plural_forms(item: ReviewItem, result: RevisionResult) -> List[str]:
     usable_forms = [
-        process._normalize_model_escaped_text(item.source_text, text)
+            normalize_model_escaped_text(item.source_text, text)
         for text in result.plural_texts
         if _clean(text)
     ]
@@ -592,7 +611,7 @@ def build_candidate_plural_forms(item: ReviewItem, result: RevisionResult) -> Li
         return usable_forms + [usable_forms[-1]] * (item.plural_form_count - len(usable_forms))
 
     if _clean(result.text):
-        repeated = process._normalize_model_escaped_text(item.source_text, result.text)
+        repeated = normalize_model_escaped_text(item.source_text, result.text)
         return [repeated] * item.plural_form_count
 
     return []
@@ -616,7 +635,7 @@ def apply_revision_to_item(item: ReviewItem, result: RevisionResult) -> bool:
             item.entry.msgstr_plural[key] = candidate_forms[index]
         item.entry.msgstr = candidate_forms[0]
     else:
-        candidate = process._normalize_model_escaped_text(item.source_text, result.text)
+        candidate = normalize_model_escaped_text(item.source_text, result.text)
         if not _clean(candidate):
             return False
         if candidate == item.current_text:
@@ -684,10 +703,11 @@ def main(argv: list[str] | None = None) -> None:
     )
     parser.add_argument("--source-lang", default="en", help="Default: en")
     parser.add_argument("--target-lang", default="kk", help="Default: kk")
+    parser.add_argument("--provider", default=GEMINI_PROVIDER.name, help="Model provider (default: gemini)")
     parser.add_argument("--model", default="gemini-3-flash-preview")
     add_thinking_level_argument(parser)
     parser.add_argument("--batch-size", type=int, default=None, help="Batch size (auto if omitted)")
-    parser.add_argument("--parallel-requests", type=int, default=None, help="Concurrent Gemini requests (auto if omitted)")
+    parser.add_argument("--parallel-requests", type=int, default=None, help="Concurrent requests (auto if omitted)")
     parser.add_argument(
         "--probe",
         "--num-messages",
@@ -696,7 +716,7 @@ def main(argv: list[str] | None = None) -> None:
         default=None,
         help="Review only the first N reviewable entries.",
     )
-    parser.add_argument("--max-attempts", type=int, default=5, help="Gemini retry attempts per batch")
+    parser.add_argument("--max-attempts", type=int, default=5, help="Retry attempts per batch")
     parser.add_argument(
         "--vocab",
         default=None,
@@ -718,10 +738,6 @@ def main(argv: list[str] | None = None) -> None:
         sys.exit("ERROR: --out and --in-place cannot be used together")
     if args.max_attempts <= 0:
         sys.exit("ERROR: --max-attempts must be greater than 0")
-
-    api_key = os.getenv("GOOGLE_API_KEY")
-    if not api_key:
-        sys.exit("ERROR: GOOGLE_API_KEY environment variable is not set")
 
     try:
         review_bundle = load_review_bundle(args.file, source_file=args.source_file)
@@ -760,8 +776,12 @@ def main(argv: list[str] | None = None) -> None:
     rules_source = detect_rules_source(rules_path, rules_text, args.rules_str)
     vocabulary_source = f"file:{vocabulary_path}" if vocabulary_text and vocabulary_path else "none"
 
-    client = genai.Client(api_key=api_key)
-    revision_config = build_revision_generation_config(args.thinking_level)
+    provider = get_translation_provider(args.provider)
+    client = provider.create_client_from_env()
+    revision_config = provider.build_translation_config(
+        thinking_level=args.thinking_level,
+        response_schema=REVISION_RESPONSE_SCHEMA,
+    )
     final_output_path = build_final_output_path(
         translated_file=args.file,
         explicit_out=args.out,
@@ -769,6 +789,7 @@ def main(argv: list[str] | None = None) -> None:
     )
 
     print("Startup configuration:")
+    print(f"  Provider: {provider.name}")
     print(f"  Model: {args.model}")
     print(f"  Thinking level: {args.thinking_level or 'provider default'}")
     print(f"  Parallel requests: {parallel_requests}")

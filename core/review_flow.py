@@ -2,7 +2,8 @@ from __future__ import annotations
 
 from typing import Any, Tuple
 
-from tasks.translate import EntryStatus, resolve_runtime_limits
+from core.formats import EntryStatus
+from core.runtime import resolve_runtime_limits
 
 
 def normalize_limits(
