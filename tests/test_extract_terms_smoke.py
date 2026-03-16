@@ -5,8 +5,8 @@ from unittest.mock import patch
 import polib
 from google.genai import types as genai_types
 
-import extract_terms
-import process
+from tasks import extract_terms
+from tasks import translate as process
 
 
 class _DummyResponse:
@@ -176,7 +176,7 @@ class ExtractTermsSmokeTests(unittest.TestCase):
 
         fake_po = _CapturePO()
 
-        with patch("extract_terms.polib.POFile", return_value=fake_po):
+        with patch("tasks.extract_terms.polib.POFile", return_value=fake_po):
             extract_terms.save_terms_as_po(
                 terms=[
                     extract_terms.TermCandidate(
@@ -234,15 +234,15 @@ class ExtractTermsSmokeTests(unittest.TestCase):
     def test_main_auto_loads_vocabulary_for_mode_all(self):
         with (
             patch.dict(os.environ, {"GOOGLE_API_KEY": "test-key"}, clear=False),
-            patch("extract_terms.genai.Client"),
+            patch("tasks.extract_terms.genai.Client"),
             patch(
-                "extract_terms.resolve_resource_path",
+                "tasks.extract_terms.resolve_resource_path",
                 return_value=os.path.join("data", "kk", "vocab.txt"),
             ) as resolve_mock,
-            patch("extract_terms.read_optional_vocabulary_file", return_value=None),
-            patch("extract_terms.detect_file_kind", return_value=process.FileKind.TXT),
-            patch("extract_terms.load_entries_for_file", return_value=[]),
-            patch("extract_terms.sys.argv", ["extract_terms.py", "input.po", "--mode", "all"]),
+            patch("tasks.extract_terms.read_optional_vocabulary_file", return_value=None),
+            patch("tasks.extract_terms.detect_file_kind", return_value=process.FileKind.TXT),
+            patch("tasks.extract_terms.load_entries_for_file", return_value=[]),
+            patch("tasks.extract_terms.sys.argv", ["extract_terms.py", "input.po", "--mode", "all"]),
             patch("builtins.print"),
         ):
             extract_terms.main()
@@ -257,18 +257,18 @@ class ExtractTermsSmokeTests(unittest.TestCase):
     def test_main_missing_po_output_loads_vocabulary_pairs_for_merged_po(self):
         with (
             patch.dict(os.environ, {"GOOGLE_API_KEY": "test-key"}, clear=False),
-            patch("extract_terms.genai.Client"),
+            patch("tasks.extract_terms.genai.Client"),
             patch(
-                "extract_terms.resolve_resource_path",
+                "tasks.extract_terms.resolve_resource_path",
                 return_value=os.path.join("data", "kk", "vocab.txt"),
             ),
-            patch("extract_terms.read_optional_vocabulary_file", return_value="save - saqtau"),
-            patch("extract_terms.load_vocabulary_pairs", return_value=[("save", "saqtau")]) as load_pairs_mock,
-            patch("extract_terms.detect_file_kind", return_value=process.FileKind.TXT),
-            patch("extract_terms.load_entries_for_file", return_value=[_DummyEntry("Open file")]),
-            patch("extract_terms.normalize_limits", return_value=(100, 1, "manual")),
-            patch("extract_terms.generate_with_retry", return_value=_DummyResponse(parsed={"terms": []})),
-            patch("extract_terms.sys.argv", ["extract_terms.py", "input.po", "--mode", "missing", "--out-format", "po"]),
+            patch("tasks.extract_terms.read_optional_vocabulary_file", return_value="save - saqtau"),
+            patch("tasks.extract_terms.load_vocabulary_pairs", return_value=[("save", "saqtau")]) as load_pairs_mock,
+            patch("tasks.extract_terms.detect_file_kind", return_value=process.FileKind.TXT),
+            patch("tasks.extract_terms.load_entries_for_file", return_value=[_DummyEntry("Open file")]),
+            patch("tasks.extract_terms.normalize_limits", return_value=(100, 1, "manual")),
+            patch("tasks.extract_terms.generate_with_retry", return_value=_DummyResponse(parsed={"terms": []})),
+            patch("tasks.extract_terms.sys.argv", ["extract_terms.py", "input.po", "--mode", "missing", "--out-format", "po"]),
             patch("builtins.print"),
         ):
             extract_terms.main()

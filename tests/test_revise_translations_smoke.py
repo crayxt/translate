@@ -1,9 +1,8 @@
 import os
 import unittest
 
-from process import EntryStatus, FileKind, UnifiedEntry
-
-import revise_translations
+from tasks.translate import EntryStatus, FileKind, UnifiedEntry
+from tasks import revise_translations
 
 
 class ReviseTranslationsSmokeTests(unittest.TestCase):

@@ -13,7 +13,7 @@ import polib
 from google import genai
 from google.genai import types as genai_types
 
-from process import (
+from tasks.translate import (
     FileKind,
     PO_WRAP_WIDTH,
     add_thinking_level_argument,
@@ -351,7 +351,7 @@ def normalize_limits(
     )
 
 
-def main() -> None:
+def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(
         description=(
             "Extract glossary term candidates from PO/TS/RESX/STRINGS/TXT files using Gemini "
@@ -385,7 +385,7 @@ def main() -> None:
     parser.add_argument("--out", default=None, help="Output path (default depends on --mode and --out-format)")
     parser.add_argument("--max-terms-per-batch", type=int, default=80, help="Max term suggestions requested per batch")
     parser.add_argument("--max-attempts", type=int, default=5, help="Retry attempts per batch")
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
     if args.max_terms_per_batch <= 0:
         sys.exit("ERROR: --max-terms-per-batch must be greater than 0")

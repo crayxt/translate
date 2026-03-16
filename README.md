@@ -1,5 +1,5 @@
-# Translate script
-Script for translating PO/TS/RESX/STRINGS/TXT localization files using Google Gemini API.
+# Translation Toolkit
+Toolkit for translating, checking, revising, and extracting glossary terms from PO/TS/RESX/STRINGS/TXT localization files using Google Gemini API.
 
 # Setup
 Install dependencies:
@@ -17,11 +17,11 @@ set GOOGLE_API_KEY=your_google_api_key
 # Run
 
 ```
-python process.py your_file.po
-python process.py your_file.ts
-python process.py your_file.resx
-python process.py your_file.strings
-python process.py your_file.txt
+python translate_cli.py translate your_file.po
+python translate_cli.py translate your_file.ts
+python translate_cli.py translate your_file.resx
+python translate_cli.py translate your_file.strings
+python translate_cli.py translate your_file.txt
 ```
 
 Output files are written as `*.ai-translated.po`, `*.ai-translated.ts`, `*.ai-translated.resx`, `*.ai-translated.strings`, or `*.ai-translated.txt`.
@@ -29,15 +29,15 @@ Output files are written as `*.ai-translated.po`, `*.ai-translated.ts`, `*.ai-tr
 Set target language (default is `kk`):
 
 ```
-python process.py your_file.po --target-lang fr
-python process.py your_file.po --target-lang fr_CA
-python process.py your_file.po --thinking-level medium
+python translate_cli.py translate your_file.po --target-lang fr
+python translate_cli.py translate your_file.po --target-lang fr_CA
+python translate_cli.py translate your_file.po --thinking-level medium
 ```
 
 Force re-translation of all translatable messages:
 
 ```
-python process.py your_file.po --retranslate-all
+python translate_cli.py translate your_file.po --retranslate-all
 ```
 
 Default processing behavior:
@@ -78,7 +78,7 @@ Legacy flat naming is still accepted as a fallback:
 Override them per run:
 
 ```
-python process.py your_file.po --vocab custom-vocab.txt --rules custom-rules.md
+python translate_cli.py translate your_file.po --vocab custom-vocab.txt --rules custom-rules.md
 ```
 
 `--vocab` also accepts a glossary `.po` file. Only entries that are actually translated
@@ -86,13 +86,13 @@ python process.py your_file.po --vocab custom-vocab.txt --rules custom-rules.md
 and injected into the translation prompt:
 
 ```
-python process.py your_file.po --vocab approved-glossary.po
+python translate_cli.py translate your_file.po --vocab approved-glossary.po
 ```
 
 Quick inline rule override:
 
 ```
-python process.py your_file.po --rules-str "Use polite formal tone for settings labels."
+python translate_cli.py translate your_file.po --rules-str "Use polite formal tone for settings labels."
 ```
 
 `--rules-str` is merged with file-based rules when both are present.
@@ -108,14 +108,14 @@ Startup output prints both:
 Run a terminology discovery pass that builds a translated glossary (`msgid=term`, `msgstr=translation`) as PO:
 
 ```
-python extract_terms.py your_file.po
+python translate_cli.py extract-terms your_file.po
 ```
 
 Optional controls:
 
 ```
-python extract_terms.py your_file.po --out glossary.po --batch-size 200 --parallel-requests 4
-python extract_terms.py your_file.po --thinking-level high
+python translate_cli.py extract-terms your_file.po --out glossary.po --batch-size 200 --parallel-requests 4
+python translate_cli.py extract-terms your_file.po --thinking-level high
 ```
 
 Defaults:
@@ -127,13 +127,13 @@ Defaults:
 The generated glossary `.po` can be reviewed and then reused directly during translation:
 
 ```
-python process.py your_file.po --vocab your_file.glossary.po
+python translate_cli.py translate your_file.po --vocab your_file.glossary.po
 ```
 
 When you run missing-term extraction with `--vocab` and `--out-format po`, the output PO is merged automatically:
 
 ```
-python extract_terms.py your_file.po --mode missing --vocab data/kk/vocab.txt --out-format po
+python translate_cli.py extract-terms your_file.po --mode missing --vocab data/kk/vocab.txt --out-format po
 ```
 
 That PO contains:
@@ -144,13 +144,13 @@ That PO contains:
 So the resulting file can be passed straight back into translation:
 
 ```
-python process.py your_file.po --vocab your_file.missing-terms.po
+python translate_cli.py translate your_file.po --vocab your_file.missing-terms.po
 ```
 
 To get previous behavior (missing terms only, JSON output):
 
 ```
-python extract_terms.py your_file.po --mode missing --out-format json --vocab data/kk/vocab.txt
+python translate_cli.py extract-terms your_file.po --mode missing --out-format json --vocab data/kk/vocab.txt
 ```
 
 # Check Translated PO Files
@@ -160,7 +160,7 @@ pairs to Gemini and merges model findings with deterministic local checks for pl
 accelerators, plural slots, and approved vocabulary usage:
 
 ```
-python check_translations.py your_file.po
+python translate_cli.py check your_file.po
 ```
 
 Default output path:
@@ -172,11 +172,11 @@ your_file.translation-check.json
 Optional controls:
 
 ```
-python check_translations.py your_file.po --probe 25
-python check_translations.py your_file.po --out report.json --batch-size 100 --parallel-requests 4
-python check_translations.py your_file.po --vocab approved-glossary.po --rules custom-rules.md
-python check_translations.py your_file.po --rules-str "Keep menu labels short and imperative."
-python check_translations.py your_file.po --thinking-level low
+python translate_cli.py check your_file.po --probe 25
+python translate_cli.py check your_file.po --out report.json --batch-size 100 --parallel-requests 4
+python translate_cli.py check your_file.po --vocab approved-glossary.po --rules custom-rules.md
+python translate_cli.py check your_file.po --rules-str "Keep menu labels short and imperative."
+python translate_cli.py check your_file.po --thinking-level low
 ```
 
 `--probe` and `--num-messages` are aliases. They limit how many translated messages are sent to Gemini,
@@ -199,17 +199,17 @@ only the entries that actually need a change.
 For formats that keep source and translation in the same file (`.po`, `.ts`):
 
 ```
-python revise_translations.py your_file.po --instruction "Change the translation of Save to Store"
-python revise_translations.py your_file.ts --instruction "Use a shorter translation for Close"
+python translate_cli.py revise your_file.po --instruction "Change the translation of Save to Store"
+python translate_cli.py revise your_file.ts --instruction "Use a shorter translation for Close"
 ```
 
 For formats where the translated file no longer retains the original source text (`.strings`, `.resx`, `.txt`),
 pass both the translated file and the original source file:
 
 ```
-python revise_translations.py translated.ai-translated.strings --source-file original.strings --instruction "Change the translation of viewer to browser only where needed"
-python revise_translations.py translated.ai-translated.resx --source-file original.resx --instruction "Replace toolbar with command bar when the source says toolbar"
-python revise_translations.py translated.txt --source-file source.txt --instruction "Use formal tone for the word Exit"
+python translate_cli.py revise translated.ai-translated.strings --source-file original.strings --instruction "Change the translation of viewer to browser only where needed"
+python translate_cli.py revise translated.ai-translated.resx --source-file original.resx --instruction "Replace toolbar with command bar when the source says toolbar"
+python translate_cli.py revise translated.txt --source-file source.txt --instruction "Use formal tone for the word Exit"
 ```
 
 Behavior:
@@ -223,9 +223,9 @@ Behavior:
 Useful controls:
 
 ```
-python revise_translations.py your_file.po --instruction "Replace preferences with settings" --dry-run --probe 50
-python revise_translations.py your_file.po --instruction "Use the term archive instead of package" --out revised.po
-python revise_translations.py translated.ai-translated.strings --source-file original.strings --instruction "Shorten app names where possible" --batch-size 80 --parallel-requests 4
+python translate_cli.py revise your_file.po --instruction "Replace preferences with settings" --dry-run --probe 50
+python translate_cli.py revise your_file.po --instruction "Use the term archive instead of package" --out revised.po
+python translate_cli.py revise translated.ai-translated.strings --source-file original.strings --instruction "Shorten app names where possible" --batch-size 80 --parallel-requests 4
 ```
 
 ## `.strings` behavior

@@ -6,8 +6,8 @@ from unittest.mock import patch
 import polib
 from google.genai import types as genai_types
 
-import check_translations
-import process
+from tasks import check_translations
+from tasks import translate as process
 
 
 class _DummyResponse:
@@ -120,6 +120,11 @@ class CheckTranslationsSmokeTests(unittest.TestCase):
         guidance = check_translations.build_target_script_guidance("fr")
         self.assertIn("real writing system", guidance)
 
+    def test_build_target_script_guidance_mentions_kazakh_cyrillic(self):
+        guidance = check_translations.build_target_script_guidance("kk")
+        self.assertIn("Kazakh Cyrillic alphabet", guidance)
+        self.assertIn("Latin transliteration", guidance)
+
     def test_main_writes_json_report(self):
         out_path = os.path.join(os.getcwd(), "_tmp_translation_check.json")
         entries = [
@@ -140,14 +145,14 @@ class CheckTranslationsSmokeTests(unittest.TestCase):
         try:
             with (
                 patch.dict(os.environ, {"GOOGLE_API_KEY": "test-key"}, clear=False),
-                patch("check_translations.genai.Client"),
-                patch("check_translations.detect_file_kind", return_value=process.FileKind.PO),
-                patch("check_translations.resolve_resource_path", side_effect=[os.path.join("data", "kk", "vocab.txt"), os.path.join("data", "kk", "rules.md")]),
-                patch("check_translations.read_optional_vocabulary_file", return_value="addon - qosymsha"),
-                patch("check_translations.read_optional_text_file", return_value="Use imperative tone."),
-                patch("check_translations.load_po", return_value=(entries, None, None)),
+                patch("tasks.check_translations.genai.Client"),
+                patch("tasks.check_translations.detect_file_kind", return_value=process.FileKind.PO),
+                patch("tasks.check_translations.resolve_resource_path", side_effect=[os.path.join("data", "kk", "vocab.txt"), os.path.join("data", "kk", "rules.md")]),
+                patch("tasks.check_translations.read_optional_vocabulary_file", return_value="addon - qosymsha"),
+                patch("tasks.check_translations.read_optional_text_file", return_value="Use imperative tone."),
+                patch("tasks.check_translations.load_po", return_value=(entries, None, None)),
                 patch(
-                    "check_translations.generate_with_retry",
+                    "tasks.check_translations.generate_with_retry",
                     return_value=_DummyResponse(
                         parsed={
                             "results": [
@@ -166,7 +171,7 @@ class CheckTranslationsSmokeTests(unittest.TestCase):
                     ),
                 ),
                 patch(
-                    "check_translations.sys.argv",
+                    "tasks.check_translations.sys.argv",
                     ["check_translations.py", "input.po", "--out", out_path, "--probe", "1"],
                 ),
                 patch("builtins.print"),

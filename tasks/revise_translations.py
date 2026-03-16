@@ -10,31 +10,40 @@ import sys
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Tuple
 
-from google import genai
-from google.genai import types as genai_types
-
-import process
-from process import (
+from core.review_common import (
+    build_target_script_guidance as build_shared_target_script_guidance,
+    json_load_maybe,
+    plural_key_sort_key,
+)
+from core.formats import (
     EntryStatus,
     FileKind,
     UnifiedEntry,
-    add_thinking_level_argument,
     build_entry_source_text,
-    build_thinking_config,
     detect_file_kind,
-    detect_rules_source,
-    generate_with_retry,
     get_entry_prompt_context_and_note,
     load_po,
     load_resx,
     load_strings,
     load_ts,
+)
+from core.resources import (
+    detect_rules_source,
     merge_project_rules,
     read_optional_text_file,
     read_optional_vocabulary_file,
     resolve_resource_path,
-    resolve_runtime_limits,
 )
+from core.review_flow import (
+    has_reviewable_translation as has_shared_reviewable_translation,
+    limit_items,
+    normalize_limits as normalize_review_limits,
+)
+from google import genai
+from google.genai import types as genai_types
+
+from tasks import translate as process
+from tasks.translate import add_thinking_level_argument, build_thinking_config, generate_with_retry
 
 
 DEFAULT_REVISION_BATCH_SIZE = 120
@@ -127,18 +136,13 @@ def normalize_limits(
     batch_size_arg: int | None,
     parallel_arg: int | None,
 ) -> Tuple[int, int, str]:
-    if batch_size_arg is None and parallel_arg is None:
-        batch_size, parallel, _ = resolve_runtime_limits(
-            total_items=total_items,
-            batch_size_arg=DEFAULT_REVISION_BATCH_SIZE,
-            parallel_arg=DEFAULT_REVISION_PARALLEL,
-        )
-        return batch_size, parallel, "revision defaults"
-
-    return resolve_runtime_limits(
+    return normalize_review_limits(
         total_items=total_items,
         batch_size_arg=batch_size_arg,
         parallel_arg=parallel_arg,
+        default_batch_size=DEFAULT_REVISION_BATCH_SIZE,
+        default_parallel=DEFAULT_REVISION_PARALLEL,
+        label="revision",
     )
 
 
@@ -147,19 +151,7 @@ def _clean(text: str | None) -> str:
 
 
 def _json_load_maybe(text: str) -> Any:
-    payload = (text or "").strip()
-    if not payload:
-        return None
-
-    if payload.startswith("```"):
-        lines = payload.splitlines()
-        if len(lines) >= 3 and lines[-1].strip() == "```":
-            payload = "\n".join(lines[1:-1]).strip()
-
-    try:
-        return json.loads(payload)
-    except json.JSONDecodeError:
-        return None
+    return json_load_maybe(text)
 
 
 def _normalize_revision_payload(payload: Any) -> Dict[str, RevisionResult]:
@@ -225,10 +217,7 @@ def parse_revision_response(response_payload: Any) -> Dict[str, RevisionResult]:
 
 
 def _plural_key_sort_key(value: Any) -> Tuple[int, Any]:
-    try:
-        return (0, int(value))
-    except (TypeError, ValueError):
-        return (1, str(value))
+    return plural_key_sort_key(value)
 
 
 def get_plural_texts(entry: UnifiedEntry) -> List[str]:
@@ -249,39 +238,21 @@ def get_plural_form_count(entry: UnifiedEntry) -> int:
 
 
 def has_reviewable_translation(entry: UnifiedEntry) -> bool:
-    if entry.obsolete:
-        return False
-    if entry.status == EntryStatus.SKIPPED:
-        return False
-    if not _clean(entry.msgid) and not _clean(entry.msgctxt):
-        return False
-    if _clean(entry.msgstr):
-        return True
-    return any(_clean(text) for text in get_plural_texts(entry))
+    return has_shared_reviewable_translation(
+        entry,
+        plural_texts=get_plural_texts(entry),
+        allow_context_only=True,
+    )
 
 
 def limit_review_items(items: List[ReviewItem], num_messages: int | None) -> List[ReviewItem]:
-    if num_messages is None:
-        return items
-    if num_messages <= 0:
-        raise ValueError("--probe/--num-messages must be greater than 0")
-    return items[:num_messages]
+    return limit_items(items, num_messages)
 
 
 def build_target_script_guidance(target_lang: str) -> str | None:
-    normalized = str(target_lang or "").strip().lower().replace("-", "_")
-    if not normalized:
-        return None
-
-    if normalized == "kk" or normalized.startswith("kk_"):
-        return (
-            "For Kazakh, write updated target text in the real Kazakh Cyrillic alphabet. "
-            "Do not use Latin transliteration or Latin lookalikes."
-        )
-
-    return (
-        "When you provide updated target text, use the real writing system of the target "
-        "language, not transliteration."
+    return build_shared_target_script_guidance(
+        target_lang,
+        update_wording=lambda: "updated target text",
     )
 
 
@@ -692,7 +663,7 @@ def print_change_samples(changes: List[Tuple[ReviewItem, RevisionResult]], limit
         print(f"  - {label}: {before} -> {after}")
 
 
-def main() -> None:
+def main(argv: list[str] | None = None) -> None:
     configure_stdio()
     parser = argparse.ArgumentParser(
         description=(
@@ -741,7 +712,7 @@ def main() -> None:
     parser.add_argument("--in-place", action="store_true", help="Overwrite the translated input file")
     parser.add_argument("--dry-run", action="store_true", help="Review and report changes without writing output")
 
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
     if args.out and args.in_place:
         sys.exit("ERROR: --out and --in-place cannot be used together")

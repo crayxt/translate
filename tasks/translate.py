@@ -1518,7 +1518,7 @@ def select_work_items(entries: List[Any], retranslate_all: bool = False) -> List
     return selected
 
 
-def main() -> None:
+def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(
         description="Pre-process and translate PO, TS, RESX, STRINGS, or TXT files using Google Gemini"
     )
@@ -1546,7 +1546,7 @@ def main() -> None:
         help="Force translation of all translatable messages, not only unfinished/fuzzy ones",
     )
 
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
     api_key = os.getenv("GOOGLE_API_KEY")
     if not api_key:

@@ -9,25 +9,34 @@ from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Tuple
 
-from google import genai
-from google.genai import types as genai_types
-
-from process import (
+from core.review_common import (
+    build_target_script_guidance as build_shared_target_script_guidance,
+    json_load_maybe,
+    plural_key_sort_key,
+)
+from core.formats import (
     FileKind,
-    add_thinking_level_argument,
     build_entry_source_text,
-    build_thinking_config,
     detect_file_kind,
-    detect_rules_source,
-    generate_with_retry,
     get_entry_prompt_context_and_note,
     load_po,
+)
+from core.resources import (
+    detect_rules_source,
     merge_project_rules,
     read_optional_text_file,
     read_optional_vocabulary_file,
     resolve_resource_path,
-    resolve_runtime_limits,
 )
+from core.review_flow import (
+    has_reviewable_translation as has_shared_reviewable_translation,
+    limit_items,
+    normalize_limits as normalize_review_limits,
+)
+from google import genai
+from google.genai import types as genai_types
+
+from tasks.translate import add_thinking_level_argument, build_thinking_config, generate_with_retry
 
 
 DEFAULT_CHECK_BATCH_SIZE = 150
@@ -101,18 +110,13 @@ def normalize_limits(
     batch_size_arg: int | None,
     parallel_arg: int | None,
 ) -> Tuple[int, int, str]:
-    if batch_size_arg is None and parallel_arg is None:
-        batch_size, parallel, _ = resolve_runtime_limits(
-            total_items=total_items,
-            batch_size_arg=DEFAULT_CHECK_BATCH_SIZE,
-            parallel_arg=DEFAULT_CHECK_PARALLEL,
-        )
-        return batch_size, parallel, "check defaults"
-
-    return resolve_runtime_limits(
+    return normalize_review_limits(
         total_items=total_items,
         batch_size_arg=batch_size_arg,
         parallel_arg=parallel_arg,
+        default_batch_size=DEFAULT_CHECK_BATCH_SIZE,
+        default_parallel=DEFAULT_CHECK_PARALLEL,
+        label="check",
     )
 
 
@@ -121,26 +125,11 @@ def _normalize_space(text: str) -> str:
 
 
 def _json_load_maybe(text: str) -> Any:
-    payload = (text or "").strip()
-    if not payload:
-        return None
-
-    if payload.startswith("```"):
-        lines = payload.splitlines()
-        if len(lines) >= 3 and lines[-1].strip() == "```":
-            payload = "\n".join(lines[1:-1]).strip()
-
-    try:
-        return json.loads(payload)
-    except json.JSONDecodeError:
-        return None
+    return json_load_maybe(text)
 
 
 def _plural_key_sort_key(value: Any) -> Tuple[int, Any]:
-    try:
-        return (0, int(value))
-    except (TypeError, ValueError):
-        return (1, str(value))
+    return plural_key_sort_key(value)
 
 
 def get_translation_plural_forms(entry: Any) -> List[str]:
@@ -149,7 +138,7 @@ def get_translation_plural_forms(entry: Any) -> List[str]:
         return []
     return [
         str(plural_map[key] or "")
-        for key in sorted(plural_map.keys(), key=_plural_key_sort_key)
+        for key in sorted(plural_map.keys(), key=plural_key_sort_key)
     ]
 
 
@@ -168,13 +157,10 @@ def get_joined_translation_text(entry: Any) -> str:
 
 
 def has_reviewable_translation(entry: Any) -> bool:
-    if bool(getattr(entry, "obsolete", False)):
-        return False
-    if not str(getattr(entry, "msgid", "") or "").strip():
-        return False
-    if str(getattr(entry, "msgstr", "") or "").strip():
-        return True
-    return any(text.strip() for text in get_translation_plural_forms(entry))
+    return has_shared_reviewable_translation(
+        entry,
+        plural_texts=get_translation_plural_forms(entry),
+    )
 
 
 def select_review_entries(entries: List[Any]) -> List[Any]:
@@ -182,11 +168,7 @@ def select_review_entries(entries: List[Any]) -> List[Any]:
 
 
 def limit_review_entries(entries: List[Any], num_messages: int | None) -> List[Any]:
-    if num_messages is None:
-        return entries
-    if num_messages <= 0:
-        raise ValueError("--probe/--num-messages must be greater than 0")
-    return entries[:num_messages]
+    return limit_items(entries, num_messages)
 
 
 def build_target_script_guidance(target_lang: str) -> str | None:
@@ -197,14 +179,32 @@ def build_target_script_guidance(target_lang: str) -> str | None:
     if normalized == "kk" or normalized.startswith("kk_"):
         return (
             "For Kazakh, write suggested target text in the real Kazakh Cyrillic alphabet. "
-            "Do not use Latin transliteration or lookalike letters such as o/ö/u/ü instead of "
-            "Kazakh Cyrillic letters like ө, ү, ұ, қ, ң, ғ, ә, і, һ."
+            "Do not use Latin transliteration or lookalike letters such as o/ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¶/u/ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¼ instead of "
+            "Kazakh Cyrillic letters like ÃƒÆ’Ã¢â‚¬Å“Ãƒâ€šÃ‚Â©, ÃƒÆ’Ã¢â‚¬â„¢Ãƒâ€šÃ‚Â¯, ÃƒÆ’Ã¢â‚¬â„¢Ãƒâ€šÃ‚Â±, ÃƒÆ’Ã¢â‚¬â„¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Âº, ÃƒÆ’Ã¢â‚¬â„¢Ãƒâ€šÃ‚Â£, ÃƒÆ’Ã¢â‚¬â„¢ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œ, ÃƒÆ’Ã¢â‚¬Å“ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢, ÃƒÆ’Ã¢â‚¬ËœÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Å“, ÃƒÆ’Ã¢â‚¬â„¢Ãƒâ€šÃ‚Â»."
         )
 
     return (
         "When you provide target-language fragments or suggested fixes, use the real writing system "
         "and alphabet/script of the target language, not transliteration or lookalike Latin characters."
     )
+
+
+def build_target_script_guidance(target_lang: str) -> str | None:
+    guidance = build_shared_target_script_guidance(
+        target_lang,
+        update_wording=lambda: "suggested target text",
+    )
+    if guidance and "Kazakh Cyrillic alphabet" in guidance:
+        return (
+            "For Kazakh, write suggested target text in the real Kazakh Cyrillic alphabet. "
+            "Do not use Latin transliteration or lookalike letters such as o/\u00f6/u/\u00fc instead of "
+            "Kazakh Cyrillic letters like \u04e9, \u04af, \u04b1, \u049b, \u04a3, \u0493, \u04d9, \u0456, \u04bb."
+        )
+    return (
+        "When you provide target-language fragments or suggested fixes, use the real writing system "
+        "and alphabet/script of the target language, not transliteration or lookalike Latin characters."
+    )
+
 
 
 def build_check_prompt(
@@ -366,7 +366,7 @@ def dedupe_issues(issues: List[CheckIssue]) -> List[CheckIssue]:
     return unique
 
 
-def main() -> None:
+def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(
         description="Check translated PO files using Gemini QA"
     )
@@ -399,7 +399,7 @@ def main() -> None:
     parser.add_argument("--out", default=None, help="Output JSON path (default: <input>.translation-check.json)")
     parser.add_argument("--include-ok", action="store_true", help="Include entries with no issues in the output JSON")
     parser.add_argument("--max-attempts", type=int, default=5, help="Retry attempts per batch")
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
     if args.max_attempts <= 0:
         sys.exit("ERROR: --max-attempts must be greater than 0")

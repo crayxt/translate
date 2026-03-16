@@ -6,7 +6,7 @@ import xml.etree.ElementTree as ET
 import polib
 from google.genai import types as genai_types
 
-import process
+from tasks import translate as process
 
 
 class _DummyResponse:
@@ -119,7 +119,7 @@ class ProcessSmokeTests(unittest.TestCase):
                 os.remove(vocab_path)
 
     def test_load_po_uses_wrapwidth_78(self):
-        with patch("process.polib.pofile", return_value=polib.POFile()) as mocked_pofile:
+        with patch("tasks.translate.polib.pofile", return_value=polib.POFile()) as mocked_pofile:
             process.load_po("sample.po")
 
         mocked_pofile.assert_called_once_with("sample.po", wrapwidth=process.PO_WRAP_WIDTH)
@@ -708,7 +708,7 @@ class ProcessSmokeTests(unittest.TestCase):
         self.assertIn("fr", candidates)
 
     def test_detect_default_text_resource_prefers_exact_match(self):
-        with patch("process.os.path.isfile") as mocked_exists:
+        with patch("tasks.translate.os.path.isfile") as mocked_exists:
             mocked_exists.side_effect = lambda path: path in {
                 os.path.join("data", "fr_CA", "rules.md"),
                 os.path.join("data", "fr", "rules.md"),
@@ -718,7 +718,7 @@ class ProcessSmokeTests(unittest.TestCase):
         self.assertEqual(resolved, os.path.join("data", "fr_CA", "rules.md"))
 
     def test_detect_default_text_resource_falls_back_to_base_language(self):
-        with patch("process.os.path.isfile") as mocked_exists:
+        with patch("tasks.translate.os.path.isfile") as mocked_exists:
             mocked_exists.side_effect = lambda path: path in {
                 os.path.join("data", "fr", "rules.md")
             }
@@ -727,14 +727,14 @@ class ProcessSmokeTests(unittest.TestCase):
         self.assertEqual(resolved, os.path.join("data", "fr", "rules.md"))
 
     def test_detect_default_text_resource_uses_legacy_fallback(self):
-        with patch("process.os.path.isfile") as mocked_exists:
+        with patch("tasks.translate.os.path.isfile") as mocked_exists:
             mocked_exists.side_effect = lambda path: path == "rules-fr.md"
             resolved = process.detect_default_text_resource("rules", "md", "fr_CA")
 
         self.assertEqual(resolved, "rules-fr.md")
 
     def test_resolve_resource_path_prefers_explicit_path(self):
-        with patch("process.detect_default_text_resource") as mocked_detect:
+        with patch("tasks.translate.detect_default_text_resource") as mocked_detect:
             resolved = process.resolve_resource_path("custom-rules.md", "rules", "md", "fr")
 
         mocked_detect.assert_not_called()

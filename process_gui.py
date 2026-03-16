@@ -15,7 +15,8 @@ from tkinter import filedialog, messagebox, ttk
 from tkinter.scrolledtext import ScrolledText
 from typing import TextIO
 
-from process import FileKind, build_language_code_candidates, detect_file_kind
+from core.formats import FileKind, detect_file_kind
+from tasks.translate import build_language_code_candidates
 
 
 DEFAULT_SOURCE_LANG = "en"
@@ -177,6 +178,10 @@ def build_resource_root(base_dir: str | None = None) -> str:
 
 def build_script_path(script_name: str, base_dir: str | None = None) -> str:
     return os.path.join(build_resource_root(base_dir), script_name)
+
+
+def build_cli_script_path(base_dir: str | None = None) -> str:
+    return build_script_path("translate_cli.py", base_dir=base_dir)
 
 
 def build_process_script_path(base_dir: str | None = None) -> str:
@@ -572,14 +577,15 @@ def build_process_command(
     if errors:
         raise ValueError("\n".join(errors))
 
-    resolved_script = os.path.abspath(script_path or build_process_script_path())
+    resolved_script = os.path.abspath(script_path or build_cli_script_path())
     if not os.path.isfile(resolved_script):
-        raise ValueError(f"process.py not found at: {resolved_script}")
+        raise ValueError(f"translate_cli.py not found at: {resolved_script}")
 
     command = [
         python_executable or sys.executable,
         "-u",
         resolved_script,
+        "translate",
         _clean(config.input_file),
     ]
     _append_common_cli_args(
@@ -616,14 +622,15 @@ def build_extract_command(
     if errors:
         raise ValueError("\n".join(errors))
 
-    resolved_script = os.path.abspath(script_path or build_extract_script_path())
+    resolved_script = os.path.abspath(script_path or build_cli_script_path())
     if not os.path.isfile(resolved_script):
-        raise ValueError(f"extract_terms.py not found at: {resolved_script}")
+        raise ValueError(f"translate_cli.py not found at: {resolved_script}")
 
     command = [
         python_executable or sys.executable,
         "-u",
         resolved_script,
+        "extract-terms",
         _clean(config.input_file),
     ]
     _append_common_cli_args(
@@ -668,14 +675,15 @@ def build_check_command(
     if errors:
         raise ValueError("\n".join(errors))
 
-    resolved_script = os.path.abspath(script_path or build_check_script_path())
+    resolved_script = os.path.abspath(script_path or build_cli_script_path())
     if not os.path.isfile(resolved_script):
-        raise ValueError(f"check_translations.py not found at: {resolved_script}")
+        raise ValueError(f"translate_cli.py not found at: {resolved_script}")
 
     command = [
         python_executable or sys.executable,
         "-u",
         resolved_script,
+        "check",
         _clean(config.input_file),
     ]
     _append_common_cli_args(
@@ -730,14 +738,15 @@ def build_revise_command(
     if errors:
         raise ValueError("\n".join(errors))
 
-    resolved_script = os.path.abspath(script_path or build_revise_script_path())
+    resolved_script = os.path.abspath(script_path or build_cli_script_path())
     if not os.path.isfile(resolved_script):
-        raise ValueError(f"revise_translations.py not found at: {resolved_script}")
+        raise ValueError(f"translate_cli.py not found at: {resolved_script}")
 
     command = [
         python_executable or sys.executable,
         "-u",
         resolved_script,
+        "revise",
         _clean(config.input_file),
         "--instruction",
         _clean(config.instruction),
