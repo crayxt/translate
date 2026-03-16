@@ -685,6 +685,23 @@ class ProcessSmokeTests(unittest.TestCase):
                 if os.path.exists(path):
                     os.remove(path)
 
+    def test_write_text_with_encoding_fallback_uses_utf8_sig_when_needed(self):
+        out_path = os.path.join(os.getcwd(), "_tmp_encoding_fallback.txt")
+        try:
+            used_encoding = process._write_text_with_encoding_fallback(
+                out_path,
+                "Қазақша мәтін",
+                "ascii",
+                newline="",
+            )
+
+            self.assertEqual(used_encoding, "utf-8-sig")
+            with open(out_path, "rb") as f:
+                self.assertTrue(f.read().startswith(b"\xef\xbb\xbf"))
+        finally:
+            if os.path.exists(out_path):
+                os.remove(out_path)
+
     def test_build_language_code_candidates_include_locale_and_base(self):
         candidates = process.build_language_code_candidates("fr_CA")
         self.assertIn("fr_CA", candidates)
