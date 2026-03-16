@@ -65,6 +65,7 @@ font - қаріп
 footer - төменгі колонтитул
 footnote - нұсқама
 format - пішім
+fuzzy - дәлсіз
 global - глобалды
 header (in network requests) - тақырыптама
 header - жоғарғы колонтитул
@@ -82,9 +83,11 @@ insert - кірістіру
 key (like in keyboard) - перне
 key (like key thing or key to open a lock) - кілт
 keyboard - пернетақта
+keyring - кілттер бауы
 layout - жайма
 legend - аңыз
 lock (verb) - құлыптау
+mapping - сәйкестендіру
 menu - мәзір
 modifier - модификатор
 monospace - ені біркелкі
@@ -130,6 +133,7 @@ tool - сайман
 theme - тема
 tracker - трекер
 trash - қоқыс шелегі
+troubleshooting - мәселелерді шешу
 upload - жүктеп салу
 undo - болдырмау
 unit - юнит
