@@ -289,6 +289,28 @@ def _detect_text_encoding(file_path: str) -> str:
     return "utf-8"
 
 
+def _write_text_with_encoding_fallback(
+    output_path: str,
+    content: str,
+    preferred_encoding: str,
+    *,
+    newline: str | None = None,
+) -> str:
+    try:
+        with open(output_path, "w", encoding=preferred_encoding, newline=newline) as f:
+            f.write(content)
+        return preferred_encoding
+    except UnicodeEncodeError:
+        fallback_encoding = "utf-8-sig"
+        with open(output_path, "w", encoding=fallback_encoding, newline=newline) as f:
+            f.write(content)
+        print(
+            f"Warning: could not write '{output_path}' using {preferred_encoding}; "
+            f"saved as {fallback_encoding} instead."
+        )
+        return fallback_encoding
+
+
 def _normalize_strings_comment_lines(lines: List[str]) -> str:
     cleaned: List[str] = []
     for line in lines:
@@ -1092,7 +1114,16 @@ def load_po(file_path: str) -> Tuple[List[Any], Callable[[], None], str]:
     def save_po() -> None:
         for entry in entries:
             entry.commit()
-        po.save(output_path)
+        try:
+            po.save(output_path)
+        except UnicodeEncodeError:
+            original_encoding = po.encoding
+            po.encoding = "utf-8"
+            po.save(output_path)
+            print(
+                f"Warning: could not write '{output_path}' using PO encoding "
+                f"{original_encoding!r}; saved as utf-8 instead."
+            )
 
     return entries, save_po, output_path
 
@@ -1184,8 +1215,12 @@ def load_strings(file_path: str) -> Tuple[List[Any], Callable[[], None], str]:
     def save_strings() -> None:
         for entry in entries:
             entry.commit()
-        with open(output_path, "w", encoding=encoding, newline="") as f:
-            f.write("".join(lines))
+        _write_text_with_encoding_fallback(
+            output_path,
+            "".join(lines),
+            encoding,
+            newline="",
+        )
 
     return entries, save_strings, output_path
 
@@ -1232,8 +1267,12 @@ def load_txt(file_path: str) -> Tuple[List[Any], Callable[[], None], str]:
     def save_txt() -> None:
         for entry in entries:
             entry.commit()
-        with open(output_path, "w", encoding=encoding, newline="") as f:
-            f.write("".join(lines))
+        _write_text_with_encoding_fallback(
+            output_path,
+            "".join(lines),
+            encoding,
+            newline="",
+        )
 
     return entries, save_txt, output_path
 
