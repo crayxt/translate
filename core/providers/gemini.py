@@ -14,6 +14,54 @@ class GeminiTranslationProvider:
     name = "gemini"
     default_model = "gemini-3-flash-preview"
     api_key_env = "GOOGLE_API_KEY"
+    supports_structured_json = True
+    supports_thinking = True
+
+    _SCHEMA_TYPE_MAP = {
+        "string": genai_types.Type.STRING,
+        "number": genai_types.Type.NUMBER,
+        "integer": genai_types.Type.INTEGER,
+        "boolean": genai_types.Type.BOOLEAN,
+        "array": genai_types.Type.ARRAY,
+        "object": genai_types.Type.OBJECT,
+    }
+
+    def _build_response_schema(
+        self,
+        json_schema: dict[str, Any] | None,
+    ) -> genai_types.Schema | None:
+        if json_schema is None:
+            return None
+
+        schema_kwargs: Dict[str, Any] = {}
+        schema_type = json_schema.get("type")
+        if schema_type is not None:
+            resolved_type = self._SCHEMA_TYPE_MAP.get(str(schema_type).lower())
+            if resolved_type is None:
+                raise ValueError(f"Unsupported JSON schema type for Gemini provider: {schema_type!r}")
+            schema_kwargs["type"] = resolved_type
+
+        properties = json_schema.get("properties")
+        if isinstance(properties, dict):
+            schema_kwargs["properties"] = {
+                str(name): self._build_response_schema(value)
+                for name, value in properties.items()
+                if isinstance(value, dict)
+            }
+
+        items = json_schema.get("items")
+        if isinstance(items, dict):
+            schema_kwargs["items"] = self._build_response_schema(items)
+
+        required = json_schema.get("required")
+        if isinstance(required, list):
+            schema_kwargs["required"] = [str(item) for item in required]
+
+        description = json_schema.get("description")
+        if description is not None:
+            schema_kwargs["description"] = str(description)
+
+        return genai_types.Schema(**schema_kwargs)
 
     def create_client_from_env(self) -> genai.Client:
         api_key = os.getenv(self.api_key_env)
@@ -21,16 +69,17 @@ class GeminiTranslationProvider:
             sys.exit(f"ERROR: {self.api_key_env} environment variable is not set")
         return genai.Client(api_key=api_key)
 
-    def build_translation_config(
+    def build_generation_config(
         self,
         *,
         thinking_level: str | None,
-        response_schema: Any,
+        json_schema: dict[str, Any] | None,
     ) -> genai_types.GenerateContentConfig:
-        config_kwargs: Dict[str, Any] = {
-            "response_mime_type": "application/json",
-            "response_schema": response_schema,
-        }
+        config_kwargs: Dict[str, Any] = {}
+        response_schema = self._build_response_schema(json_schema)
+        if response_schema is not None:
+            config_kwargs["response_mime_type"] = "application/json"
+            config_kwargs["response_schema"] = response_schema
         thinking_config = build_thinking_config(thinking_level)
         if thinking_config is not None:
             config_kwargs["thinking_config"] = thinking_config

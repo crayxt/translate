@@ -146,13 +146,26 @@ def build_language_code_candidates(target_lang: str) -> List[str]:
     return results
 
 
-def detect_default_text_resource(prefix: str, extension: str, target_lang: str) -> str | None:
+def detect_default_text_resource(
+    prefix: str,
+    extension: str,
+    target_lang: str,
+    *,
+    base_dir: str | None = None,
+) -> str | None:
+    resource_root = os.path.abspath(base_dir) if base_dir else None
+
+    def build_candidate(*parts: str) -> str:
+        if resource_root:
+            return os.path.join(resource_root, *parts)
+        return os.path.join(*parts)
+
     for lang_code in build_language_code_candidates(target_lang):
-        candidate_path = os.path.join("data", lang_code, f"{prefix}.{extension}")
+        candidate_path = build_candidate("data", lang_code, f"{prefix}.{extension}")
         if os.path.isfile(candidate_path):
             return candidate_path
     for lang_code in build_language_code_candidates(target_lang):
-        legacy_path = f"{prefix}-{lang_code}.{extension}"
+        legacy_path = build_candidate(f"{prefix}-{lang_code}.{extension}")
         if os.path.isfile(legacy_path):
             return legacy_path
     return None
@@ -163,10 +176,17 @@ def resolve_resource_path(
     prefix: str,
     extension: str,
     target_lang: str,
+    *,
+    base_dir: str | None = None,
 ) -> str | None:
     if explicit_path:
         return explicit_path
-    return detect_default_text_resource(prefix, extension, target_lang)
+    return detect_default_text_resource(
+        prefix,
+        extension,
+        target_lang,
+        base_dir=base_dir,
+    )
 
 
 def merge_project_rules(file_rules: str | None, inline_rules: str | None) -> str | None:

@@ -1,20 +1,23 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import Any, Protocol
 
 
 class TranslationProvider(Protocol):
     name: str
+    default_model: str
+    api_key_env: str | None
+    supports_structured_json: bool
+    supports_thinking: bool
 
     def create_client_from_env(self) -> Any:
         ...
 
-    def build_translation_config(
+    def build_generation_config(
         self,
         *,
         thinking_level: str | None,
-        response_schema: Any,
+        json_schema: dict[str, Any] | None,
     ) -> Any:
         ...
 
@@ -29,9 +32,3 @@ class TranslationProvider(Protocol):
         config: Any,
     ) -> Any:
         ...
-
-
-@dataclass(frozen=True)
-class ProviderSpec:
-    provider: TranslationProvider
-    model: str

@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 
 import argparse
 import asyncio
@@ -21,8 +21,7 @@ from core.formats import (
     get_entry_prompt_context_and_note,
     load_po,
 )
-from core.providers import GEMINI_PROVIDER
-from core.providers import get_translation_provider
+from core.providers import DEFAULT_PROVIDER, DEFAULT_PROVIDER_NAME, get_translation_provider
 from core.runtime import add_thinking_level_argument
 from core.resources import (
     detect_rules_source,
@@ -36,45 +35,43 @@ from core.review_flow import (
     limit_items,
     normalize_limits as normalize_review_limits,
 )
-from google import genai  # compatibility for tests patching old client location
-from google.genai import types as genai_types
 
 
 DEFAULT_CHECK_BATCH_SIZE = 150
 DEFAULT_CHECK_PARALLEL = 6
 
 
-CHECK_RESPONSE_SCHEMA = genai_types.Schema(
-    type=genai_types.Type.OBJECT,
-    properties={
-        "results": genai_types.Schema(
-            type=genai_types.Type.ARRAY,
-            items=genai_types.Schema(
-                type=genai_types.Type.OBJECT,
-                properties={
-                    "id": genai_types.Schema(type=genai_types.Type.STRING),
-                    "issues": genai_types.Schema(
-                        type=genai_types.Type.ARRAY,
-                        items=genai_types.Schema(
-                            type=genai_types.Type.OBJECT,
-                            properties={
-                                "category": genai_types.Schema(type=genai_types.Type.STRING),
-                                "severity": genai_types.Schema(type=genai_types.Type.STRING),
-                                "message": genai_types.Schema(type=genai_types.Type.STRING),
-                                "source_fragment": genai_types.Schema(type=genai_types.Type.STRING),
-                                "translation_fragment": genai_types.Schema(type=genai_types.Type.STRING),
-                                "suggested_translation": genai_types.Schema(type=genai_types.Type.STRING),
+CHECK_RESPONSE_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "results": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "id": {"type": "string"},
+                    "issues": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "category": {"type": "string"},
+                                "severity": {"type": "string"},
+                                "message": {"type": "string"},
+                                "source_fragment": {"type": "string"},
+                                "translation_fragment": {"type": "string"},
+                                "suggested_translation": {"type": "string"},
                             },
-                            required=["category", "severity", "message"],
-                        ),
-                    ),
+                            "required": ["category", "severity", "message"],
+                        },
+                    },
                 },
-                required=["id", "issues"],
-            ),
-        ),
+                "required": ["id", "issues"],
+            },
+        },
     },
-    required=["results"],
-)
+    "required": ["results"],
+}
 
 
 @dataclass
@@ -90,15 +87,16 @@ class CheckIssue:
 
 def build_check_generation_config(
     thinking_level: str | None = None,
-) -> genai_types.GenerateContentConfig:
-    return GEMINI_PROVIDER.build_translation_config(
+) -> Any:
+    return DEFAULT_PROVIDER.build_generation_config(
         thinking_level=thinking_level,
-        response_schema=CHECK_RESPONSE_SCHEMA,
+        json_schema=CHECK_RESPONSE_SCHEMA,
     )
 
 
 async def generate_with_retry(
     *,
+    provider: Any,
     client: Any,
     model: str,
     prompt: str,
@@ -106,7 +104,7 @@ async def generate_with_retry(
     max_attempts: int = 5,
     config: Any = None,
 ) -> Any:
-    return await GEMINI_PROVIDER.generate_with_retry(
+    return await provider.generate_with_retry(
         client=client,
         model=model,
         prompt=prompt,
@@ -186,23 +184,6 @@ def select_review_entries(entries: List[Any]) -> List[Any]:
 def limit_review_entries(entries: List[Any], num_messages: int | None) -> List[Any]:
     return limit_items(entries, num_messages)
 
-
-def build_target_script_guidance(target_lang: str) -> str | None:
-    normalized = str(target_lang or "").strip().lower().replace("-", "_")
-    if not normalized:
-        return None
-
-    if normalized == "kk" or normalized.startswith("kk_"):
-        return (
-            "For Kazakh, write suggested target text in the real Kazakh Cyrillic alphabet. "
-            "Do not use Latin transliteration or lookalike letters such as o/ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¶/u/ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¼ instead of "
-            "Kazakh Cyrillic letters like ÃƒÆ’Ã¢â‚¬Å“Ãƒâ€šÃ‚Â©, ÃƒÆ’Ã¢â‚¬â„¢Ãƒâ€šÃ‚Â¯, ÃƒÆ’Ã¢â‚¬â„¢Ãƒâ€šÃ‚Â±, ÃƒÆ’Ã¢â‚¬â„¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Âº, ÃƒÆ’Ã¢â‚¬â„¢Ãƒâ€šÃ‚Â£, ÃƒÆ’Ã¢â‚¬â„¢ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œ, ÃƒÆ’Ã¢â‚¬Å“ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢, ÃƒÆ’Ã¢â‚¬ËœÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Å“, ÃƒÆ’Ã¢â‚¬â„¢Ãƒâ€šÃ‚Â»."
-        )
-
-    return (
-        "When you provide target-language fragments or suggested fixes, use the real writing system "
-        "and alphabet/script of the target language, not transliteration or lookalike Latin characters."
-    )
 
 
 def build_target_script_guidance(target_lang: str) -> str | None:
@@ -382,15 +363,17 @@ def dedupe_issues(issues: List[CheckIssue]) -> List[CheckIssue]:
     return unique
 
 
-def main(argv: list[str] | None = None) -> None:
-    parser = argparse.ArgumentParser(
-        description="Check translated PO files using the configured provider"
-    )
+def configure_parser(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
+    parser.description = "Check translated PO files using the configured provider"
     parser.add_argument("file", help="Input translated .po file")
     parser.add_argument("--source-lang", default="en", help="Default: en")
     parser.add_argument("--target-lang", default="kk", help="Default: kk")
-    parser.add_argument("--provider", default=GEMINI_PROVIDER.name, help="Model provider (default: gemini)")
-    parser.add_argument("--model", default="gemini-3-flash-preview")
+    parser.add_argument(
+        "--provider",
+        default=DEFAULT_PROVIDER_NAME,
+        help=f"Model provider (default: {DEFAULT_PROVIDER_NAME})",
+    )
+    parser.add_argument("--model", default=DEFAULT_PROVIDER.default_model)
     add_thinking_level_argument(parser)
     parser.add_argument("--batch-size", type=int, default=None, help="Batch size (auto if omitted)")
     parser.add_argument("--parallel-requests", type=int, default=None, help="Concurrent requests (auto if omitted)")
@@ -416,7 +399,14 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--out", default=None, help="Output JSON path (default: <input>.translation-check.json)")
     parser.add_argument("--include-ok", action="store_true", help="Include entries with no issues in the output JSON")
     parser.add_argument("--max-attempts", type=int, default=5, help="Retry attempts per batch")
-    args = parser.parse_args(argv)
+    return parser
+
+
+def build_parser() -> argparse.ArgumentParser:
+    return configure_parser(argparse.ArgumentParser())
+
+
+def run_from_args(args: argparse.Namespace) -> None:
 
     if args.max_attempts <= 0:
         sys.exit("ERROR: --max-attempts must be greater than 0")
@@ -479,9 +469,9 @@ def main(argv: list[str] | None = None) -> None:
         for i in range((total + batch_size - 1) // batch_size)
     ]
     out_path = args.out or build_check_output_path(args.file)
-    config = provider.build_translation_config(
+    config = provider.build_generation_config(
         thinking_level=args.thinking_level,
-        response_schema=CHECK_RESPONSE_SCHEMA,
+        json_schema=CHECK_RESPONSE_SCHEMA,
     )
 
     print("Startup configuration:")
@@ -514,6 +504,7 @@ def main(argv: list[str] | None = None) -> None:
             )
 
             response = await generate_with_retry(
+                provider=provider,
                 client=client,
                 model=args.model,
                 prompt=prompt,
@@ -601,6 +592,12 @@ def main(argv: list[str] | None = None) -> None:
     print(f"Saved report: {out_path}")
     print(f"Entries with issues: {payload['entries_with_issues']} / {total}")
     print(f"Total issues: {payload['issue_count']}")
+
+
+def main(argv: list[str] | None = None) -> None:
+    parser = build_parser()
+    args = parser.parse_args(argv)
+    run_from_args(args)
 
 
 if __name__ == "__main__":

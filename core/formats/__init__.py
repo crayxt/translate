@@ -5,14 +5,13 @@ from core.formats.base import (
     EntryStatus,
     FileKind,
     UnifiedEntry,
-    _build_unified_entry,
     build_output_path,
     detect_file_kind,
     select_work_items,
 )
 from core.formats.po import PO_WRAP_WIDTH, load_po
 from core.formats.resx import ResxEntryAdapter, load_resx
-from core.formats.strings import StringsEntryAdapter, _detect_text_encoding, _write_text_with_encoding_fallback, load_strings
+from core.formats.strings import StringsEntryAdapter, load_strings
 from core.formats.ts import TSEntryAdapter, load_ts
 from core.formats.txt import load_txt
 
@@ -36,7 +35,4 @@ __all__ = [
     "load_txt",
     "plural_key_sort_key",
     "select_work_items",
-    "_build_unified_entry",
-    "_detect_text_encoding",
-    "_write_text_with_encoding_fallback",
 ]

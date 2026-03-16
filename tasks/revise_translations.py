@@ -19,8 +19,6 @@ from core.formats import (
     EntryStatus,
     FileKind,
     UnifiedEntry,
-    _detect_text_encoding,
-    _write_text_with_encoding_fallback,
     build_entry_source_text,
     detect_file_kind,
     get_entry_prompt_context_and_note,
@@ -29,11 +27,10 @@ from core.formats import (
     load_strings,
     load_ts,
 )
+from core.formats.strings import _detect_text_encoding, _write_text_with_encoding_fallback
 from core.entries import normalize_model_escaped_text
-from core.providers import GEMINI_PROVIDER
-from core.providers import get_translation_provider
+from core.providers import DEFAULT_PROVIDER, DEFAULT_PROVIDER_NAME, get_translation_provider
 from core.resources import (
-    build_language_code_candidates,
     detect_rules_source,
     merge_project_rules,
     read_optional_text_file,
@@ -46,37 +43,35 @@ from core.review_flow import (
     limit_items,
     normalize_limits as normalize_review_limits,
 )
-from google import genai  # compatibility for tests patching old client location
-from google.genai import types as genai_types
 
 
 DEFAULT_REVISION_BATCH_SIZE = 120
 DEFAULT_REVISION_PARALLEL = 6
 
 
-REVISION_RESPONSE_SCHEMA = genai_types.Schema(
-    type=genai_types.Type.OBJECT,
-    properties={
-        "revisions": genai_types.Schema(
-            type=genai_types.Type.ARRAY,
-            items=genai_types.Schema(
-                type=genai_types.Type.OBJECT,
-                properties={
-                    "id": genai_types.Schema(type=genai_types.Type.STRING),
-                    "action": genai_types.Schema(type=genai_types.Type.STRING),
-                    "text": genai_types.Schema(type=genai_types.Type.STRING),
-                    "plural_texts": genai_types.Schema(
-                        type=genai_types.Type.ARRAY,
-                        items=genai_types.Schema(type=genai_types.Type.STRING),
-                    ),
-                    "reason": genai_types.Schema(type=genai_types.Type.STRING),
+REVISION_RESPONSE_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "revisions": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "id": {"type": "string"},
+                    "action": {"type": "string"},
+                    "text": {"type": "string"},
+                    "plural_texts": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                    },
+                    "reason": {"type": "string"},
                 },
-                required=["id", "action"],
-            ),
-        ),
+                "required": ["id", "action"],
+            },
+        },
     },
-    required=["revisions"],
-)
+    "required": ["revisions"],
+}
 
 
 @dataclass(slots=True)
@@ -111,15 +106,16 @@ class ReviewBundle:
 
 def build_revision_generation_config(
     thinking_level: str | None = None,
-) -> genai_types.GenerateContentConfig:
-    return GEMINI_PROVIDER.build_translation_config(
+) -> Any:
+    return DEFAULT_PROVIDER.build_generation_config(
         thinking_level=thinking_level,
-        response_schema=REVISION_RESPONSE_SCHEMA,
+        json_schema=REVISION_RESPONSE_SCHEMA,
     )
 
 
 async def generate_with_retry(
     *,
+    provider: Any,
     client: Any,
     model: str,
     prompt: str,
@@ -127,7 +123,7 @@ async def generate_with_retry(
     max_attempts: int = 5,
     config: Any = None,
 ) -> Any:
-    return await GEMINI_PROVIDER.generate_with_retry(
+    return await provider.generate_with_retry(
         client=client,
         model=model,
         prompt=prompt,
@@ -682,13 +678,10 @@ def print_change_samples(changes: List[Tuple[ReviewItem, RevisionResult]], limit
         print(f"  - {label}: {before} -> {after}")
 
 
-def main(argv: list[str] | None = None) -> None:
-    configure_stdio()
-    parser = argparse.ArgumentParser(
-        description=(
-            "Review existing translations against a natural-language instruction and "
-            "update only the entries that need a change."
-        )
+def configure_parser(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
+    parser.description = (
+        "Review existing translations against a natural-language instruction and "
+        "update only the entries that need a change."
     )
     parser.add_argument("file", help="Current translated .po, .ts, .resx, .strings, or .txt file")
     parser.add_argument(
@@ -703,8 +696,12 @@ def main(argv: list[str] | None = None) -> None:
     )
     parser.add_argument("--source-lang", default="en", help="Default: en")
     parser.add_argument("--target-lang", default="kk", help="Default: kk")
-    parser.add_argument("--provider", default=GEMINI_PROVIDER.name, help="Model provider (default: gemini)")
-    parser.add_argument("--model", default="gemini-3-flash-preview")
+    parser.add_argument(
+        "--provider",
+        default=DEFAULT_PROVIDER_NAME,
+        help=f"Model provider (default: {DEFAULT_PROVIDER_NAME})",
+    )
+    parser.add_argument("--model", default=DEFAULT_PROVIDER.default_model)
     add_thinking_level_argument(parser)
     parser.add_argument("--batch-size", type=int, default=None, help="Batch size (auto if omitted)")
     parser.add_argument("--parallel-requests", type=int, default=None, help="Concurrent requests (auto if omitted)")
@@ -731,8 +728,15 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--out", default=None, help="Output path (default: <input>.revised.<ext>)")
     parser.add_argument("--in-place", action="store_true", help="Overwrite the translated input file")
     parser.add_argument("--dry-run", action="store_true", help="Review and report changes without writing output")
+    return parser
 
-    args = parser.parse_args(argv)
+
+def build_parser() -> argparse.ArgumentParser:
+    return configure_parser(argparse.ArgumentParser())
+
+
+def run_from_args(args: argparse.Namespace) -> None:
+    configure_stdio()
 
     if args.out and args.in_place:
         sys.exit("ERROR: --out and --in-place cannot be used together")
@@ -778,9 +782,9 @@ def main(argv: list[str] | None = None) -> None:
 
     provider = get_translation_provider(args.provider)
     client = provider.create_client_from_env()
-    revision_config = provider.build_translation_config(
+    revision_config = provider.build_generation_config(
         thinking_level=args.thinking_level,
-        response_schema=REVISION_RESPONSE_SCHEMA,
+        json_schema=REVISION_RESPONSE_SCHEMA,
     )
     final_output_path = build_final_output_path(
         translated_file=args.file,
@@ -831,6 +835,7 @@ def main(argv: list[str] | None = None) -> None:
             )
 
             response = await generate_with_retry(
+                provider=provider,
                 client=client,
                 model=args.model,
                 prompt=prompt,
@@ -864,6 +869,7 @@ def main(argv: list[str] | None = None) -> None:
                 )
                 try:
                     retry_response = await generate_with_retry(
+                        provider=provider,
                         client=client,
                         model=args.model,
                         prompt=retry_prompt,
@@ -938,6 +944,12 @@ def main(argv: list[str] | None = None) -> None:
     print("Revision complete.")
     print(f"Saved file: {final_output_path}")
     print("Changed AI-reviewed entries are marked as fuzzy/unfinished for human review.")
+
+
+def main(argv: list[str] | None = None) -> None:
+    parser = build_parser()
+    args = parser.parse_args(argv)
+    run_from_args(args)
 
 
 if __name__ == "__main__":

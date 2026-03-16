@@ -16,15 +16,20 @@ from tkinter.scrolledtext import ScrolledText
 from typing import TextIO
 
 from core.formats import FileKind, detect_file_kind
-from core.providers import SUPPORTED_TRANSLATION_PROVIDERS, get_translation_provider
-from tasks.translate import build_language_code_candidates
+from core.providers import (
+    DEFAULT_PROVIDER as DEFAULT_PROVIDER_SPEC,
+    DEFAULT_PROVIDER_NAME,
+    SUPPORTED_TRANSLATION_PROVIDERS,
+    get_translation_provider,
+)
+from core.resources import detect_default_text_resource
 
 
 DEFAULT_SOURCE_LANG = "en"
 DEFAULT_TARGET_LANG = "kk"
-DEFAULT_PROVIDER = "gemini"
+DEFAULT_PROVIDER = DEFAULT_PROVIDER_NAME
 SUPPORTED_PROVIDER_CHOICES = tuple(sorted(SUPPORTED_TRANSLATION_PROVIDERS))
-DEFAULT_MODEL = "gemini-3-flash-preview"
+DEFAULT_MODEL = DEFAULT_PROVIDER_SPEC.default_model
 THINKING_LEVEL_CHOICES = ("", "minimal", "low", "medium", "high")
 EXTRACT_MODE_CHOICES = ("missing", "all")
 EXTRACT_OUTPUT_CHOICES = ("po", "json")
@@ -219,23 +224,15 @@ def detect_default_resource_path(
     target_lang: str,
     base_dir: str | None = None,
 ) -> str:
-    resource_root = build_resource_root(base_dir)
-    for lang_code in build_language_code_candidates(target_lang):
-        candidate_path = os.path.join(
-            resource_root,
-            "data",
-            lang_code,
-            f"{prefix}.{extension}",
+    return (
+        detect_default_text_resource(
+            prefix,
+            extension,
+            target_lang,
+            base_dir=build_resource_root(base_dir),
         )
-        if os.path.isfile(candidate_path):
-            return candidate_path
-
-    for lang_code in build_language_code_candidates(target_lang):
-        legacy_path = os.path.join(resource_root, f"{prefix}-{lang_code}.{extension}")
-        if os.path.isfile(legacy_path):
-            return legacy_path
-
-    return ""
+        or ""
+    )
 
 
 def detect_default_resource_paths(
@@ -371,7 +368,7 @@ def _validate_base_config(
         except ValueError:
             provider_spec = None
         if provider_spec is not None:
-            api_key_env = getattr(provider_spec, "api_key_env", None)
+            api_key_env = provider_spec.api_key_env
             if api_key_env and not cleaned_api_key and not env.get(api_key_env):
                 errors.append(
                     f"{api_key_env} is not set. Provide an API key in the GUI or the environment."
@@ -828,7 +825,7 @@ def build_script_env(
     env = dict(base_env if base_env is not None else os.environ)
     cleaned_api_key = _clean(api_key)
     provider_spec = get_translation_provider(provider)
-    api_key_env = getattr(provider_spec, "api_key_env", None)
+    api_key_env = provider_spec.api_key_env
     if cleaned_api_key and api_key_env:
         env[api_key_env] = cleaned_api_key
     return env
@@ -1156,7 +1153,7 @@ class BaseToolTab(ttk.Frame):
             self.api_status_var.set(f"API key source: invalid provider ({provider_name})")
             return
 
-        api_key_env = getattr(provider_spec, "api_key_env", None)
+        api_key_env = provider_spec.api_key_env
         if not api_key_env:
             self.api_status_var.set("API key source: not required")
             return

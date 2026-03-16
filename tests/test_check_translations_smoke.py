@@ -16,6 +16,20 @@ class _DummyResponse:
         self.text = text
 
 
+class _DummyProvider:
+    name = "gemini"
+    default_model = "gemini-test"
+    api_key_env = "GOOGLE_API_KEY"
+    supports_structured_json = True
+    supports_thinking = True
+
+    def create_client_from_env(self):
+        return object()
+
+    def build_generation_config(self, *, thinking_level, json_schema):
+        return object()
+
+
 class CheckTranslationsSmokeTests(unittest.TestCase):
     def test_build_check_output_path(self):
         path = r"C:\work\file.po"
@@ -145,7 +159,7 @@ class CheckTranslationsSmokeTests(unittest.TestCase):
         try:
             with (
                 patch.dict(os.environ, {"GOOGLE_API_KEY": "test-key"}, clear=False),
-                patch("tasks.check_translations.genai.Client"),
+                patch("tasks.check_translations.get_translation_provider", return_value=_DummyProvider()),
                 patch("tasks.check_translations.detect_file_kind", return_value=process.FileKind.PO),
                 patch("tasks.check_translations.resolve_resource_path", side_effect=[os.path.join("data", "kk", "vocab.txt"), os.path.join("data", "kk", "rules.md")]),
                 patch("tasks.check_translations.read_optional_vocabulary_file", return_value="addon - qosymsha"),

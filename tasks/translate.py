@@ -12,7 +12,6 @@ from dataclasses import dataclass
 from typing import Any, Dict, List
 
 import polib
-from google.genai import types as genai_types
 
 from core.entries import (
     TranslationResult,
@@ -38,12 +37,8 @@ from core.formats import (
     StringsEntryAdapter,
     TSEntryAdapter,
     UnifiedEntry,
-    _build_unified_entry,
-    _detect_text_encoding,
-    _write_text_with_encoding_fallback,
     build_output_path,
     detect_file_kind,
-    load_po as _core_load_po,
     load_resx,
     load_strings,
     load_ts,
@@ -51,8 +46,14 @@ from core.formats import (
     select_work_items,
 )
 from core.formats.base import _build_unified_entry as _core_build_unified_entry
+from core.formats.po import load_po as _core_load_po
+from core.formats.strings import (
+    _detect_text_encoding,
+    _write_text_with_encoding_fallback,
+)
 from core.resources import (
     build_language_code_candidates as _core_build_language_code_candidates,
+    detect_default_text_resource as _core_detect_default_text_resource,
     detect_rules_source,
     load_vocabulary_pairs as _core_load_vocabulary_pairs,
     merge_project_rules,
@@ -61,7 +62,7 @@ from core.resources import (
     read_optional_vocabulary_file as _core_read_optional_vocabulary_file,
     resolve_resource_path as _core_resolve_resource_path,
 )
-from core.providers import GEMINI_PROVIDER, get_translation_provider
+from core.providers import DEFAULT_PROVIDER, DEFAULT_PROVIDER_NAME, get_translation_provider
 from core.runtime import (
     MIN_ITEMS_PER_WORKER,
     add_thinking_level_argument,
@@ -95,35 +96,35 @@ PLURALS:
 - If the input contains 'Singular:' and 'Plural:', provide a natural plural-aware translation for the target language.
 """
 
-TRANSLATION_RESPONSE_SCHEMA = genai_types.Schema(
-    type=genai_types.Type.OBJECT,
-    properties={
-        "translations": genai_types.Schema(
-            type=genai_types.Type.ARRAY,
-            items=genai_types.Schema(
-                type=genai_types.Type.OBJECT,
-                properties={
-                    "id": genai_types.Schema(type=genai_types.Type.STRING),
-                    "text": genai_types.Schema(type=genai_types.Type.STRING),
-                    "plural_texts": genai_types.Schema(
-                        type=genai_types.Type.ARRAY,
-                        items=genai_types.Schema(type=genai_types.Type.STRING),
-                    ),
+TRANSLATION_RESPONSE_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "translations": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "id": {"type": "string"},
+                    "text": {"type": "string"},
+                    "plural_texts": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                    },
                 },
-                required=["id", "text"],
-            ),
-        ),
+                "required": ["id", "text"],
+            },
+        },
     },
-    required=["translations"],
-)
+    "required": ["translations"],
+}
 
 
 def build_translation_generation_config(
     thinking_level: str | None = None,
-) -> genai_types.GenerateContentConfig:
-    return GEMINI_PROVIDER.build_translation_config(
+) -> Any:
+    return DEFAULT_PROVIDER.build_generation_config(
         thinking_level=thinking_level,
-        response_schema=TRANSLATION_RESPONSE_SCHEMA,
+        json_schema=TRANSLATION_RESPONSE_SCHEMA,
     )
 
 
@@ -198,9 +199,7 @@ def build_language_code_candidates(target_lang: str) -> List[str]:
 
 
 def detect_default_text_resource(prefix: str, extension: str, target_lang: str) -> str | None:
-    from core.resources import detect_default_text_resource as _detect_default_resource
-
-    return _detect_default_resource(prefix, extension, target_lang)
+    return _core_detect_default_text_resource(prefix, extension, target_lang)
 
 
 def resolve_resource_path(
@@ -250,15 +249,19 @@ class TranslationRunConfig:
     retranslate_all: bool
 
 
-def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(
-        description="Pre-process and translate PO, TS, RESX, STRINGS, or TXT files using a provider adapter"
+def configure_parser(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
+    parser.description = (
+        "Pre-process and translate PO, TS, RESX, STRINGS, or TXT files using a provider adapter"
     )
     parser.add_argument("file", help="Input .po, .ts, .resx, .strings, or .txt file")
     parser.add_argument("--source-lang", default="en", help="Default: en")
     parser.add_argument("--target-lang", default="kk", help="Default: kk")
-    parser.add_argument("--provider", default=GEMINI_PROVIDER.name, help="Model provider (default: gemini)")
-    parser.add_argument("--model", default=GEMINI_PROVIDER.default_model)
+    parser.add_argument(
+        "--provider",
+        default=DEFAULT_PROVIDER_NAME,
+        help=f"Model provider (default: {DEFAULT_PROVIDER_NAME})",
+    )
+    parser.add_argument("--model", default=DEFAULT_PROVIDER.default_model)
     add_thinking_level_argument(parser)
     parser.add_argument("--batch-size", type=int, default=None, help="Batch size (auto if omitted)")
     parser.add_argument("--parallel-requests", type=int, default=None, help="Concurrent requests (auto if omitted)")
@@ -279,6 +282,10 @@ def build_parser() -> argparse.ArgumentParser:
         help="Force translation of all translatable messages, not only unfinished/fuzzy ones",
     )
     return parser
+
+
+def build_parser() -> argparse.ArgumentParser:
+    return configure_parser(argparse.ArgumentParser())
 
 
 def config_from_args(args: argparse.Namespace) -> TranslationRunConfig:
@@ -464,9 +471,9 @@ def run_translation(config: TranslationRunConfig) -> None:
     except ValueError as exc:
         sys.exit(f"ERROR: {exc}")
 
-    translation_config = provider.build_translation_config(
+    translation_config = provider.build_generation_config(
         thinking_level=config.thinking_level,
-        response_schema=TRANSLATION_RESPONSE_SCHEMA,
+        json_schema=TRANSLATION_RESPONSE_SCHEMA,
     )
 
     print("Startup configuration:")
@@ -510,10 +517,14 @@ def run_translation(config: TranslationRunConfig) -> None:
     print("All AI-generated translations are marked as fuzzy/unfinished for human review.")
 
 
+def run_from_args(args: argparse.Namespace) -> None:
+    run_translation(config_from_args(args))
+
+
 def main(argv: list[str] | None = None) -> None:
     parser = build_parser()
     args = parser.parse_args(argv)
-    run_translation(config_from_args(args))
+    run_from_args(args)
 
 
 if __name__ == "__main__":

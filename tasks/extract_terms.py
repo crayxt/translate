@@ -10,8 +10,6 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List, Literal, Tuple
 
 import polib
-from google import genai  # compatibility for tests patching old client location
-from google.genai import types as genai_types
 
 from core.formats import (
     FileKind,
@@ -23,8 +21,7 @@ from core.formats import (
     load_txt,
     load_ts,
 )
-from core.providers import GEMINI_PROVIDER
-from core.providers import get_translation_provider
+from core.providers import DEFAULT_PROVIDER, DEFAULT_PROVIDER_NAME, get_translation_provider
 from core.resources import (
     load_vocabulary_pairs,
     read_optional_vocabulary_file,
@@ -40,25 +37,25 @@ DiscoveryMode = Literal["all", "missing"]
 OutputFormat = Literal["po", "json"]
 
 
-TERM_DISCOVERY_SCHEMA = genai_types.Schema(
-    type=genai_types.Type.OBJECT,
-    properties={
-        "terms": genai_types.Schema(
-            type=genai_types.Type.ARRAY,
-            items=genai_types.Schema(
-                type=genai_types.Type.OBJECT,
-                properties={
-                    "source_term": genai_types.Schema(type=genai_types.Type.STRING),
-                    "suggested_translation": genai_types.Schema(type=genai_types.Type.STRING),
-                    "reason": genai_types.Schema(type=genai_types.Type.STRING),
-                    "example_source": genai_types.Schema(type=genai_types.Type.STRING),
+TERM_DISCOVERY_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "terms": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "source_term": {"type": "string"},
+                    "suggested_translation": {"type": "string"},
+                    "reason": {"type": "string"},
+                    "example_source": {"type": "string"},
                 },
-                required=["source_term", "suggested_translation", "reason"],
-            ),
-        )
+                "required": ["source_term", "suggested_translation", "reason"],
+            },
+        }
     },
-    required=["terms"],
-)
+    "required": ["terms"],
+}
 
 
 @dataclass
@@ -248,15 +245,16 @@ def merge_term_candidates(candidates: List[TermCandidate]) -> List[TermCandidate
 
 def build_term_generation_config(
     thinking_level: str | None = None,
-) -> genai_types.GenerateContentConfig:
-    return GEMINI_PROVIDER.build_translation_config(
+) -> Any:
+    return DEFAULT_PROVIDER.build_generation_config(
         thinking_level=thinking_level,
-        response_schema=TERM_DISCOVERY_SCHEMA,
+        json_schema=TERM_DISCOVERY_SCHEMA,
     )
 
 
 async def generate_with_retry(
     *,
+    provider: Any,
     client: Any,
     model: str,
     prompt: str,
@@ -264,7 +262,7 @@ async def generate_with_retry(
     max_attempts: int = 5,
     config: Any = None,
 ) -> Any:
-    return await GEMINI_PROVIDER.generate_with_retry(
+    return await provider.generate_with_retry(
         client=client,
         model=model,
         prompt=prompt,
@@ -370,18 +368,20 @@ def normalize_limits(
     )
 
 
-def main(argv: list[str] | None = None) -> None:
-    parser = argparse.ArgumentParser(
-        description=(
-            "Extract glossary term candidates from PO/TS/RESX/STRINGS/TXT files using the configured provider "
-            "and save as PO or JSON"
-        )
+def configure_parser(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
+    parser.description = (
+        "Extract glossary term candidates from PO/TS/RESX/STRINGS/TXT files using the configured provider "
+        "and save as PO or JSON"
     )
     parser.add_argument("file", help="Input .po, .ts, .resx, .strings, or .txt file")
     parser.add_argument("--source-lang", default="en", help="Default: en")
     parser.add_argument("--target-lang", default="kk", help="Default: kk")
-    parser.add_argument("--provider", default=GEMINI_PROVIDER.name, help="Model provider (default: gemini)")
-    parser.add_argument("--model", default="gemini-3-flash-preview")
+    parser.add_argument(
+        "--provider",
+        default=DEFAULT_PROVIDER_NAME,
+        help=f"Model provider (default: {DEFAULT_PROVIDER_NAME})",
+    )
+    parser.add_argument("--model", default=DEFAULT_PROVIDER.default_model)
     add_thinking_level_argument(parser)
     parser.add_argument("--batch-size", type=int, default=None, help="Batch size (auto if omitted)")
     parser.add_argument("--parallel-requests", type=int, default=None, help="Concurrent requests (auto if omitted)")
@@ -405,7 +405,14 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--out", default=None, help="Output path (default depends on --mode and --out-format)")
     parser.add_argument("--max-terms-per-batch", type=int, default=80, help="Max term suggestions requested per batch")
     parser.add_argument("--max-attempts", type=int, default=5, help="Retry attempts per batch")
-    args = parser.parse_args(argv)
+    return parser
+
+
+def build_parser() -> argparse.ArgumentParser:
+    return configure_parser(argparse.ArgumentParser())
+
+
+def run_from_args(args: argparse.Namespace) -> None:
 
     if args.max_terms_per_batch <= 0:
         sys.exit("ERROR: --max-terms-per-batch must be greater than 0")
@@ -459,9 +466,9 @@ def main(argv: list[str] | None = None) -> None:
         output_format=args.out_format,
         mode=args.mode,
     )
-    term_config = provider.build_translation_config(
+    term_config = provider.build_generation_config(
         thinking_level=args.thinking_level,
-        response_schema=TERM_DISCOVERY_SCHEMA,
+        json_schema=TERM_DISCOVERY_SCHEMA,
     )
 
     print("Startup configuration:")
@@ -489,6 +496,7 @@ def main(argv: list[str] | None = None) -> None:
                 max_terms_per_batch=args.max_terms_per_batch,
             )
             response = await generate_with_retry(
+                provider=provider,
                 client=client,
                 model=args.model,
                 prompt=prompt,
@@ -559,6 +567,12 @@ def main(argv: list[str] | None = None) -> None:
     print("\nTerm extraction complete.")
     print(f"Saved file: {out_path}")
     print(f"Candidate terms: {len(merged_terms)} (from {len(raw_candidates)} raw suggestions)")
+
+
+def main(argv: list[str] | None = None) -> None:
+    parser = build_parser()
+    args = parser.parse_args(argv)
+    run_from_args(args)
 
 
 if __name__ == "__main__":

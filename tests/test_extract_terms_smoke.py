@@ -15,6 +15,20 @@ class _DummyResponse:
         self.text = text
 
 
+class _DummyProvider:
+    name = "gemini"
+    default_model = "gemini-test"
+    api_key_env = "GOOGLE_API_KEY"
+    supports_structured_json = True
+    supports_thinking = True
+
+    def create_client_from_env(self):
+        return object()
+
+    def build_generation_config(self, *, thinking_level, json_schema):
+        return object()
+
+
 class _DummyEntry:
     def __init__(
         self,
@@ -234,7 +248,7 @@ class ExtractTermsSmokeTests(unittest.TestCase):
     def test_main_auto_loads_vocabulary_for_mode_all(self):
         with (
             patch.dict(os.environ, {"GOOGLE_API_KEY": "test-key"}, clear=False),
-            patch("tasks.extract_terms.genai.Client"),
+            patch("tasks.extract_terms.get_translation_provider", return_value=_DummyProvider()),
             patch(
                 "tasks.extract_terms.resolve_resource_path",
                 return_value=os.path.join("data", "kk", "vocab.txt"),
@@ -257,7 +271,7 @@ class ExtractTermsSmokeTests(unittest.TestCase):
     def test_main_missing_po_output_loads_vocabulary_pairs_for_merged_po(self):
         with (
             patch.dict(os.environ, {"GOOGLE_API_KEY": "test-key"}, clear=False),
-            patch("tasks.extract_terms.genai.Client"),
+            patch("tasks.extract_terms.get_translation_provider", return_value=_DummyProvider()),
             patch(
                 "tasks.extract_terms.resolve_resource_path",
                 return_value=os.path.join("data", "kk", "vocab.txt"),
