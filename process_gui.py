@@ -1,0 +1,2017 @@
+#!/usr/bin/env python3
+
+from __future__ import annotations
+
+from datetime import datetime
+import os
+import queue
+import re
+import subprocess
+import sys
+import threading
+import tkinter as tk
+from dataclasses import dataclass
+from tkinter import filedialog, messagebox, ttk
+from tkinter.scrolledtext import ScrolledText
+from typing import TextIO
+
+from process import FileKind, build_language_code_candidates, detect_file_kind
+
+
+DEFAULT_SOURCE_LANG = "en"
+DEFAULT_TARGET_LANG = "kk"
+DEFAULT_MODEL = "gemini-3-flash-preview"
+THINKING_LEVEL_CHOICES = ("", "minimal", "low", "medium", "high")
+EXTRACT_MODE_CHOICES = ("missing", "all")
+EXTRACT_OUTPUT_CHOICES = ("po", "json")
+PROGRESS_PERCENT_RE = re.compile(r"Progress:\s*(?P<pct>\d+(?:\.\d+)?)%")
+BATCH_PROGRESS_RE = re.compile(
+    r"Progress:\s*completed batches\s+(?P<done>\d+)/(?P<total>\d+)"
+)
+TRANSLATABLE_FILETYPES = [
+    ("Translatable files", "*.po *.ts *.resx *.strings *.txt"),
+    ("PO files", "*.po"),
+    ("Qt TS files", "*.ts"),
+    ("RESX files", "*.resx"),
+    ("Apple strings files", "*.strings"),
+    ("Plain text files", "*.txt"),
+    ("All files", "*.*"),
+]
+VOCAB_FILETYPES = [
+    ("Vocabulary files", "*.txt *.po"),
+    ("Text files", "*.txt"),
+    ("PO files", "*.po"),
+    ("All files", "*.*"),
+]
+RULES_FILETYPES = [
+    ("Markdown files", "*.md"),
+    ("Text files", "*.txt"),
+    ("All files", "*.*"),
+]
+CHECK_FILETYPES = [
+    ("PO files", "*.po"),
+    ("All files", "*.*"),
+]
+LOG_DIR_NAME = "logs"
+CLIPBOARD_WIDGET_CLASSES = frozenset({"Entry", "TEntry", "Text", "Combobox", "TCombobox"})
+READONLY_STATES = frozenset({"disabled", "readonly"})
+
+
+@dataclass(slots=True)
+class ProcessGuiConfig:
+    input_file: str = ""
+    source_lang: str = DEFAULT_SOURCE_LANG
+    target_lang: str = DEFAULT_TARGET_LANG
+    model: str = DEFAULT_MODEL
+    thinking_level: str = ""
+    batch_size: str = ""
+    parallel_requests: str = ""
+    vocab_path: str = ""
+    rules_path: str = ""
+    rules_str: str = ""
+    api_key: str = ""
+    retranslate_all: bool = False
+
+
+@dataclass(slots=True)
+class ExtractGuiConfig:
+    input_file: str = ""
+    source_lang: str = DEFAULT_SOURCE_LANG
+    target_lang: str = DEFAULT_TARGET_LANG
+    model: str = DEFAULT_MODEL
+    thinking_level: str = ""
+    batch_size: str = ""
+    parallel_requests: str = ""
+    vocab_path: str = ""
+    api_key: str = ""
+    mode: str = "missing"
+    out_format: str = "po"
+    out_path: str = ""
+    max_terms_per_batch: str = "80"
+    max_attempts: str = "5"
+
+
+@dataclass(slots=True)
+class CheckGuiConfig:
+    input_file: str = ""
+    source_lang: str = DEFAULT_SOURCE_LANG
+    target_lang: str = DEFAULT_TARGET_LANG
+    model: str = DEFAULT_MODEL
+    thinking_level: str = ""
+    batch_size: str = ""
+    parallel_requests: str = ""
+    vocab_path: str = ""
+    rules_path: str = ""
+    rules_str: str = ""
+    api_key: str = ""
+    num_messages: str = ""
+    out_path: str = ""
+    include_ok: bool = False
+    max_attempts: str = "5"
+
+
+@dataclass(slots=True)
+class ReviseGuiConfig:
+    input_file: str = ""
+    source_file: str = ""
+    source_lang: str = DEFAULT_SOURCE_LANG
+    target_lang: str = DEFAULT_TARGET_LANG
+    model: str = DEFAULT_MODEL
+    thinking_level: str = ""
+    batch_size: str = ""
+    parallel_requests: str = ""
+    vocab_path: str = ""
+    rules_path: str = ""
+    rules_str: str = ""
+    api_key: str = ""
+    instruction: str = ""
+    num_messages: str = ""
+    out_path: str = ""
+    max_attempts: str = "5"
+    in_place: bool = False
+    dry_run: bool = False
+
+
+def _clean(value: str) -> str:
+    return str(value or "").strip()
+
+
+def _clamp_percent(value: float) -> float:
+    return max(0.0, min(100.0, float(value)))
+
+
+def widget_supports_clipboard(widget_class: str) -> bool:
+    return str(widget_class or "") in CLIPBOARD_WIDGET_CLASSES
+
+
+def widget_is_editable(widget_class: str, state: str) -> bool:
+    return widget_supports_clipboard(widget_class) and str(state or "") not in READONLY_STATES
+
+
+def _validate_optional_positive_int(value: str, flag_name: str) -> str | None:
+    cleaned = _clean(value)
+    if not cleaned:
+        return None
+
+    try:
+        parsed = int(cleaned)
+    except ValueError as exc:
+        raise ValueError(f"{flag_name} must be a whole number.") from exc
+
+    if parsed <= 0:
+        raise ValueError(f"{flag_name} must be greater than 0.")
+    return str(parsed)
+
+
+def _validate_choice(value: str, choices: tuple[str, ...], flag_name: str) -> None:
+    cleaned = _clean(value)
+    if cleaned and cleaned not in choices:
+        raise ValueError(
+            f"{flag_name} must be one of: {', '.join(choice for choice in choices if choice)}."
+        )
+
+
+def build_resource_root(base_dir: str | None = None) -> str:
+    return os.path.abspath(base_dir or os.path.dirname(__file__))
+
+
+def build_script_path(script_name: str, base_dir: str | None = None) -> str:
+    return os.path.join(build_resource_root(base_dir), script_name)
+
+
+def build_process_script_path(base_dir: str | None = None) -> str:
+    return build_script_path("process.py", base_dir=base_dir)
+
+
+def build_extract_script_path(base_dir: str | None = None) -> str:
+    return build_script_path("extract_terms.py", base_dir=base_dir)
+
+
+def build_check_script_path(base_dir: str | None = None) -> str:
+    return build_script_path("check_translations.py", base_dir=base_dir)
+
+
+def build_revise_script_path(base_dir: str | None = None) -> str:
+    return build_script_path("revise_translations.py", base_dir=base_dir)
+
+
+def _sanitize_log_name(value: str) -> str:
+    cleaned = re.sub(r"[^A-Za-z0-9._-]+", "-", str(value or "").strip())
+    cleaned = cleaned.strip("._-")
+    return cleaned or "run"
+
+
+def build_log_dir(base_dir: str | None = None) -> str:
+    return os.path.join(build_resource_root(base_dir), LOG_DIR_NAME)
+
+
+def build_run_log_path(
+    tool_key: str,
+    input_file: str,
+    base_dir: str | None = None,
+    now: datetime | None = None,
+) -> str:
+    timestamp = (now or datetime.now()).strftime("%Y%m%d-%H%M%S")
+    input_stem = os.path.splitext(os.path.basename(_clean(input_file)))[0]
+    filename = f"{_sanitize_log_name(tool_key)}-{_sanitize_log_name(input_stem)}-{timestamp}.log"
+    return os.path.join(build_log_dir(base_dir), filename)
+
+
+def detect_default_resource_path(
+    prefix: str,
+    extension: str,
+    target_lang: str,
+    base_dir: str | None = None,
+) -> str:
+    resource_root = build_resource_root(base_dir)
+    for lang_code in build_language_code_candidates(target_lang):
+        candidate_path = os.path.join(
+            resource_root,
+            "data",
+            lang_code,
+            f"{prefix}.{extension}",
+        )
+        if os.path.isfile(candidate_path):
+            return candidate_path
+
+    for lang_code in build_language_code_candidates(target_lang):
+        legacy_path = os.path.join(resource_root, f"{prefix}-{lang_code}.{extension}")
+        if os.path.isfile(legacy_path):
+            return legacy_path
+
+    return ""
+
+
+def detect_default_resource_paths(
+    target_lang: str,
+    base_dir: str | None = None,
+) -> tuple[str, str]:
+    return (
+        detect_default_resource_path("vocab", "txt", target_lang, base_dir=base_dir),
+        detect_default_resource_path("rules", "md", target_lang, base_dir=base_dir),
+    )
+
+
+def choose_resource_field_value(
+    current_value: str,
+    previous_auto_value: str,
+    new_auto_value: str,
+    force: bool = False,
+) -> tuple[str, str]:
+    cleaned_current = _clean(current_value)
+    cleaned_previous_auto = _clean(previous_auto_value)
+    cleaned_new_auto = _clean(new_auto_value)
+
+    if force or not cleaned_current or cleaned_current == cleaned_previous_auto:
+        return cleaned_new_auto, cleaned_new_auto
+
+    return cleaned_current, cleaned_previous_auto
+
+
+def read_text_file_or_empty(path: str) -> str:
+    cleaned_path = _clean(path)
+    if not cleaned_path or not os.path.isfile(cleaned_path):
+        return ""
+
+    with open(cleaned_path, "r", encoding="utf-8", errors="replace") as handle:
+        return handle.read()
+
+
+def parse_progress_percent(line: str) -> float | None:
+    text = str(line or "").strip()
+    if not text:
+        return None
+
+    percent_match = PROGRESS_PERCENT_RE.search(text)
+    if percent_match:
+        return _clamp_percent(float(percent_match.group("pct")))
+
+    batch_match = BATCH_PROGRESS_RE.search(text)
+    if batch_match:
+        total = int(batch_match.group("total"))
+        if total <= 0:
+            return None
+        done = int(batch_match.group("done"))
+        return _clamp_percent((done / total) * 100.0)
+
+    if text.endswith(" complete."):
+        return 100.0
+
+    return None
+
+
+def _validate_base_config(
+    *,
+    input_file: str,
+    source_lang: str,
+    target_lang: str,
+    model: str,
+    thinking_level: str,
+    batch_size: str,
+    parallel_requests: str,
+    vocab_path: str,
+    api_key: str,
+    environ: dict[str, str] | None = None,
+    rules_path: str = "",
+) -> list[str]:
+    env = environ if environ is not None else os.environ
+    errors: list[str] = []
+
+    cleaned_input = _clean(input_file)
+    cleaned_source = _clean(source_lang)
+    cleaned_target = _clean(target_lang)
+    cleaned_model = _clean(model)
+    cleaned_vocab = _clean(vocab_path)
+    cleaned_rules = _clean(rules_path)
+    cleaned_api_key = _clean(api_key)
+
+    if not cleaned_input:
+        errors.append("Input file is required.")
+    elif not os.path.isfile(cleaned_input):
+        errors.append(f"Input file does not exist: {cleaned_input}")
+
+    if not cleaned_source:
+        errors.append("Source language is required.")
+
+    if not cleaned_target:
+        errors.append("Target language is required.")
+
+    if not cleaned_model:
+        errors.append("Model is required.")
+
+    try:
+        _validate_choice(thinking_level, THINKING_LEVEL_CHOICES, "Thinking level")
+    except ValueError as exc:
+        errors.append(str(exc))
+
+    for label, value in (
+        ("Batch size", batch_size),
+        ("Parallel requests", parallel_requests),
+    ):
+        try:
+            _validate_optional_positive_int(value, label)
+        except ValueError as exc:
+            errors.append(str(exc))
+
+    if cleaned_vocab and not os.path.isfile(cleaned_vocab):
+        errors.append(f"Vocabulary file does not exist: {cleaned_vocab}")
+
+    if cleaned_rules and not os.path.isfile(cleaned_rules):
+        errors.append(f"Rules file does not exist: {cleaned_rules}")
+
+    if not cleaned_api_key and not env.get("GOOGLE_API_KEY"):
+        errors.append(
+            "GOOGLE_API_KEY is not set. Provide an API key in the GUI or the environment."
+        )
+
+    return errors
+
+
+def validate_process_gui_config(
+    config: ProcessGuiConfig,
+    environ: dict[str, str] | None = None,
+) -> list[str]:
+    return _validate_base_config(
+        input_file=config.input_file,
+        source_lang=config.source_lang,
+        target_lang=config.target_lang,
+        model=config.model,
+        thinking_level=config.thinking_level,
+        batch_size=config.batch_size,
+        parallel_requests=config.parallel_requests,
+        vocab_path=config.vocab_path,
+        rules_path=config.rules_path,
+        api_key=config.api_key,
+        environ=environ,
+    )
+
+
+def validate_extract_gui_config(
+    config: ExtractGuiConfig,
+    environ: dict[str, str] | None = None,
+) -> list[str]:
+    errors = _validate_base_config(
+        input_file=config.input_file,
+        source_lang=config.source_lang,
+        target_lang=config.target_lang,
+        model=config.model,
+        thinking_level=config.thinking_level,
+        batch_size=config.batch_size,
+        parallel_requests=config.parallel_requests,
+        vocab_path=config.vocab_path,
+        api_key=config.api_key,
+        environ=environ,
+    )
+
+    try:
+        _validate_choice(config.mode, EXTRACT_MODE_CHOICES, "Mode")
+    except ValueError as exc:
+        errors.append(str(exc))
+
+    try:
+        _validate_choice(config.out_format, EXTRACT_OUTPUT_CHOICES, "Output format")
+    except ValueError as exc:
+        errors.append(str(exc))
+
+    for label, value in (
+        ("Max terms per batch", config.max_terms_per_batch),
+        ("Max attempts", config.max_attempts),
+    ):
+        try:
+            _validate_optional_positive_int(value, label)
+        except ValueError as exc:
+            errors.append(str(exc))
+
+    return errors
+
+
+def validate_check_gui_config(
+    config: CheckGuiConfig,
+    environ: dict[str, str] | None = None,
+) -> list[str]:
+    errors = _validate_base_config(
+        input_file=config.input_file,
+        source_lang=config.source_lang,
+        target_lang=config.target_lang,
+        model=config.model,
+        thinking_level=config.thinking_level,
+        batch_size=config.batch_size,
+        parallel_requests=config.parallel_requests,
+        vocab_path=config.vocab_path,
+        rules_path=config.rules_path,
+        api_key=config.api_key,
+        environ=environ,
+    )
+
+    for label, value in (
+        ("Probe / num messages", config.num_messages),
+        ("Max attempts", config.max_attempts),
+    ):
+        try:
+            _validate_optional_positive_int(value, label)
+        except ValueError as exc:
+            errors.append(str(exc))
+
+    return errors
+
+
+def _detect_revision_file_kind(input_file: str) -> FileKind | None:
+    cleaned_input = _clean(input_file)
+    if not cleaned_input:
+        return None
+
+    try:
+        return detect_file_kind(cleaned_input)
+    except ValueError:
+        return None
+
+
+def revision_requires_source_file(input_file: str) -> bool:
+    file_kind = _detect_revision_file_kind(input_file)
+    return file_kind in (FileKind.STRINGS, FileKind.RESX, FileKind.TXT)
+
+
+def validate_revise_gui_config(
+    config: ReviseGuiConfig,
+    environ: dict[str, str] | None = None,
+) -> list[str]:
+    errors = _validate_base_config(
+        input_file=config.input_file,
+        source_lang=config.source_lang,
+        target_lang=config.target_lang,
+        model=config.model,
+        thinking_level=config.thinking_level,
+        batch_size=config.batch_size,
+        parallel_requests=config.parallel_requests,
+        vocab_path=config.vocab_path,
+        rules_path=config.rules_path,
+        api_key=config.api_key,
+        environ=environ,
+    )
+
+    file_kind = _detect_revision_file_kind(config.input_file)
+    if _clean(config.input_file) and file_kind is None:
+        errors.append("Input file must be a supported .po, .ts, .resx, .strings, or .txt file.")
+
+    cleaned_source_file = _clean(config.source_file)
+    if revision_requires_source_file(config.input_file):
+        if not cleaned_source_file:
+            errors.append("Source file is required for .strings, .resx, and .txt revision runs.")
+        elif not os.path.isfile(cleaned_source_file):
+            errors.append(f"Source file does not exist: {cleaned_source_file}")
+    elif cleaned_source_file and not os.path.isfile(cleaned_source_file):
+        errors.append(f"Source file does not exist: {cleaned_source_file}")
+
+    cleaned_instruction = _clean(config.instruction)
+    if not cleaned_instruction:
+        errors.append("Instruction is required.")
+
+    for label, value in (
+        ("Probe / num messages", config.num_messages),
+        ("Max attempts", config.max_attempts),
+    ):
+        try:
+            _validate_optional_positive_int(value, label)
+        except ValueError as exc:
+            errors.append(str(exc))
+
+    if _clean(config.out_path) and config.in_place:
+        errors.append("Output path and in-place mode cannot be used together.")
+
+    return errors
+
+
+def _append_common_cli_args(
+    command: list[str],
+    *,
+    source_lang: str,
+    target_lang: str,
+    model: str,
+    thinking_level: str,
+    batch_size: str,
+    parallel_requests: str,
+    vocab_path: str = "",
+) -> None:
+    command.extend(
+        [
+            "--source-lang",
+            _clean(source_lang),
+            "--target-lang",
+            _clean(target_lang),
+            "--model",
+            _clean(model),
+        ]
+    )
+
+    thinking_level_value = _clean(thinking_level)
+    if thinking_level_value:
+        command.extend(["--thinking-level", thinking_level_value])
+
+    batch_size_value = _validate_optional_positive_int(batch_size, "Batch size")
+    if batch_size_value:
+        command.extend(["--batch-size", batch_size_value])
+
+    parallel_value = _validate_optional_positive_int(
+        parallel_requests,
+        "Parallel requests",
+    )
+    if parallel_value:
+        command.extend(["--parallel-requests", parallel_value])
+
+    vocab_value = _clean(vocab_path)
+    if vocab_value:
+        command.extend(["--vocab", vocab_value])
+
+
+def build_process_command(
+    config: ProcessGuiConfig,
+    python_executable: str | None = None,
+    script_path: str | None = None,
+) -> list[str]:
+    errors = validate_process_gui_config(config)
+    if errors:
+        raise ValueError("\n".join(errors))
+
+    resolved_script = os.path.abspath(script_path or build_process_script_path())
+    if not os.path.isfile(resolved_script):
+        raise ValueError(f"process.py not found at: {resolved_script}")
+
+    command = [
+        python_executable or sys.executable,
+        "-u",
+        resolved_script,
+        _clean(config.input_file),
+    ]
+    _append_common_cli_args(
+        command,
+        source_lang=config.source_lang,
+        target_lang=config.target_lang,
+        model=config.model,
+        thinking_level=config.thinking_level,
+        batch_size=config.batch_size,
+        parallel_requests=config.parallel_requests,
+        vocab_path=config.vocab_path,
+    )
+
+    rules_path = _clean(config.rules_path)
+    if rules_path:
+        command.extend(["--rules", rules_path])
+
+    rules_str = _clean(config.rules_str)
+    if rules_str:
+        command.extend(["--rules-str", rules_str])
+
+    if config.retranslate_all:
+        command.append("--retranslate-all")
+
+    return command
+
+
+def build_extract_command(
+    config: ExtractGuiConfig,
+    python_executable: str | None = None,
+    script_path: str | None = None,
+) -> list[str]:
+    errors = validate_extract_gui_config(config)
+    if errors:
+        raise ValueError("\n".join(errors))
+
+    resolved_script = os.path.abspath(script_path or build_extract_script_path())
+    if not os.path.isfile(resolved_script):
+        raise ValueError(f"extract_terms.py not found at: {resolved_script}")
+
+    command = [
+        python_executable or sys.executable,
+        "-u",
+        resolved_script,
+        _clean(config.input_file),
+    ]
+    _append_common_cli_args(
+        command,
+        source_lang=config.source_lang,
+        target_lang=config.target_lang,
+        model=config.model,
+        thinking_level=config.thinking_level,
+        batch_size=config.batch_size,
+        parallel_requests=config.parallel_requests,
+        vocab_path=config.vocab_path,
+    )
+    command.extend(["--mode", _clean(config.mode) or "missing"])
+    command.extend(["--out-format", _clean(config.out_format) or "po"])
+
+    out_path = _clean(config.out_path)
+    if out_path:
+        command.extend(["--out", out_path])
+
+    command.extend(
+        [
+            "--max-terms-per-batch",
+            _validate_optional_positive_int(
+                config.max_terms_per_batch,
+                "Max terms per batch",
+            )
+            or "80",
+            "--max-attempts",
+            _validate_optional_positive_int(config.max_attempts, "Max attempts")
+            or "5",
+        ]
+    )
+    return command
+
+
+def build_check_command(
+    config: CheckGuiConfig,
+    python_executable: str | None = None,
+    script_path: str | None = None,
+) -> list[str]:
+    errors = validate_check_gui_config(config)
+    if errors:
+        raise ValueError("\n".join(errors))
+
+    resolved_script = os.path.abspath(script_path or build_check_script_path())
+    if not os.path.isfile(resolved_script):
+        raise ValueError(f"check_translations.py not found at: {resolved_script}")
+
+    command = [
+        python_executable or sys.executable,
+        "-u",
+        resolved_script,
+        _clean(config.input_file),
+    ]
+    _append_common_cli_args(
+        command,
+        source_lang=config.source_lang,
+        target_lang=config.target_lang,
+        model=config.model,
+        thinking_level=config.thinking_level,
+        batch_size=config.batch_size,
+        parallel_requests=config.parallel_requests,
+        vocab_path=config.vocab_path,
+    )
+
+    rules_path = _clean(config.rules_path)
+    if rules_path:
+        command.extend(["--rules", rules_path])
+
+    rules_str = _clean(config.rules_str)
+    if rules_str:
+        command.extend(["--rules-str", rules_str])
+
+    num_messages = _validate_optional_positive_int(
+        config.num_messages,
+        "Probe / num messages",
+    )
+    if num_messages:
+        command.extend(["--probe", num_messages])
+
+    out_path = _clean(config.out_path)
+    if out_path:
+        command.extend(["--out", out_path])
+
+    if config.include_ok:
+        command.append("--include-ok")
+
+    command.extend(
+        [
+            "--max-attempts",
+            _validate_optional_positive_int(config.max_attempts, "Max attempts")
+            or "5",
+        ]
+    )
+    return command
+
+
+def build_revise_command(
+    config: ReviseGuiConfig,
+    python_executable: str | None = None,
+    script_path: str | None = None,
+) -> list[str]:
+    errors = validate_revise_gui_config(config)
+    if errors:
+        raise ValueError("\n".join(errors))
+
+    resolved_script = os.path.abspath(script_path or build_revise_script_path())
+    if not os.path.isfile(resolved_script):
+        raise ValueError(f"revise_translations.py not found at: {resolved_script}")
+
+    command = [
+        python_executable or sys.executable,
+        "-u",
+        resolved_script,
+        _clean(config.input_file),
+        "--instruction",
+        _clean(config.instruction),
+    ]
+    _append_common_cli_args(
+        command,
+        source_lang=config.source_lang,
+        target_lang=config.target_lang,
+        model=config.model,
+        thinking_level=config.thinking_level,
+        batch_size=config.batch_size,
+        parallel_requests=config.parallel_requests,
+        vocab_path=config.vocab_path,
+    )
+
+    source_file = _clean(config.source_file)
+    if source_file:
+        command.extend(["--source-file", source_file])
+
+    rules_path = _clean(config.rules_path)
+    if rules_path:
+        command.extend(["--rules", rules_path])
+
+    rules_str = _clean(config.rules_str)
+    if rules_str:
+        command.extend(["--rules-str", rules_str])
+
+    num_messages = _validate_optional_positive_int(
+        config.num_messages,
+        "Probe / num messages",
+    )
+    if num_messages:
+        command.extend(["--probe", num_messages])
+
+    out_path = _clean(config.out_path)
+    if out_path:
+        command.extend(["--out", out_path])
+
+    if config.in_place:
+        command.append("--in-place")
+
+    if config.dry_run:
+        command.append("--dry-run")
+
+    command.extend(
+        [
+            "--max-attempts",
+            _validate_optional_positive_int(config.max_attempts, "Max attempts")
+            or "5",
+        ]
+    )
+    return command
+
+
+def build_script_env(
+    api_key: str,
+    base_env: dict[str, str] | None = None,
+) -> dict[str, str]:
+    env = dict(base_env if base_env is not None else os.environ)
+    cleaned_api_key = _clean(api_key)
+    if cleaned_api_key:
+        env["GOOGLE_API_KEY"] = cleaned_api_key
+    return env
+
+
+def build_process_env(
+    config: ProcessGuiConfig,
+    base_env: dict[str, str] | None = None,
+) -> dict[str, str]:
+    return build_script_env(config.api_key, base_env=base_env)
+
+
+class BaseToolTab(ttk.Frame):
+    def __init__(
+        self,
+        app: "ProcessGuiApp",
+        notebook: ttk.Notebook,
+        *,
+        tool_key: str,
+        title: str,
+        script_name: str,
+        input_filetypes: list[tuple[str, str]],
+        supports_vocab: bool = True,
+        supports_rules: bool = False,
+    ) -> None:
+        super().__init__(notebook)
+        self.app = app
+        self.tool_key = tool_key
+        self.title = title
+        self.script_name = script_name
+        self.input_filetypes = input_filetypes
+        self.supports_vocab = supports_vocab
+        self.supports_rules = supports_rules
+        self.resource_root = app.resource_root
+        self._auto_vocab_path = ""
+        self._auto_rules_path = ""
+        self.api_key_var = app.api_key_var
+
+        self.input_file_var = tk.StringVar()
+        self.source_lang_var = tk.StringVar(value=DEFAULT_SOURCE_LANG)
+        self.target_lang_var = tk.StringVar(value=DEFAULT_TARGET_LANG)
+        self.model_var = tk.StringVar(value=DEFAULT_MODEL)
+        self.thinking_level_var = tk.StringVar()
+        self.batch_size_var = tk.StringVar()
+        self.parallel_requests_var = tk.StringVar()
+        self.vocab_path_var = tk.StringVar()
+        self.rules_path_var = tk.StringVar()
+        self.api_status_var = tk.StringVar()
+        self.log_text: ScrolledText | None = None
+        self.run_button: ttk.Button | None = None
+        self.stop_button: ttk.Button | None = None
+        self.rules_preview_text: ScrolledText | None = None
+        self.rules_text: ScrolledText | None = None
+
+        self.columnconfigure(0, weight=1)
+        self.rowconfigure(0, weight=1)
+
+        self._build_widgets()
+        self._refresh_api_status()
+        self._apply_default_resources(force=True)
+        self._load_rules_preview()
+
+        self.api_key_var.trace_add("write", self._on_api_key_changed)
+        self.target_lang_var.trace_add("write", self._on_target_lang_changed)
+        self.rules_path_var.trace_add("write", self._on_rules_path_changed)
+
+    def _build_widgets(self) -> None:
+        paned = tk.PanedWindow(
+            self,
+            orient=tk.HORIZONTAL,
+            sashrelief=tk.RAISED,
+            sashwidth=6,
+            opaqueresize=True,
+        )
+        paned.grid(row=0, column=0, sticky="nsew")
+
+        form = ttk.Frame(paned, padding=12)
+        form.columnconfigure(1, weight=1)
+        form.rowconfigure(100, weight=1)
+
+        ttk.Label(form, text=self.title).grid(row=0, column=0, columnspan=3, sticky="w")
+
+        row = 1
+        self._add_entry_row(
+            form,
+            row=row,
+            label="Input file",
+            variable=self.input_file_var,
+            browse_command=self._browse_input_file,
+        )
+        row += 1
+        self._add_entry_row(form, row=row, label="Source lang", variable=self.source_lang_var)
+        row += 1
+        self._add_entry_row(form, row=row, label="Target lang", variable=self.target_lang_var)
+        row += 1
+        self._add_entry_row(form, row=row, label="Model", variable=self.model_var)
+        row += 1
+        self._add_combo_row(
+            form,
+            row=row,
+            label="Thinking level",
+            variable=self.thinking_level_var,
+            values=THINKING_LEVEL_CHOICES,
+        )
+        row += 1
+        self._add_entry_row(form, row=row, label="Batch size", variable=self.batch_size_var)
+        row += 1
+        self._add_entry_row(
+            form,
+            row=row,
+            label="Parallel requests",
+            variable=self.parallel_requests_var,
+        )
+        row += 1
+
+        if self.supports_vocab:
+            self._add_entry_row(
+                form,
+                row=row,
+                label="Vocabulary",
+                variable=self.vocab_path_var,
+                browse_command=self._browse_vocab_file,
+            )
+            row += 1
+
+        if self.supports_rules:
+            self._add_entry_row(
+                form,
+                row=row,
+                label="Rules file",
+                variable=self.rules_path_var,
+                browse_command=self._browse_rules_file,
+            )
+            row += 1
+
+        self._add_entry_row(
+            form,
+            row=row,
+            label="API key",
+            variable=self.api_key_var,
+            show="*",
+        )
+        row += 1
+
+        ttk.Label(form, textvariable=self.api_status_var).grid(
+            row=row,
+            column=0,
+            columnspan=3,
+            sticky="w",
+            pady=(2, 8),
+        )
+        row += 1
+
+        row = self._build_tool_specific_fields(form, row)
+
+        if self.supports_rules:
+            ttk.Label(form, text="Rules").grid(row=row, column=0, sticky="nw")
+            rules_notebook = ttk.Notebook(form)
+            rules_notebook.grid(
+                row=row + 1,
+                column=0,
+                columnspan=3,
+                sticky="nsew",
+                pady=(4, 8),
+            )
+
+            preview_tab = ttk.Frame(rules_notebook, padding=6)
+            preview_tab.columnconfigure(0, weight=1)
+            preview_tab.rowconfigure(0, weight=1)
+            self.rules_preview_text = ScrolledText(
+                preview_tab,
+                wrap="word",
+                font=("Consolas", 10),
+                state="disabled",
+            )
+            self.rules_preview_text.grid(row=0, column=0, sticky="nsew")
+            rules_notebook.add(preview_tab, text="Loaded rules")
+
+            inline_tab = ttk.Frame(rules_notebook, padding=6)
+            inline_tab.columnconfigure(0, weight=1)
+            inline_tab.rowconfigure(0, weight=1)
+            self.rules_text = ScrolledText(
+                inline_tab,
+                wrap="word",
+                font=("Consolas", 10),
+            )
+            self.rules_text.grid(row=0, column=0, sticky="nsew")
+            rules_notebook.add(inline_tab, text="Inline override")
+            form.rowconfigure(row + 1, weight=1)
+            row += 2
+
+        buttons = ttk.Frame(form)
+        buttons.grid(row=row, column=0, columnspan=3, sticky="ew")
+        buttons.columnconfigure(0, weight=1)
+
+        self.run_button = ttk.Button(buttons, text="Run", command=self._start_run)
+        self.run_button.grid(row=0, column=1, sticky="e")
+
+        self.stop_button = ttk.Button(
+            buttons,
+            text="Stop",
+            command=self._stop_run,
+            state="disabled",
+        )
+        self.stop_button.grid(row=0, column=2, sticky="e", padx=(8, 0))
+
+        ttk.Button(buttons, text="Clear log", command=self.clear_log).grid(
+            row=0,
+            column=3,
+            sticky="e",
+            padx=(8, 0),
+        )
+
+        log_frame = ttk.LabelFrame(paned, text="Output", padding=8)
+        log_frame.columnconfigure(0, weight=1)
+        log_frame.rowconfigure(0, weight=1)
+        self.log_text = ScrolledText(
+            log_frame,
+            wrap="word",
+            font=("Consolas", 10),
+            state="disabled",
+        )
+        self.log_text.grid(row=0, column=0, sticky="nsew")
+
+        paned.add(form, minsize=430, stretch="always")
+        paned.add(log_frame, minsize=300, stretch="always")
+
+    def _build_tool_specific_fields(self, parent: ttk.Frame, start_row: int) -> int:
+        return start_row
+
+    def _add_entry_row(
+        self,
+        parent: ttk.Frame,
+        *,
+        row: int,
+        label: str,
+        variable: tk.StringVar,
+        browse_command: object | None = None,
+        show: str | None = None,
+    ) -> None:
+        ttk.Label(parent, text=label).grid(row=row, column=0, sticky="w", pady=4)
+        ttk.Entry(parent, textvariable=variable, show=show or "").grid(
+            row=row,
+            column=1,
+            sticky="ew",
+            pady=4,
+        )
+        if browse_command is not None:
+            ttk.Button(parent, text="Browse", command=browse_command).grid(
+                row=row,
+                column=2,
+                sticky="w",
+                padx=(8, 0),
+                pady=4,
+            )
+
+    def _add_combo_row(
+        self,
+        parent: ttk.Frame,
+        *,
+        row: int,
+        label: str,
+        variable: tk.StringVar,
+        values: tuple[str, ...],
+    ) -> None:
+        ttk.Label(parent, text=label).grid(row=row, column=0, sticky="w", pady=4)
+        ttk.Combobox(
+            parent,
+            textvariable=variable,
+            state="readonly",
+            values=values,
+        ).grid(row=row, column=1, sticky="ew", pady=4)
+
+    def _browse_input_file(self) -> None:
+        selected = filedialog.askopenfilename(
+            title=f"Select input file for {self.title}",
+            filetypes=self.input_filetypes,
+        )
+        if selected:
+            self.input_file_var.set(selected)
+
+    def _browse_vocab_file(self) -> None:
+        selected = filedialog.askopenfilename(
+            title="Select vocabulary file",
+            filetypes=VOCAB_FILETYPES,
+        )
+        if selected:
+            self.vocab_path_var.set(selected)
+
+    def _browse_rules_file(self) -> None:
+        selected = filedialog.askopenfilename(
+            title="Select rules file",
+            filetypes=RULES_FILETYPES,
+        )
+        if selected:
+            self.rules_path_var.set(selected)
+
+    def _on_api_key_changed(self, *_args: object) -> None:
+        self._refresh_api_status()
+
+    def _on_target_lang_changed(self, *_args: object) -> None:
+        self._apply_default_resources()
+
+    def _on_rules_path_changed(self, *_args: object) -> None:
+        self._load_rules_preview()
+
+    def _refresh_api_status(self) -> None:
+        if _clean(self.api_key_var.get()):
+            self.api_status_var.set("API key source: GUI field")
+            return
+
+        if os.environ.get("GOOGLE_API_KEY"):
+            self.api_status_var.set("API key source: GOOGLE_API_KEY environment variable")
+            return
+
+        self.api_status_var.set("API key source: missing")
+
+    def _apply_default_resources(self, force: bool = False) -> None:
+        vocab_path, rules_path = detect_default_resource_paths(
+            self.target_lang_var.get(),
+            base_dir=self.resource_root,
+        )
+
+        if self.supports_vocab:
+            vocab_value, self._auto_vocab_path = choose_resource_field_value(
+                current_value=self.vocab_path_var.get(),
+                previous_auto_value=self._auto_vocab_path,
+                new_auto_value=vocab_path,
+                force=force,
+            )
+            if vocab_value != self.vocab_path_var.get():
+                self.vocab_path_var.set(vocab_value)
+
+        if self.supports_rules:
+            rules_value, self._auto_rules_path = choose_resource_field_value(
+                current_value=self.rules_path_var.get(),
+                previous_auto_value=self._auto_rules_path,
+                new_auto_value=rules_path,
+                force=force,
+            )
+            if rules_value != self.rules_path_var.get():
+                self.rules_path_var.set(rules_value)
+
+    def _load_rules_preview(self) -> None:
+        if not self.supports_rules or self.rules_preview_text is None:
+            return
+
+        content = read_text_file_or_empty(self.rules_path_var.get())
+        if not content:
+            content = "No rules file loaded."
+
+        self.rules_preview_text.configure(state="normal")
+        self.rules_preview_text.delete("1.0", "end")
+        self.rules_preview_text.insert("1.0", content)
+        self.rules_preview_text.see("1.0")
+        self.rules_preview_text.configure(state="disabled")
+
+    def _start_run(self) -> None:
+        self.app.start_run(self)
+
+    def _stop_run(self) -> None:
+        self.app.stop_run(self)
+
+    def set_running(self, active: bool, any_process_running: bool) -> None:
+        if self.run_button is not None:
+            self.run_button.configure(state="disabled" if any_process_running else "normal")
+        if self.stop_button is not None:
+            self.stop_button.configure(
+                state="normal" if active and any_process_running else "disabled"
+            )
+
+    def append_log(self, text: str) -> None:
+        if self.log_text is None:
+            return
+
+        self.log_text.configure(state="normal")
+        self.log_text.insert("end", text)
+        self.log_text.update_idletasks()
+        self.log_text.see("end")
+        self.log_text.yview_moveto(1.0)
+        self.log_text.configure(state="disabled")
+
+    def clear_log(self) -> None:
+        if self.log_text is None:
+            return
+
+        self.log_text.configure(state="normal")
+        self.log_text.delete("1.0", "end")
+        self.log_text.configure(state="disabled")
+
+    def build_env(self) -> dict[str, str]:
+        return build_script_env(self.api_key_var.get())
+
+    def build_command(self) -> list[str]:
+        raise NotImplementedError
+
+
+class ProcessToolTab(BaseToolTab):
+    def __init__(self, app: "ProcessGuiApp", notebook: ttk.Notebook) -> None:
+        self.retranslate_all_var = tk.BooleanVar(value=False)
+        super().__init__(
+            app,
+            notebook,
+            tool_key="process",
+            title="Translate with process.py",
+            script_name="process.py",
+            input_filetypes=TRANSLATABLE_FILETYPES,
+            supports_vocab=True,
+            supports_rules=True,
+        )
+
+    def _build_tool_specific_fields(self, parent: ttk.Frame, start_row: int) -> int:
+        ttk.Checkbutton(
+            parent,
+            text="Retranslate all entries",
+            variable=self.retranslate_all_var,
+        ).grid(row=start_row, column=0, columnspan=3, sticky="w", pady=(4, 8))
+        return start_row + 1
+
+    def build_config(self) -> ProcessGuiConfig:
+        return ProcessGuiConfig(
+            input_file=self.input_file_var.get(),
+            source_lang=self.source_lang_var.get(),
+            target_lang=self.target_lang_var.get(),
+            model=self.model_var.get(),
+            thinking_level=self.thinking_level_var.get(),
+            batch_size=self.batch_size_var.get(),
+            parallel_requests=self.parallel_requests_var.get(),
+            vocab_path=self.vocab_path_var.get(),
+            rules_path=self.rules_path_var.get(),
+            rules_str=self.rules_text.get("1.0", "end-1c") if self.rules_text else "",
+            api_key=self.api_key_var.get(),
+            retranslate_all=self.retranslate_all_var.get(),
+        )
+
+    def build_command(self) -> list[str]:
+        return build_process_command(self.build_config())
+
+
+class ExtractToolTab(BaseToolTab):
+    def __init__(self, app: "ProcessGuiApp", notebook: ttk.Notebook) -> None:
+        self.mode_var = tk.StringVar(value="missing")
+        self.out_format_var = tk.StringVar(value="po")
+        self.out_path_var = tk.StringVar()
+        self.max_terms_per_batch_var = tk.StringVar(value="80")
+        self.max_attempts_var = tk.StringVar(value="5")
+        super().__init__(
+            app,
+            notebook,
+            tool_key="extract",
+            title="Extract glossary terms with extract_terms.py",
+            script_name="extract_terms.py",
+            input_filetypes=TRANSLATABLE_FILETYPES,
+            supports_vocab=True,
+            supports_rules=False,
+        )
+
+    def _build_tool_specific_fields(self, parent: ttk.Frame, start_row: int) -> int:
+        self._add_combo_row(
+            parent,
+            row=start_row,
+            label="Mode",
+            variable=self.mode_var,
+            values=EXTRACT_MODE_CHOICES,
+        )
+        self._add_combo_row(
+            parent,
+            row=start_row + 1,
+            label="Output format",
+            variable=self.out_format_var,
+            values=EXTRACT_OUTPUT_CHOICES,
+        )
+        self._add_entry_row(
+            parent,
+            row=start_row + 2,
+            label="Output path",
+            variable=self.out_path_var,
+            browse_command=self._browse_output_file,
+        )
+        self._add_entry_row(
+            parent,
+            row=start_row + 3,
+            label="Max terms / batch",
+            variable=self.max_terms_per_batch_var,
+        )
+        self._add_entry_row(
+            parent,
+            row=start_row + 4,
+            label="Max attempts",
+            variable=self.max_attempts_var,
+        )
+        return start_row + 5
+
+    def _browse_output_file(self) -> None:
+        out_format = _clean(self.out_format_var.get()) or "po"
+        extension = ".json" if out_format == "json" else ".po"
+        selected = filedialog.asksaveasfilename(
+            title="Select output file",
+            defaultextension=extension,
+            filetypes=[("Output files", f"*{extension}"), ("All files", "*.*")],
+        )
+        if selected:
+            self.out_path_var.set(selected)
+
+    def build_config(self) -> ExtractGuiConfig:
+        return ExtractGuiConfig(
+            input_file=self.input_file_var.get(),
+            source_lang=self.source_lang_var.get(),
+            target_lang=self.target_lang_var.get(),
+            model=self.model_var.get(),
+            thinking_level=self.thinking_level_var.get(),
+            batch_size=self.batch_size_var.get(),
+            parallel_requests=self.parallel_requests_var.get(),
+            vocab_path=self.vocab_path_var.get(),
+            api_key=self.api_key_var.get(),
+            mode=self.mode_var.get(),
+            out_format=self.out_format_var.get(),
+            out_path=self.out_path_var.get(),
+            max_terms_per_batch=self.max_terms_per_batch_var.get(),
+            max_attempts=self.max_attempts_var.get(),
+        )
+
+    def build_command(self) -> list[str]:
+        return build_extract_command(self.build_config())
+
+
+class CheckToolTab(BaseToolTab):
+    def __init__(self, app: "ProcessGuiApp", notebook: ttk.Notebook) -> None:
+        self.num_messages_var = tk.StringVar()
+        self.out_path_var = tk.StringVar()
+        self.include_ok_var = tk.BooleanVar(value=False)
+        self.max_attempts_var = tk.StringVar(value="5")
+        super().__init__(
+            app,
+            notebook,
+            tool_key="check",
+            title="Review translations with check_translations.py",
+            script_name="check_translations.py",
+            input_filetypes=CHECK_FILETYPES,
+            supports_vocab=True,
+            supports_rules=True,
+        )
+
+    def _build_tool_specific_fields(self, parent: ttk.Frame, start_row: int) -> int:
+        self._add_entry_row(
+            parent,
+            row=start_row,
+            label="Output path",
+            variable=self.out_path_var,
+            browse_command=self._browse_output_file,
+        )
+        self._add_entry_row(
+            parent,
+            row=start_row + 1,
+            label="Probe / num messages",
+            variable=self.num_messages_var,
+        )
+        self._add_entry_row(
+            parent,
+            row=start_row + 2,
+            label="Max attempts",
+            variable=self.max_attempts_var,
+        )
+        ttk.Checkbutton(
+            parent,
+            text="Include entries with no issues",
+            variable=self.include_ok_var,
+        ).grid(row=start_row + 3, column=0, columnspan=3, sticky="w", pady=(4, 8))
+        return start_row + 4
+
+    def _browse_output_file(self) -> None:
+        selected = filedialog.asksaveasfilename(
+            title="Select output report path",
+            defaultextension=".json",
+            filetypes=[("JSON files", "*.json"), ("All files", "*.*")],
+        )
+        if selected:
+            self.out_path_var.set(selected)
+
+    def build_config(self) -> CheckGuiConfig:
+        return CheckGuiConfig(
+            input_file=self.input_file_var.get(),
+            source_lang=self.source_lang_var.get(),
+            target_lang=self.target_lang_var.get(),
+            model=self.model_var.get(),
+            thinking_level=self.thinking_level_var.get(),
+            batch_size=self.batch_size_var.get(),
+            parallel_requests=self.parallel_requests_var.get(),
+            vocab_path=self.vocab_path_var.get(),
+            rules_path=self.rules_path_var.get(),
+            rules_str=self.rules_text.get("1.0", "end-1c") if self.rules_text else "",
+            api_key=self.api_key_var.get(),
+            num_messages=self.num_messages_var.get(),
+            out_path=self.out_path_var.get(),
+            include_ok=self.include_ok_var.get(),
+            max_attempts=self.max_attempts_var.get(),
+        )
+
+    def build_command(self) -> list[str]:
+        return build_check_command(self.build_config())
+
+
+class ReviseToolTab(BaseToolTab):
+    def __init__(self, app: "ProcessGuiApp", notebook: ttk.Notebook) -> None:
+        self.source_file_var = tk.StringVar()
+        self.out_path_var = tk.StringVar()
+        self.num_messages_var = tk.StringVar()
+        self.max_attempts_var = tk.StringVar(value="5")
+        self.in_place_var = tk.BooleanVar(value=False)
+        self.dry_run_var = tk.BooleanVar(value=False)
+        self.instruction_text: ScrolledText | None = None
+        super().__init__(
+            app,
+            notebook,
+            tool_key="revise",
+            title="Revise translations with revise_translations.py",
+            script_name="revise_translations.py",
+            input_filetypes=TRANSLATABLE_FILETYPES,
+            supports_vocab=True,
+            supports_rules=True,
+        )
+
+    def _build_tool_specific_fields(self, parent: ttk.Frame, start_row: int) -> int:
+        self._add_entry_row(
+            parent,
+            row=start_row,
+            label="Source file",
+            variable=self.source_file_var,
+            browse_command=self._browse_source_file,
+        )
+        ttk.Label(
+            parent,
+            text="Required for .strings, .resx, and .txt revision runs.",
+        ).grid(row=start_row + 1, column=0, columnspan=3, sticky="w", pady=(0, 8))
+
+        self._add_entry_row(
+            parent,
+            row=start_row + 2,
+            label="Output path",
+            variable=self.out_path_var,
+            browse_command=self._browse_output_file,
+        )
+        self._add_entry_row(
+            parent,
+            row=start_row + 3,
+            label="Probe / num messages",
+            variable=self.num_messages_var,
+        )
+        self._add_entry_row(
+            parent,
+            row=start_row + 4,
+            label="Max attempts",
+            variable=self.max_attempts_var,
+        )
+
+        ttk.Checkbutton(
+            parent,
+            text="Overwrite input file",
+            variable=self.in_place_var,
+        ).grid(row=start_row + 5, column=0, columnspan=3, sticky="w", pady=(4, 0))
+        ttk.Checkbutton(
+            parent,
+            text="Dry run only",
+            variable=self.dry_run_var,
+        ).grid(row=start_row + 6, column=0, columnspan=3, sticky="w", pady=(0, 8))
+
+        ttk.Label(parent, text="Instruction").grid(row=start_row + 7, column=0, sticky="nw")
+        self.instruction_text = ScrolledText(
+            parent,
+            wrap="word",
+            height=6,
+            font=("Consolas", 10),
+        )
+        self.instruction_text.grid(
+            row=start_row + 8,
+            column=0,
+            columnspan=3,
+            sticky="nsew",
+            pady=(4, 8),
+        )
+        return start_row + 9
+
+    def _browse_source_file(self) -> None:
+        selected = filedialog.askopenfilename(
+            title="Select source file",
+            filetypes=TRANSLATABLE_FILETYPES,
+        )
+        if selected:
+            self.source_file_var.set(selected)
+
+    def _browse_output_file(self) -> None:
+        input_path = _clean(self.input_file_var.get())
+        extension = os.path.splitext(input_path)[1] or ".txt"
+        selected = filedialog.asksaveasfilename(
+            title="Select revised output file",
+            defaultextension=extension,
+            filetypes=[("Matching files", f"*{extension}"), ("All files", "*.*")],
+        )
+        if selected:
+            self.out_path_var.set(selected)
+
+    def build_config(self) -> ReviseGuiConfig:
+        return ReviseGuiConfig(
+            input_file=self.input_file_var.get(),
+            source_file=self.source_file_var.get(),
+            source_lang=self.source_lang_var.get(),
+            target_lang=self.target_lang_var.get(),
+            model=self.model_var.get(),
+            thinking_level=self.thinking_level_var.get(),
+            batch_size=self.batch_size_var.get(),
+            parallel_requests=self.parallel_requests_var.get(),
+            vocab_path=self.vocab_path_var.get(),
+            rules_path=self.rules_path_var.get(),
+            rules_str=self.rules_text.get("1.0", "end-1c") if self.rules_text else "",
+            api_key=self.api_key_var.get(),
+            instruction=self.instruction_text.get("1.0", "end-1c") if self.instruction_text else "",
+            num_messages=self.num_messages_var.get(),
+            out_path=self.out_path_var.get(),
+            max_attempts=self.max_attempts_var.get(),
+            in_place=self.in_place_var.get(),
+            dry_run=self.dry_run_var.get(),
+        )
+
+    def build_command(self) -> list[str]:
+        return build_revise_command(self.build_config())
+
+
+class ProcessGuiApp(ttk.Frame):
+    def __init__(self, master: tk.Tk):
+        super().__init__(master, padding=12)
+        self.master = master
+        self.resource_root = build_resource_root()
+        self.api_key_var = tk.StringVar()
+        self.queue: queue.Queue[tuple[str, str, object]] = queue.Queue()
+        self.process: subprocess.Popen[str] | None = None
+        self.active_tool_key: str | None = None
+        self.active_log_handle: TextIO | None = None
+        self.active_log_path: str | None = None
+        self.progress_value_var = tk.DoubleVar(value=0.0)
+        self.progress_text_var = tk.StringVar(value="0.0%")
+        self.status_text_var = tk.StringVar(value="Ready.")
+        self.tabs: dict[str, BaseToolTab] = {}
+        self._clipboard_menu = tk.Menu(self, tearoff=False)
+        self._clipboard_target: tk.Misc | None = None
+
+        self.master.title("Translation Tools Tk Launcher")
+        self.master.geometry("1180x820")
+        self.master.minsize(980, 680)
+        self.master.columnconfigure(0, weight=1)
+        self.master.rowconfigure(0, weight=1)
+
+        self.columnconfigure(0, weight=1)
+        self.rowconfigure(1, weight=1)
+
+        self._build_widgets()
+        self._bind_clipboard_shortcuts()
+        self.after(100, self._poll_queue)
+
+    def _build_widgets(self) -> None:
+        ttk.Label(
+            self,
+            text="Run translation, revision, glossary extraction, and QA from one Tk interface.",
+        ).grid(row=0, column=0, sticky="w")
+
+        notebook = ttk.Notebook(self)
+        notebook.grid(row=1, column=0, sticky="nsew", pady=(10, 10))
+
+        process_tab = ProcessToolTab(self, notebook)
+        revise_tab = ReviseToolTab(self, notebook)
+        extract_tab = ExtractToolTab(self, notebook)
+        check_tab = CheckToolTab(self, notebook)
+
+        self.tabs = {
+            process_tab.tool_key: process_tab,
+            revise_tab.tool_key: revise_tab,
+            extract_tab.tool_key: extract_tab,
+            check_tab.tool_key: check_tab,
+        }
+
+        notebook.add(process_tab, text="Translate")
+        notebook.add(revise_tab, text="Revise")
+        notebook.add(extract_tab, text="Extract")
+        notebook.add(check_tab, text="Check")
+
+        status_frame = ttk.Frame(self)
+        status_frame.grid(row=2, column=0, sticky="ew")
+        status_frame.columnconfigure(1, weight=1)
+
+        ttk.Label(status_frame, text="Status").grid(row=0, column=0, sticky="w")
+        ttk.Progressbar(
+            status_frame,
+            maximum=100.0,
+            variable=self.progress_value_var,
+        ).grid(row=0, column=1, sticky="ew", padx=(8, 8))
+        ttk.Label(status_frame, textvariable=self.status_text_var).grid(
+            row=0,
+            column=2,
+            sticky="w",
+        )
+        ttk.Label(status_frame, textvariable=self.progress_text_var, width=8).grid(
+            row=0,
+            column=3,
+            sticky="e",
+            padx=(8, 0),
+        )
+
+        self.grid(sticky="nsew")
+
+    def _widget_class_name(self, widget: tk.Misc | None) -> str:
+        if widget is None:
+            return ""
+        try:
+            return str(widget.winfo_class() or "")
+        except tk.TclError:
+            return ""
+
+    def _widget_state(self, widget: tk.Misc | None) -> str:
+        if widget is None:
+            return ""
+        cget = getattr(widget, "cget", None)
+        if not callable(cget):
+            return ""
+        try:
+            return str(cget("state") or "")
+        except (tk.TclError, TypeError):
+            return ""
+
+    def _is_text_widget(self, widget: tk.Misc | None) -> bool:
+        return self._widget_class_name(widget) == "Text"
+
+    def _supports_clipboard_widget(self, widget: tk.Misc | None) -> bool:
+        return widget_supports_clipboard(self._widget_class_name(widget))
+
+    def _widget_is_editable(self, widget: tk.Misc | None) -> bool:
+        return widget_is_editable(
+            self._widget_class_name(widget),
+            self._widget_state(widget),
+        )
+
+    def _selected_text(self, widget: tk.Misc | None) -> str:
+        if widget is None or not self._supports_clipboard_widget(widget):
+            return ""
+
+        try:
+            if self._is_text_widget(widget):
+                return str(widget.get("sel.first", "sel.last"))
+            selection_present = getattr(widget, "selection_present", None)
+            if callable(selection_present) and not selection_present():
+                return ""
+            return str(widget.selection_get())
+        except (tk.TclError, AttributeError):
+            return ""
+
+    def _replace_selection(self, widget: tk.Misc, text: str) -> None:
+        if self._is_text_widget(widget):
+            try:
+                widget.delete("sel.first", "sel.last")
+            except tk.TclError:
+                pass
+            widget.insert("insert", text)
+            return
+
+        try:
+            widget.delete("sel.first", "sel.last")
+        except tk.TclError:
+            pass
+        widget.insert("insert", text)
+
+    def _bind_clipboard_shortcuts(self) -> None:
+        self._clipboard_menu.add_command(label="Cut", command=self._menu_cut)
+        self._clipboard_menu.add_command(label="Copy", command=self._menu_copy)
+        self._clipboard_menu.add_command(label="Paste", command=self._menu_paste)
+        self._clipboard_menu.add_separator()
+        self._clipboard_menu.add_command(label="Select All", command=self._menu_select_all)
+
+        for widget_class in sorted(CLIPBOARD_WIDGET_CLASSES):
+            self.master.bind_class(widget_class, "<Control-a>", self._handle_select_all, add="+")
+            self.master.bind_class(widget_class, "<Control-A>", self._handle_select_all, add="+")
+            self.master.bind_class(widget_class, "<Control-c>", self._handle_copy, add="+")
+            self.master.bind_class(widget_class, "<Control-C>", self._handle_copy, add="+")
+            self.master.bind_class(widget_class, "<Control-v>", self._handle_paste, add="+")
+            self.master.bind_class(widget_class, "<Control-V>", self._handle_paste, add="+")
+            self.master.bind_class(widget_class, "<Control-x>", self._handle_cut, add="+")
+            self.master.bind_class(widget_class, "<Control-X>", self._handle_cut, add="+")
+            self.master.bind_class(widget_class, "<Control-Insert>", self._handle_copy, add="+")
+            self.master.bind_class(widget_class, "<Shift-Insert>", self._handle_paste, add="+")
+            self.master.bind_class(widget_class, "<Shift-Delete>", self._handle_cut, add="+")
+            self.master.bind_class(widget_class, "<Button-3>", self._show_clipboard_menu, add="+")
+
+    def _event_widget(self, event: tk.Event[tk.Misc] | None) -> tk.Misc | None:
+        if event is not None and getattr(event, "widget", None) is not None:
+            return event.widget
+        return self.master.focus_get()
+
+    def _copy_selection_to_clipboard(self, widget: tk.Misc | None) -> bool:
+        selected = self._selected_text(widget)
+        if not selected:
+            return False
+        self.master.clipboard_clear()
+        self.master.clipboard_append(selected)
+        return True
+
+    def _handle_copy(self, event: tk.Event[tk.Misc] | None = None) -> str | None:
+        widget = self._event_widget(event)
+        if not self._supports_clipboard_widget(widget):
+            return None
+        if self._copy_selection_to_clipboard(widget):
+            return "break"
+        return "break"
+
+    def _handle_cut(self, event: tk.Event[tk.Misc] | None = None) -> str | None:
+        widget = self._event_widget(event)
+        if not self._supports_clipboard_widget(widget):
+            return None
+        if not self._widget_is_editable(widget):
+            return "break"
+        if self._copy_selection_to_clipboard(widget):
+            if self._is_text_widget(widget):
+                widget.delete("sel.first", "sel.last")
+            else:
+                widget.delete("sel.first", "sel.last")
+        return "break"
+
+    def _handle_paste(self, event: tk.Event[tk.Misc] | None = None) -> str | None:
+        widget = self._event_widget(event)
+        if not self._supports_clipboard_widget(widget):
+            return None
+        if not self._widget_is_editable(widget):
+            return "break"
+        try:
+            text = self.master.clipboard_get()
+        except tk.TclError:
+            return "break"
+        self._replace_selection(widget, text)
+        return "break"
+
+    def _handle_select_all(self, event: tk.Event[tk.Misc] | None = None) -> str | None:
+        widget = self._event_widget(event)
+        if not self._supports_clipboard_widget(widget):
+            return None
+        try:
+            widget.focus_set()
+            if self._is_text_widget(widget):
+                widget.tag_add("sel", "1.0", "end-1c")
+                widget.mark_set("insert", "1.0")
+                widget.see("insert")
+            else:
+                widget.selection_range(0, "end")
+                widget.icursor("end")
+        except (tk.TclError, AttributeError):
+            return None
+        return "break"
+
+    def _show_clipboard_menu(self, event: tk.Event[tk.Misc]) -> str | None:
+        widget = self._event_widget(event)
+        if not self._supports_clipboard_widget(widget):
+            return None
+
+        self._clipboard_target = widget
+        editable = self._widget_is_editable(widget)
+        has_selection = bool(self._selected_text(widget))
+        try:
+            has_clipboard = bool(self.master.clipboard_get())
+        except tk.TclError:
+            has_clipboard = False
+
+        self._clipboard_menu.entryconfigure(0, state="normal" if editable and has_selection else "disabled")
+        self._clipboard_menu.entryconfigure(1, state="normal" if has_selection else "disabled")
+        self._clipboard_menu.entryconfigure(2, state="normal" if editable and has_clipboard else "disabled")
+        self._clipboard_menu.entryconfigure(4, state="normal")
+
+        try:
+            self._clipboard_menu.tk_popup(event.x_root, event.y_root)
+        finally:
+            self._clipboard_menu.grab_release()
+        return "break"
+
+    def _focus_clipboard_target(self) -> None:
+        if self._clipboard_target is None:
+            return
+        try:
+            self._clipboard_target.focus_set()
+        except tk.TclError:
+            pass
+
+    def _menu_cut(self) -> None:
+        self._focus_clipboard_target()
+        self._handle_cut()
+
+    def _menu_copy(self) -> None:
+        self._focus_clipboard_target()
+        self._handle_copy()
+
+    def _menu_paste(self) -> None:
+        self._focus_clipboard_target()
+        self._handle_paste()
+
+    def _menu_select_all(self) -> None:
+        self._focus_clipboard_target()
+        self._handle_select_all()
+
+    def _set_status(self, text: str, percent: float | None = None) -> None:
+        if percent is not None:
+            clamped = _clamp_percent(percent)
+            self.progress_value_var.set(clamped)
+            self.progress_text_var.set(f"{clamped:.1f}%")
+        self.status_text_var.set(text)
+
+    def _set_running_state(self, active_tool_key: str | None) -> None:
+        any_running = active_tool_key is not None
+        for tool_key, tab in self.tabs.items():
+            tab.set_running(active=tool_key == active_tool_key, any_process_running=any_running)
+
+    def _close_run_log(self) -> None:
+        if self.active_log_handle is not None:
+            try:
+                self.active_log_handle.close()
+            except OSError:
+                pass
+        self.active_log_handle = None
+        self.active_log_path = None
+
+    def _start_run_log(self, tab: BaseToolTab) -> str | None:
+        self._close_run_log()
+        log_dir = build_log_dir(self.resource_root)
+        os.makedirs(log_dir, exist_ok=True)
+        log_path = build_run_log_path(
+            tab.tool_key,
+            tab.input_file_var.get(),
+            base_dir=self.resource_root,
+        )
+        self.active_log_handle = open(log_path, "w", encoding="utf-8", newline="")
+        self.active_log_path = log_path
+        return log_path
+
+    def _append_tool_output(self, tool_key: str, text: str) -> None:
+        tab = self.tabs.get(tool_key)
+        if tab is not None:
+            tab.append_log(text)
+
+        if tool_key != self.active_tool_key or self.active_log_handle is None:
+            return
+
+        self.active_log_handle.write(text)
+        self.active_log_handle.flush()
+
+    def start_run(self, tab: BaseToolTab) -> None:
+        if self.process is not None and self.process.poll() is None:
+            if self.active_tool_key == tab.tool_key:
+                return
+            messagebox.showinfo(
+                "Busy",
+                "Another script is already running. Stop it before starting a new one.",
+            )
+            return
+
+        try:
+            command = tab.build_command()
+        except ValueError as exc:
+            messagebox.showerror("Invalid settings", str(exc))
+            return
+
+        env = tab.build_env()
+        self.active_tool_key = tab.tool_key
+        log_path: str | None = None
+        log_error: str | None = None
+        try:
+            log_path = self._start_run_log(tab)
+        except OSError as exc:
+            log_error = str(exc)
+        self._set_running_state(tab.tool_key)
+        self._set_status(f"Running {tab.title}", 0.0)
+        if log_path:
+            self._append_tool_output(tab.tool_key, f"Log file: {log_path}\n")
+        elif log_error:
+            self._append_tool_output(
+                tab.tool_key,
+                f"Warning: could not open log file: {log_error}\n",
+            )
+        self._append_tool_output(tab.tool_key, f"$ {subprocess.list2cmdline(command)}\n")
+        self._append_tool_output(tab.tool_key, f"Starting {tab.script_name}...\n\n")
+
+        worker = threading.Thread(
+            target=self._run_process,
+            args=(tab.tool_key, command, env),
+            daemon=True,
+        )
+        worker.start()
+
+    def stop_run(self, tab: BaseToolTab | None = None) -> None:
+        if self.process is None or self.process.poll() is not None:
+            return
+
+        if tab is not None and self.active_tool_key != tab.tool_key:
+            return
+
+        active_tab = self.tabs.get(self.active_tool_key or "")
+        if active_tab is not None:
+            self._append_tool_output(active_tab.tool_key, "\nStopping process...\n")
+        self._set_status("Stopping current script...")
+
+        try:
+            self.process.terminate()
+        except OSError as exc:
+            if active_tab is not None:
+                active_tab.append_log(f"Stop failed: {exc}\n")
+
+    def _run_process(
+        self,
+        tool_key: str,
+        command: list[str],
+        env: dict[str, str],
+    ) -> None:
+        working_dir = build_resource_root()
+
+        try:
+            process = subprocess.Popen(
+                command,
+                cwd=working_dir,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                env=env,
+            )
+        except Exception as exc:
+            self.queue.put(("error", tool_key, str(exc)))
+            return
+
+        self.process = process
+        try:
+            if process.stdout is not None:
+                for line in process.stdout:
+                    self.queue.put(("line", tool_key, line))
+            return_code = process.wait()
+            self.queue.put(("done", tool_key, return_code))
+        finally:
+            self.process = None
+
+    def _poll_queue(self) -> None:
+        try:
+            while True:
+                event, tool_key, payload = self.queue.get_nowait()
+                tab = self.tabs.get(tool_key)
+                if tab is None:
+                    continue
+
+                if event == "line":
+                    line = str(payload)
+                    self._append_tool_output(tool_key, line)
+                    if tool_key == self.active_tool_key:
+                        percent = parse_progress_percent(line)
+                        if percent is not None:
+                            self._set_status(f"Running {tab.title}", percent)
+                    continue
+
+                if event == "error":
+                    self._append_tool_output(
+                        tool_key,
+                        f"\nFailed to start {tab.script_name}: {payload}\n",
+                    )
+                    self.active_tool_key = None
+                    self._set_running_state(None)
+                    self._set_status(f"Failed to start {tab.title}")
+                    self._close_run_log()
+                    messagebox.showerror(
+                        "Launch failed",
+                        f"Failed to start {tab.script_name}:\n{payload}",
+                    )
+                    continue
+
+                if event == "done":
+                    return_code = int(payload)
+                    self._append_tool_output(
+                        tool_key,
+                        f"\n{tab.script_name} exited with code {return_code}.\n",
+                    )
+                    if self.active_log_path:
+                        self._append_tool_output(
+                            tool_key,
+                            f"Log saved to: {self.active_log_path}\n",
+                        )
+                    was_active = tool_key == self.active_tool_key
+                    self.active_tool_key = None
+                    self._set_running_state(None)
+                    self._close_run_log()
+                    if return_code == 0:
+                        if was_active:
+                            self._set_status(f"{tab.title} completed.", 100.0)
+                        messagebox.showinfo(
+                            "Completed",
+                            f"{tab.script_name} finished successfully.",
+                        )
+                    else:
+                        self._set_status(
+                            f"{tab.title} failed (exit {return_code}).",
+                            self.progress_value_var.get(),
+                        )
+                        messagebox.showerror(
+                            "Process failed",
+                            f"{tab.script_name} exited with code {return_code}.",
+                        )
+        except queue.Empty:
+            pass
+        finally:
+            self.after(100, self._poll_queue)
+
+
+def main() -> None:
+    root = tk.Tk()
+    ProcessGuiApp(root)
+    root.mainloop()
+
+
+if __name__ == "__main__":
+    main()
