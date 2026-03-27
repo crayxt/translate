@@ -6,6 +6,16 @@ import process_gui
 
 
 class ProcessGuiSmokeTests(unittest.TestCase):
+    def test_build_system_prompt_preview_for_translate_uses_translation_system_prompt(self):
+        preview = process_gui.build_system_prompt_preview("process", "kk")
+        self.assertIn("professional software localization translator", preview)
+        self.assertIn("Preserve all placeholders EXACTLY", preview)
+
+    def test_build_system_prompt_preview_for_check_uses_target_script_guidance(self):
+        preview = process_gui.build_system_prompt_preview("check", "kk")
+        self.assertIn("software localization QA reviewer", preview)
+        self.assertIn("real Kazakh Cyrillic alphabet", preview)
+
     def test_detect_default_resource_paths_prefers_data_dir(self):
         data_dir = os.path.join(os.getcwd(), "_tmp_gui_data", "data", "fr")
         legacy_dir = os.path.join(os.getcwd(), "_tmp_gui_data")

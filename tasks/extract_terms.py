@@ -11,6 +11,7 @@ from typing import Any, Dict, List, Literal, Tuple
 
 import polib
 
+from core.review_common import build_target_script_guidance as build_shared_target_script_guidance
 from core.formats import (
     FileKind,
     PO_WRAP_WIDTH,
@@ -35,6 +36,17 @@ from core.runtime import (
 
 DiscoveryMode = Literal["all", "missing"]
 OutputFormat = Literal["po", "json"]
+
+TERM_SYSTEM_INSTRUCTION = """
+You are a software localization terminology analyst.
+
+MUST:
+- Extract canonical product, domain, and UI terms rather than full-sentence translations
+- Prefer concise glossary-ready source terms and concise target-language equivalents
+- Skip generic stop words, obvious function words, and low-value noise
+- Keep term casing and number canonical unless the source clearly requires otherwise
+- When vocabulary is provided, use it for consistency and do not invent conflicting alternatives
+"""
 
 
 TERM_DISCOVERY_SCHEMA: dict[str, Any] = {
@@ -142,8 +154,6 @@ Task:
     messages_json = json.dumps(messages, ensure_ascii=False, indent=2)
 
     return f"""
-You are a software localization terminology analyst.
-
 {task_block}
 
 Output requirements:
@@ -245,10 +255,14 @@ def merge_term_candidates(candidates: List[TermCandidate]) -> List[TermCandidate
 
 def build_term_generation_config(
     thinking_level: str | None = None,
+    *,
+    provider: Any = DEFAULT_PROVIDER,
+    system_instruction: str | None = None,
 ) -> Any:
-    return DEFAULT_PROVIDER.build_generation_config(
+    return provider.build_generation_config(
         thinking_level=thinking_level,
         json_schema=TERM_DISCOVERY_SCHEMA,
+        system_instruction=TERM_SYSTEM_INSTRUCTION if system_instruction is None else system_instruction,
     )
 
 
@@ -270,6 +284,17 @@ async def generate_with_retry(
         max_attempts=max_attempts,
         config=config,
     )
+
+
+def build_term_system_instruction(target_lang: str) -> str:
+    parts = [TERM_SYSTEM_INSTRUCTION.strip()]
+    script_guidance = build_shared_target_script_guidance(
+        target_lang,
+        update_wording=lambda: "suggested translations",
+    )
+    if script_guidance:
+        parts.append(f"- {script_guidance}")
+    return "\n\n".join(parts)
 
 
 def save_terms_as_po(
@@ -466,9 +491,10 @@ def run_from_args(args: argparse.Namespace) -> None:
         output_format=args.out_format,
         mode=args.mode,
     )
-    term_config = provider.build_generation_config(
-        thinking_level=args.thinking_level,
-        json_schema=TERM_DISCOVERY_SCHEMA,
+    term_config = build_term_generation_config(
+        args.thinking_level,
+        provider=provider,
+        system_instruction=build_term_system_instruction(args.target_lang),
     )
 
     print("Startup configuration:")

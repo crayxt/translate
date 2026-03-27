@@ -40,6 +40,21 @@ from core.review_flow import (
 DEFAULT_CHECK_BATCH_SIZE = 150
 DEFAULT_CHECK_PARALLEL = 6
 
+CHECK_SYSTEM_INSTRUCTION = """
+You are a software localization QA reviewer.
+
+STRICT MUST-CHECK:
+- Placeholders must be preserved exactly (%s, %d, %(name)s, %1, %n, {var}, {{var}})
+- HTML/XML tags must be preserved exactly and remain well-formed
+- Keyboard accelerators/hotkeys must be preserved and usable (`_`, `&`)
+- Approved vocabulary is mandatory when supplied
+- Inflection and derivation are acceptable when they preserve the approved lexical choice
+- Flag missing meaning, added meaning, mistranslation, wrong tone, or broken grammar only when they are real QA issues
+- Ignore purely stylistic alternatives unless they violate terminology, rules, or UI constraints
+- Prefer fewer but higher-confidence findings over speculative nitpicks
+- When project rules are provided, apply them as mandatory QA criteria
+"""
+
 
 CHECK_RESPONSE_SCHEMA: dict[str, Any] = {
     "type": "object",
@@ -87,10 +102,14 @@ class CheckIssue:
 
 def build_check_generation_config(
     thinking_level: str | None = None,
+    *,
+    provider: Any = DEFAULT_PROVIDER,
+    system_instruction: str | None = None,
 ) -> Any:
-    return DEFAULT_PROVIDER.build_generation_config(
+    return provider.build_generation_config(
         thinking_level=thinking_level,
         json_schema=CHECK_RESPONSE_SCHEMA,
+        system_instruction=CHECK_SYSTEM_INSTRUCTION if system_instruction is None else system_instruction,
     )
 
 
@@ -203,6 +222,16 @@ def build_target_script_guidance(target_lang: str) -> str | None:
     )
 
 
+def build_check_system_instruction(target_lang: str) -> str:
+    parts = [CHECK_SYSTEM_INSTRUCTION.strip()]
+    script_guidance = build_target_script_guidance(target_lang)
+    if script_guidance:
+        parts.append(
+            "Suggested fixes must use the actual target-language alphabet/script.\n"
+            f"- {script_guidance}"
+        )
+    return "\n\n".join(parts)
+
 
 def build_check_prompt(
     messages: Dict[str, Dict[str, Any]],
@@ -217,25 +246,9 @@ def build_check_prompt(
         if translation_rules
         else ""
     )
-    script_guidance = build_target_script_guidance(target_lang)
-    script_block = f"- {script_guidance}\n" if script_guidance else ""
     messages_json = json.dumps(messages, ensure_ascii=False, indent=2)
 
     return f"""
-You are a software localization QA reviewer.
-
-STRICT MUST-CHECK:
-- Placeholders must be preserved exactly (%s, %d, %(name)s, %1, %n, {{var}}, {{{{var}}}})
-- HTML/XML tags must be preserved exactly and remain well-formed
-- Keyboard accelerators/hotkeys must be preserved and usable (`_`, `&`)
-- Approved vocabulary is mandatory when supplied
-- Inflection and derivation are acceptable when they preserve the approved lexical choice
-- Suggested fixes must use the actual target-language alphabet/script
-- Flag missing meaning, added meaning, mistranslation, wrong tone, or broken grammar only when they are real QA issues
-- Ignore purely stylistic alternatives unless they violate terminology, rules, or UI constraints
-- Prefer fewer but higher-confidence findings over speculative nitpicks
-{script_block}
-
 Project context:
 This is a software UI localization QA pass.
 Source language: {source_lang}
@@ -469,9 +482,10 @@ def run_from_args(args: argparse.Namespace) -> None:
         for i in range((total + batch_size - 1) // batch_size)
     ]
     out_path = args.out or build_check_output_path(args.file)
-    config = provider.build_generation_config(
-        thinking_level=args.thinking_level,
-        json_schema=CHECK_RESPONSE_SCHEMA,
+    config = build_check_generation_config(
+        args.thinking_level,
+        provider=provider,
+        system_instruction=build_check_system_instruction(args.target_lang),
     )
 
     print("Startup configuration:")

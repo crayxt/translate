@@ -48,6 +48,24 @@ from core.review_flow import (
 DEFAULT_REVISION_BATCH_SIZE = 120
 DEFAULT_REVISION_PARALLEL = 6
 
+REVISION_SYSTEM_INSTRUCTION = """
+You are revising existing software localization translations.
+
+STRICT MUST:
+- Review each item against the source text, current translation, and user instruction
+- Keep the current translation unchanged when it already satisfies the instruction
+- Change only entries where the instruction clearly applies and the current translation needs an update
+- If the instruction is ambiguous or not clearly applicable to a specific item, keep that item unchanged
+- Preserve placeholders exactly (%s, %d, %(name)s, %1, %n, {var}, {{var}})
+- Preserve HTML/XML tags exactly and keep them well-formed
+- Preserve keyboard accelerators/hotkeys exactly (`_`, `&`)
+- Preserve leading/trailing spaces, escapes, entities, and meaningful punctuation
+- Preserve approved vocabulary and project rules when supplied
+- Never return an empty updated translation
+- Do not rewrite unrelated wording just because a different phrasing is possible
+- Do not translate or rewrite context/note metadata
+"""
+
 
 REVISION_RESPONSE_SCHEMA: dict[str, Any] = {
     "type": "object",
@@ -106,10 +124,14 @@ class ReviewBundle:
 
 def build_revision_generation_config(
     thinking_level: str | None = None,
+    *,
+    provider: Any = DEFAULT_PROVIDER,
+    system_instruction: str | None = None,
 ) -> Any:
-    return DEFAULT_PROVIDER.build_generation_config(
+    return provider.build_generation_config(
         thinking_level=thinking_level,
         json_schema=REVISION_RESPONSE_SCHEMA,
+        system_instruction=REVISION_SYSTEM_INSTRUCTION if system_instruction is None else system_instruction,
     )
 
 
@@ -271,6 +293,14 @@ def build_target_script_guidance(target_lang: str) -> str | None:
     )
 
 
+def build_revision_system_instruction(target_lang: str) -> str:
+    parts = [REVISION_SYSTEM_INSTRUCTION.strip()]
+    script_guidance = build_target_script_guidance(target_lang)
+    if script_guidance:
+        parts.append(f"- {script_guidance}")
+    return "\n\n".join(parts)
+
+
 def build_revision_prompt(
     messages: Dict[str, Dict[str, Any]],
     source_lang: str,
@@ -285,30 +315,11 @@ def build_revision_prompt(
         if translation_rules
         else ""
     )
-    script_guidance = build_target_script_guidance(target_lang)
-    script_block = f"- {script_guidance}\n" if script_guidance else ""
     messages_json = json.dumps(messages, ensure_ascii=False, indent=2)
 
     return f"""
-You are revising existing software localization translations.
-
 User instruction:
 {instruction}
-
-STRICT MUST:
-- Review each item against the source text, current translation, and user instruction
-- Keep the current translation unchanged when it already satisfies the instruction
-- Change only entries where the instruction clearly applies and the current translation needs an update
-- If the instruction is ambiguous or not clearly applicable to a specific item, keep that item unchanged
-- Preserve placeholders exactly (%s, %d, %(name)s, %1, %n, {{var}}, {{{{var}}}})
-- Preserve HTML/XML tags exactly and keep them well-formed
-- Preserve keyboard accelerators/hotkeys exactly (`_`, `&`)
-- Preserve leading/trailing spaces, escapes, entities, and meaningful punctuation
-- Preserve approved vocabulary and project rules when supplied
-- Never return an empty updated translation
-- Do not rewrite unrelated wording just because a different phrasing is possible
-- Do not translate or rewrite context/note metadata
-{script_block}
 
 Project context:
 This is a software UI localization revision pass.
@@ -782,9 +793,10 @@ def run_from_args(args: argparse.Namespace) -> None:
 
     provider = get_translation_provider(args.provider)
     client = provider.create_client_from_env()
-    revision_config = provider.build_generation_config(
-        thinking_level=args.thinking_level,
-        json_schema=REVISION_RESPONSE_SCHEMA,
+    revision_config = build_revision_generation_config(
+        args.thinking_level,
+        provider=provider,
+        system_instruction=build_revision_system_instruction(args.target_lang),
     )
     final_output_path = build_final_output_path(
         translated_file=args.file,

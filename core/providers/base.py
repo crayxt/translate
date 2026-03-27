@@ -18,6 +18,7 @@ class TranslationProvider(Protocol):
         *,
         thinking_level: str | None,
         json_schema: dict[str, Any] | None,
+        system_instruction: str | None,
     ) -> Any:
         ...
 

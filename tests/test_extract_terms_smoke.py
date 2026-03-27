@@ -25,7 +25,7 @@ class _DummyProvider:
     def create_client_from_env(self):
         return object()
 
-    def build_generation_config(self, *, thinking_level, json_schema):
+    def build_generation_config(self, *, thinking_level, json_schema, system_instruction):
         return object()
 
 
@@ -79,6 +79,7 @@ class ExtractTermsSmokeTests(unittest.TestCase):
             config.thinking_config.thinking_level,
             genai_types.ThinkingLevel.MEDIUM,
         )
+        self.assertIn("software localization terminology analyst", config.system_instruction)
 
     def test_parse_term_response_from_parsed_payload(self):
         payload = {

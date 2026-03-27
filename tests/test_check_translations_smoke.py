@@ -26,7 +26,7 @@ class _DummyProvider:
     def create_client_from_env(self):
         return object()
 
-    def build_generation_config(self, *, thinking_level, json_schema):
+    def build_generation_config(self, *, thinking_level, json_schema, system_instruction):
         return object()
 
 
@@ -42,6 +42,14 @@ class CheckTranslationsSmokeTests(unittest.TestCase):
             config.thinking_config.thinking_level,
             genai_types.ThinkingLevel.LOW,
         )
+        self.assertIn("software localization QA reviewer", config.system_instruction)
+
+    def test_build_check_system_instruction_includes_script_guidance(self):
+        system_instruction = check_translations.build_check_system_instruction("kk")
+        self.assertIn("software localization QA reviewer", system_instruction)
+        self.assertIn("Suggested fixes must use the actual target-language alphabet/script", system_instruction)
+        self.assertIn("real Kazakh Cyrillic alphabet", system_instruction)
+        self.assertIn("Latin transliteration", system_instruction)
 
     def test_build_check_prompt_includes_translation_rules_and_vocab(self):
         prompt = check_translations.build_check_prompt(
@@ -60,11 +68,8 @@ class CheckTranslationsSmokeTests(unittest.TestCase):
         self.assertIn("Approved vocabulary/glossary", prompt)
         self.assertIn("Use imperative tone.", prompt)
         self.assertIn('"translation": "Ashu <b>%s</b>"', prompt)
-        self.assertIn("Inflection and derivation are acceptable", prompt)
         self.assertIn("Do not flag a terminology issue solely because", prompt)
-        self.assertIn("Suggested fixes must use the actual target-language alphabet/script", prompt)
-        self.assertIn("real Kazakh Cyrillic alphabet", prompt)
-        self.assertIn("ө, ү, ұ, қ, ң, ғ, ә, і, һ", prompt)
+        self.assertIn("suggested_translation", prompt)
 
     def test_parse_check_response_uses_parsed_payload(self):
         payload = {

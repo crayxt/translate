@@ -23,6 +23,10 @@ from core.providers import (
     get_translation_provider,
 )
 from core.resources import detect_default_text_resource
+from tasks import check_translations as check_task
+from tasks import extract_terms as extract_task
+from tasks import revise_translations as revise_task
+from tasks import translate as translate_task
 
 
 DEFAULT_SOURCE_LANG = "en"
@@ -243,6 +247,21 @@ def detect_default_resource_paths(
         detect_default_resource_path("vocab", "txt", target_lang, base_dir=base_dir),
         detect_default_resource_path("rules", "md", target_lang, base_dir=base_dir),
     )
+
+
+def build_system_prompt_preview(tool_key: str, target_lang: str) -> str:
+    normalized_tool = _clean(tool_key).lower()
+    resolved_target_lang = _clean(target_lang) or DEFAULT_TARGET_LANG
+
+    if normalized_tool in {"process", "translate"}:
+        return translate_task.SYSTEM_INSTRUCTION.strip()
+    if normalized_tool == "extract":
+        return extract_task.build_term_system_instruction(resolved_target_lang)
+    if normalized_tool == "check":
+        return check_task.build_check_system_instruction(resolved_target_lang)
+    if normalized_tool == "revise":
+        return revise_task.build_revision_system_instruction(resolved_target_lang)
+    return "System prompt preview unavailable."
 
 
 def choose_resource_field_value(
@@ -880,6 +899,7 @@ class BaseToolTab(ttk.Frame):
         self.stop_button: ttk.Button | None = None
         self.rules_preview_text: ScrolledText | None = None
         self.rules_text: ScrolledText | None = None
+        self.system_prompt_text: ScrolledText | None = None
 
         self.columnconfigure(0, weight=1)
         self.rowconfigure(0, weight=1)
@@ -888,6 +908,7 @@ class BaseToolTab(ttk.Frame):
         self._refresh_api_status()
         self._apply_default_resources(force=True)
         self._load_rules_preview()
+        self._load_system_prompt_preview()
 
         self.api_key_var.trace_add("write", self._on_api_key_changed)
         self.provider_var.trace_add("write", self._on_provider_changed)
@@ -991,18 +1012,30 @@ class BaseToolTab(ttk.Frame):
 
         row = self._build_tool_specific_fields(form, row)
 
-        if self.supports_rules:
-            ttk.Label(form, text="Rules").grid(row=row, column=0, sticky="nw")
-            rules_notebook = ttk.Notebook(form)
-            rules_notebook.grid(
-                row=row + 1,
-                column=0,
-                columnspan=3,
-                sticky="nsew",
-                pady=(4, 8),
-            )
+        ttk.Label(form, text="Instructions").grid(row=row, column=0, sticky="nw")
+        instructions_notebook = ttk.Notebook(form)
+        instructions_notebook.grid(
+            row=row + 1,
+            column=0,
+            columnspan=3,
+            sticky="nsew",
+            pady=(4, 8),
+        )
 
-            preview_tab = ttk.Frame(rules_notebook, padding=6)
+        system_tab = ttk.Frame(instructions_notebook, padding=6)
+        system_tab.columnconfigure(0, weight=1)
+        system_tab.rowconfigure(0, weight=1)
+        self.system_prompt_text = ScrolledText(
+            system_tab,
+            wrap="word",
+            font=("Consolas", 10),
+            state="disabled",
+        )
+        self.system_prompt_text.grid(row=0, column=0, sticky="nsew")
+        instructions_notebook.add(system_tab, text="System prompt")
+
+        if self.supports_rules:
+            preview_tab = ttk.Frame(instructions_notebook, padding=6)
             preview_tab.columnconfigure(0, weight=1)
             preview_tab.rowconfigure(0, weight=1)
             self.rules_preview_text = ScrolledText(
@@ -1012,9 +1045,9 @@ class BaseToolTab(ttk.Frame):
                 state="disabled",
             )
             self.rules_preview_text.grid(row=0, column=0, sticky="nsew")
-            rules_notebook.add(preview_tab, text="Loaded rules")
+            instructions_notebook.add(preview_tab, text="Loaded rules")
 
-            inline_tab = ttk.Frame(rules_notebook, padding=6)
+            inline_tab = ttk.Frame(instructions_notebook, padding=6)
             inline_tab.columnconfigure(0, weight=1)
             inline_tab.rowconfigure(0, weight=1)
             self.rules_text = ScrolledText(
@@ -1023,9 +1056,10 @@ class BaseToolTab(ttk.Frame):
                 font=("Consolas", 10),
             )
             self.rules_text.grid(row=0, column=0, sticky="nsew")
-            rules_notebook.add(inline_tab, text="Inline override")
-            form.rowconfigure(row + 1, weight=1)
-            row += 2
+            instructions_notebook.add(inline_tab, text="Inline override")
+
+        form.rowconfigure(row + 1, weight=1)
+        row += 2
 
         buttons = ttk.Frame(form)
         buttons.grid(row=row, column=0, columnspan=3, sticky="ew")
@@ -1141,6 +1175,7 @@ class BaseToolTab(ttk.Frame):
 
     def _on_target_lang_changed(self, *_args: object) -> None:
         self._apply_default_resources()
+        self._load_system_prompt_preview()
 
     def _on_rules_path_changed(self, *_args: object) -> None:
         self._load_rules_preview()
@@ -1207,6 +1242,17 @@ class BaseToolTab(ttk.Frame):
         self.rules_preview_text.insert("1.0", content)
         self.rules_preview_text.see("1.0")
         self.rules_preview_text.configure(state="disabled")
+
+    def _load_system_prompt_preview(self) -> None:
+        if self.system_prompt_text is None:
+            return
+
+        content = build_system_prompt_preview(self.tool_key, self.target_lang_var.get())
+        self.system_prompt_text.configure(state="normal")
+        self.system_prompt_text.delete("1.0", "end")
+        self.system_prompt_text.insert("1.0", content)
+        self.system_prompt_text.see("1.0")
+        self.system_prompt_text.configure(state="disabled")
 
     def _start_run(self) -> None:
         self.app.start_run(self)

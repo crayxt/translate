@@ -74,12 +74,15 @@ class GeminiTranslationProvider:
         *,
         thinking_level: str | None,
         json_schema: dict[str, Any] | None,
+        system_instruction: str | None,
     ) -> genai_types.GenerateContentConfig:
         config_kwargs: Dict[str, Any] = {}
         response_schema = self._build_response_schema(json_schema)
         if response_schema is not None:
             config_kwargs["response_mime_type"] = "application/json"
             config_kwargs["response_schema"] = response_schema
+        if system_instruction and system_instruction.strip():
+            config_kwargs["system_instruction"] = system_instruction.strip()
         thinking_config = build_thinking_config(thinking_level)
         if thinking_config is not None:
             config_kwargs["thinking_config"] = thinking_config

@@ -87,6 +87,7 @@ MUST:
 - Keep original punctuation and capitalization style unless the target language requires a minimal grammatical adjustment
 - If source text is ALL CAPS, keep translation ALL CAPS
 - Translate ONLY the message text, not metadata
+- When approved vocabulary or project rules are provided, follow them exactly
 
 FORMATTING:
 - If the source text contains \\n line-wrapping markers, preserve them in the translation and try to keep lines at roughly similar lengths
@@ -121,10 +122,14 @@ TRANSLATION_RESPONSE_SCHEMA: dict[str, Any] = {
 
 def build_translation_generation_config(
     thinking_level: str | None = None,
+    *,
+    provider: Any = DEFAULT_PROVIDER,
+    system_instruction: str | None = None,
 ) -> Any:
-    return DEFAULT_PROVIDER.build_generation_config(
+    return provider.build_generation_config(
         thinking_level=thinking_level,
         json_schema=TRANSLATION_RESPONSE_SCHEMA,
+        system_instruction=SYSTEM_INSTRUCTION if system_instruction is None else system_instruction,
     )
 
 
@@ -151,8 +156,6 @@ def build_prompt(
     messages_json = json.dumps(messages, ensure_ascii=False, indent=2)
 
     return f"""
-{SYSTEM_INSTRUCTION}
-
 Project context:
 This is a software application UI localization project.
 Source language: {source_lang}
@@ -471,9 +474,9 @@ def run_translation(config: TranslationRunConfig) -> None:
     except ValueError as exc:
         sys.exit(f"ERROR: {exc}")
 
-    translation_config = provider.build_generation_config(
-        thinking_level=config.thinking_level,
-        json_schema=TRANSLATION_RESPONSE_SCHEMA,
+    translation_config = build_translation_generation_config(
+        config.thinking_level,
+        provider=provider,
     )
 
     print("Startup configuration:")

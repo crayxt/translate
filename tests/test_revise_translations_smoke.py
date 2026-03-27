@@ -1,11 +1,23 @@
 import os
 import unittest
 
+from google.genai import types as genai_types
+
 from tasks.translate import EntryStatus, FileKind, UnifiedEntry
 from tasks import revise_translations
 
 
 class ReviseTranslationsSmokeTests(unittest.TestCase):
+    def test_build_revision_generation_config_includes_system_instruction(self):
+        config = revise_translations.build_revision_generation_config("low")
+        self.assertEqual(config.thinking_config.thinking_level, genai_types.ThinkingLevel.LOW)
+        self.assertIn("revising existing software localization translations", config.system_instruction)
+
+    def test_build_revision_system_instruction_mentions_target_script(self):
+        system_instruction = revise_translations.build_revision_system_instruction("kk")
+        self.assertIn("revising existing software localization translations", system_instruction)
+        self.assertIn("real Kazakh Cyrillic alphabet", system_instruction)
+
     def test_build_revision_output_path_appends_revised_suffix(self):
         self.assertEqual(
             revise_translations.build_revision_output_path(r"C:\tmp\sample.po"),

@@ -64,6 +64,17 @@ class ProcessSmokeTests(unittest.TestCase):
             config.thinking_config.thinking_level,
             genai_types.ThinkingLevel.MINIMAL,
         )
+        self.assertIn("professional software localization translator", config.system_instruction)
+
+    def test_build_prompt_no_longer_embeds_system_instruction(self):
+        prompt = process.build_prompt(
+            messages={"0": {"source": "Open file"}},
+            source_lang="en",
+            target_lang="kk",
+            vocabulary=None,
+            translation_rules=None,
+        )
+        self.assertNotIn("You are a professional software localization translator.", prompt)
 
     def test_read_optional_vocabulary_file_supports_po_glossary(self):
         vocab_path = os.path.join(os.getcwd(), "_tmp_vocab_glossary.po")
