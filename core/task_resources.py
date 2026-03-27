@@ -1,0 +1,86 @@
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from typing import Callable, List, Tuple
+
+from core.resources import (
+    detect_rules_source,
+    load_vocabulary_pairs,
+    merge_project_rules,
+    read_optional_text_file,
+    read_optional_vocabulary_file,
+    resolve_resource_path,
+)
+
+
+@dataclass(slots=True)
+class TaskResourceContext:
+    vocabulary_path: str | None = None
+    vocabulary_text: str | None = None
+    vocabulary_source: str = "none"
+    vocabulary_pairs: List[Tuple[str, str]] = field(default_factory=list)
+    rules_path: str | None = None
+    rules_text: str | None = None
+    project_rules: str | None = None
+    rules_source: str | None = None
+
+
+def load_task_resource_context(
+    *,
+    target_lang: str,
+    explicit_vocab_path: str | None = None,
+    explicit_rules_path: str | None = None,
+    inline_rules: str | None = None,
+    include_vocab: bool = True,
+    include_rules: bool = True,
+    load_vocab_pairs_flag: bool = False,
+    resolve_resource_path_fn: Callable[..., str | None] = resolve_resource_path,
+    read_optional_vocabulary_file_fn: Callable[..., str | None] = read_optional_vocabulary_file,
+    read_optional_text_file_fn: Callable[..., str | None] = read_optional_text_file,
+    merge_project_rules_fn: Callable[[str | None, str | None], str | None] = merge_project_rules,
+    detect_rules_source_fn: Callable[[str | None, str | None, str | None], str | None] = detect_rules_source,
+    load_vocabulary_pairs_fn: Callable[..., List[Tuple[str, str]]] = load_vocabulary_pairs,
+) -> TaskResourceContext:
+    context = TaskResourceContext()
+
+    if include_vocab:
+        context.vocabulary_path = resolve_resource_path_fn(
+            explicit_path=explicit_vocab_path,
+            prefix="vocab",
+            extension="txt",
+            target_lang=target_lang,
+        )
+        context.vocabulary_text = read_optional_vocabulary_file_fn(
+            context.vocabulary_path,
+            "Vocabulary",
+        )
+        if context.vocabulary_text and context.vocabulary_path:
+            context.vocabulary_source = f"file:{context.vocabulary_path}"
+        if load_vocab_pairs_flag and context.vocabulary_path:
+            context.vocabulary_pairs = load_vocabulary_pairs_fn(
+                context.vocabulary_path,
+                "Vocabulary",
+            )
+
+    if include_rules:
+        context.rules_path = resolve_resource_path_fn(
+            explicit_path=explicit_rules_path,
+            prefix="rules",
+            extension="md",
+            target_lang=target_lang,
+        )
+        context.rules_text = read_optional_text_file_fn(context.rules_path, "Rules")
+        context.project_rules = merge_project_rules_fn(context.rules_text, inline_rules)
+        context.rules_source = detect_rules_source_fn(
+            context.rules_path,
+            context.rules_text,
+            inline_rules,
+        )
+
+    return context
+
+
+__all__ = [
+    "TaskResourceContext",
+    "load_task_resource_context",
+]

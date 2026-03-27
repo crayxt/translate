@@ -22,19 +22,15 @@ from core.formats import (
     load_po,
 )
 from core.providers import DEFAULT_PROVIDER, DEFAULT_PROVIDER_NAME, get_translation_provider
+from core.resources import read_optional_text_file, read_optional_vocabulary_file, resolve_resource_path
 from core.runtime import add_thinking_level_argument
-from core.resources import (
-    detect_rules_source,
-    merge_project_rules,
-    read_optional_text_file,
-    read_optional_vocabulary_file,
-    resolve_resource_path,
-)
 from core.review_flow import (
     has_reviewable_translation as has_shared_reviewable_translation,
     limit_items,
     normalize_limits as normalize_review_limits,
 )
+from core.task_batches import build_fixed_batches, run_parallel_batches
+from core.task_resources import load_task_resource_context
 
 
 DEFAULT_CHECK_BATCH_SIZE = 150
@@ -435,24 +431,15 @@ def run_from_args(args: argparse.Namespace) -> None:
     provider = get_translation_provider(args.provider)
     client = provider.create_client_from_env()
 
-    vocabulary_path = resolve_resource_path(
-        explicit_path=args.vocab,
-        prefix="vocab",
-        extension="txt",
+    resource_context = load_task_resource_context(
         target_lang=args.target_lang,
+        explicit_vocab_path=args.vocab,
+        explicit_rules_path=args.rules,
+        inline_rules=args.rules_str,
+        resolve_resource_path_fn=resolve_resource_path,
+        read_optional_vocabulary_file_fn=read_optional_vocabulary_file,
+        read_optional_text_file_fn=read_optional_text_file,
     )
-    rules_path = resolve_resource_path(
-        explicit_path=args.rules,
-        prefix="rules",
-        extension="md",
-        target_lang=args.target_lang,
-    )
-
-    vocabulary_text = read_optional_vocabulary_file(vocabulary_path, "Vocabulary")
-    rules_text = read_optional_text_file(rules_path, "Rules")
-    project_rules = merge_project_rules(rules_text, args.rules_str)
-    rules_source = detect_rules_source(rules_path, rules_text, args.rules_str)
-    vocabulary_source = f"file:{vocabulary_path}" if vocabulary_text and vocabulary_path else "none"
 
     entries, _, _ = load_po(args.file)
     try:
@@ -477,10 +464,7 @@ def run_from_args(args: argparse.Namespace) -> None:
     except ValueError as e:
         sys.exit(f"ERROR: {e}")
 
-    all_batches = [
-        review_entries[i * batch_size: (i + 1) * batch_size]
-        for i in range((total + batch_size - 1) // batch_size)
-    ]
+    all_batches = build_fixed_batches(review_entries, batch_size)
     out_path = args.out or build_check_output_path(args.file)
     config = build_check_generation_config(
         args.thinking_level,
@@ -495,14 +479,22 @@ def run_from_args(args: argparse.Namespace) -> None:
     print(f"  Parallel requests: {parallel_requests}")
     print(f"  Batch size: {batch_size}")
     print(f"  Limits mode: {limits_mode}")
-    print(f"  Vocabulary source: {vocabulary_source}")
-    print(f"  Rules source: {rules_source or 'none'}")
+    print(f"  Vocabulary source: {resource_context.vocabulary_source}")
+    print(f"  Rules source: {resource_context.rules_source or 'none'}")
     print(f"  Probe limit: {args.num_messages if args.num_messages is not None else 'none'}")
     print(f"  Total translated entries: {total}")
     print(f"  Total batches: {len(all_batches)}")
 
-    async def process_batch(batch_index: int, batch: List[Any], sem: asyncio.Semaphore):
-        async with sem:
+    async def run_checks() -> List[Dict[str, Any]]:
+        results: List[Dict[str, Any]] = []
+        completed = 0
+        base_index = 0
+        batch_start_indices: Dict[int, int] = {}
+        for idx, batch in enumerate(all_batches):
+            batch_start_indices[idx] = base_index
+            base_index += len(batch)
+
+        async def process_batch(batch_index: int, batch: List[Any]) -> Dict[str, List[CheckIssue]]:
             msg_map: Dict[str, Dict[str, Any]] = {}
 
             for i, entry in enumerate(batch):
@@ -513,8 +505,8 @@ def run_from_args(args: argparse.Namespace) -> None:
                 messages=msg_map,
                 source_lang=args.source_lang,
                 target_lang=args.target_lang,
-                vocabulary=vocabulary_text,
-                translation_rules=project_rules,
+                vocabulary=resource_context.vocabulary_text,
+                translation_rules=resource_context.project_rules,
             )
 
             response = await generate_with_retry(
@@ -526,25 +518,14 @@ def run_from_args(args: argparse.Namespace) -> None:
                 max_attempts=args.max_attempts,
                 config=config,
             )
-            return batch_index, batch, parse_check_response(response)
+            return parse_check_response(response)
 
-    async def run_checks() -> List[Dict[str, Any]]:
-        sem = asyncio.Semaphore(parallel_requests)
-        tasks = [
-            asyncio.create_task(process_batch(i, batch, sem))
-            for i, batch in enumerate(all_batches)
-        ]
-
-        results: List[Dict[str, Any]] = []
-        completed = 0
-        base_index = 0
-        batch_start_indices: Dict[int, int] = {}
-        for idx, batch in enumerate(all_batches):
-            batch_start_indices[idx] = base_index
-            base_index += len(batch)
-
-        for finished in asyncio.as_completed(tasks):
-            batch_index, batch, model_issues_by_id = await finished
+        def on_batch_completed(
+            batch_index: int,
+            batch: List[Any],
+            model_issues_by_id: Dict[str, List[CheckIssue]],
+        ) -> None:
+            nonlocal completed
             start_index = batch_start_indices[batch_index]
 
             for i, entry in enumerate(batch):
@@ -573,6 +554,13 @@ def run_from_args(args: argparse.Namespace) -> None:
                 f"reported issues: {issue_count}"
             )
 
+        await run_parallel_batches(
+            batches=all_batches,
+            parallel_requests=parallel_requests,
+            process_batch=process_batch,
+            on_batch_completed=on_batch_completed,
+        )
+
         results.sort(key=lambda item: int(item["entry_index"]))
         return results
 
@@ -588,8 +576,8 @@ def run_from_args(args: argparse.Namespace) -> None:
         "model": args.model,
         "source_lang": args.source_lang,
         "target_lang": args.target_lang,
-        "vocabulary_source": vocabulary_source,
-        "rules_source": rules_source or "none",
+        "vocabulary_source": resource_context.vocabulary_source,
+        "rules_source": resource_context.rules_source or "none",
         "generated_at_utc": datetime.now(timezone.utc).isoformat(),
         "probe_limit": args.num_messages,
         "total_entries_checked": total,

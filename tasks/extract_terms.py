@@ -23,15 +23,13 @@ from core.formats import (
     load_ts,
 )
 from core.providers import DEFAULT_PROVIDER, DEFAULT_PROVIDER_NAME, get_translation_provider
-from core.resources import (
-    load_vocabulary_pairs,
-    read_optional_vocabulary_file,
-    resolve_resource_path,
-)
+from core.resources import load_vocabulary_pairs, read_optional_vocabulary_file, resolve_resource_path
 from core.runtime import (
     add_thinking_level_argument,
     resolve_runtime_limits,
 )
+from core.task_batches import build_fixed_batches, run_parallel_batches
+from core.task_resources import load_task_resource_context
 
 
 DiscoveryMode = Literal["all", "missing"]
@@ -447,17 +445,15 @@ def run_from_args(args: argparse.Namespace) -> None:
     provider = get_translation_provider(args.provider)
     client = provider.create_client_from_env()
 
-    vocabulary_path = resolve_resource_path(
-        explicit_path=args.vocab,
-        prefix="vocab",
-        extension="txt",
+    resource_context = load_task_resource_context(
         target_lang=args.target_lang,
+        explicit_vocab_path=args.vocab,
+        include_rules=False,
+        load_vocab_pairs_flag=args.mode == "missing" and args.out_format == "po",
+        resolve_resource_path_fn=resolve_resource_path,
+        read_optional_vocabulary_file_fn=read_optional_vocabulary_file,
+        load_vocabulary_pairs_fn=load_vocabulary_pairs,
     )
-    vocabulary_text = read_optional_vocabulary_file(vocabulary_path, "Vocabulary")
-    vocabulary_pairs: List[Tuple[str, str]] = []
-    if args.mode == "missing" and args.out_format == "po" and vocabulary_path:
-        vocabulary_pairs = load_vocabulary_pairs(vocabulary_path, "Vocabulary")
-    vocab_source = f"file:{vocabulary_path}" if vocabulary_text and vocabulary_path else "none"
 
     try:
         file_kind = detect_file_kind(args.file)
@@ -481,10 +477,7 @@ def run_from_args(args: argparse.Namespace) -> None:
     except ValueError as e:
         sys.exit(f"ERROR: {e}")
 
-    batches = [
-        source_messages[i * batch_size: (i + 1) * batch_size]
-        for i in range((total + batch_size - 1) // batch_size)
-    ]
+    batches = build_fixed_batches(source_messages, batch_size)
 
     out_path = args.out or build_term_output_path(
         args.file,
@@ -506,19 +499,22 @@ def run_from_args(args: argparse.Namespace) -> None:
     print(f"  Limits mode: {limits_mode}")
     print(f"  Discovery mode: {args.mode}")
     print(f"  Output format: {args.out_format}")
-    print(f"  Vocabulary source: {vocab_source}")
+    print(f"  Vocabulary source: {resource_context.vocabulary_source}")
     print(f"  Total source messages: {total}")
     print(f"  Total batches: {len(batches)}")
 
-    async def process_batch(batch_index: int, batch: List[str], sem: asyncio.Semaphore):
-        async with sem:
+    async def run_extraction() -> List[TermCandidate]:
+        all_candidates: List[TermCandidate] = []
+        completed = 0
+
+        async def process_batch(batch_index: int, batch: List[str]) -> List[TermCandidate]:
             msg_map = {str(i): text for i, text in enumerate(batch)}
             prompt = build_terms_prompt(
                 messages=msg_map,
                 source_lang=args.source_lang,
                 target_lang=args.target_lang,
                 mode=args.mode,
-                vocabulary=vocabulary_text,
+                vocabulary=resource_context.vocabulary_text,
                 max_terms_per_batch=args.max_terms_per_batch,
             )
             response = await generate_with_retry(
@@ -530,19 +526,14 @@ def run_from_args(args: argparse.Namespace) -> None:
                 max_attempts=args.max_attempts,
                 config=term_config,
             )
-            return batch_index, parse_term_response(response)
+            return parse_term_response(response)
 
-    async def run_extraction() -> List[TermCandidate]:
-        sem = asyncio.Semaphore(parallel_requests)
-        tasks = [
-            asyncio.create_task(process_batch(i, batch, sem))
-            for i, batch in enumerate(batches)
-        ]
-
-        all_candidates: List[TermCandidate] = []
-        completed = 0
-        for finished in asyncio.as_completed(tasks):
-            batch_index, terms = await finished
+        def on_batch_completed(
+            batch_index: int,
+            batch: List[str],
+            terms: List[TermCandidate],
+        ) -> None:
+            nonlocal completed
             all_candidates.extend(terms)
             completed += 1
             print(
@@ -550,6 +541,13 @@ def run_from_args(args: argparse.Namespace) -> None:
                 f"(latest: {batch_index + 1}/{len(batches)}), "
                 f"raw terms collected: {len(all_candidates)}"
             )
+
+        await run_parallel_batches(
+            batches=batches,
+            parallel_requests=parallel_requests,
+            process_batch=process_batch,
+            on_batch_completed=on_batch_completed,
+        )
 
         return all_candidates
 
@@ -570,7 +568,7 @@ def run_from_args(args: argparse.Namespace) -> None:
         "model": args.model,
         "source_lang": args.source_lang,
         "target_lang": args.target_lang,
-        "vocabulary_source": vocab_source,
+        "vocabulary_source": resource_context.vocabulary_source,
         "generated_at_utc": datetime.now(timezone.utc).isoformat(),
         "total_source_messages": total,
         "raw_candidate_count": len(raw_candidates),
@@ -584,7 +582,7 @@ def run_from_args(args: argparse.Namespace) -> None:
             out_path=out_path,
             source_lang=args.source_lang,
             target_lang=args.target_lang,
-            base_vocabulary_pairs=vocabulary_pairs,
+            base_vocabulary_pairs=resource_context.vocabulary_pairs,
         )
     else:
         with open(out_path, "w", encoding="utf-8") as f:

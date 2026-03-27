@@ -69,6 +69,8 @@ from core.runtime import (
     build_thinking_config,
     resolve_runtime_limits,
 )
+from core.task_batches import build_fixed_batches, run_parallel_batches
+from core.task_resources import load_task_resource_context
 
 build_prompt_message_payload = _build_prompt_message_payload
 
@@ -326,14 +328,18 @@ def load_entries_for_translation(file_path: str):
 
 
 def build_resource_context(config: TranslationRunConfig) -> tuple[str | None, str | None, str | None, str]:
-    vocabulary_path = resolve_resource_path(config.vocab, "vocab", "txt", config.target_lang)
-    rules_path = resolve_resource_path(config.rules, "rules", "md", config.target_lang)
-    vocabulary_text = read_optional_vocabulary_file(vocabulary_path, "Vocabulary")
-    rules_text = read_optional_text_file(rules_path, "Rules")
-    project_rules = merge_project_rules(rules_text, config.rules_str)
-    rules_source = detect_rules_source(rules_path, rules_text, config.rules_str)
-    vocabulary_source = f"file:{vocabulary_path}" if vocabulary_text and vocabulary_path else "none"
-    return vocabulary_text, project_rules, rules_source, vocabulary_source
+    resource_context = load_task_resource_context(
+        target_lang=config.target_lang,
+        explicit_vocab_path=config.vocab,
+        explicit_rules_path=config.rules,
+        inline_rules=config.rules_str,
+    )
+    return (
+        resource_context.vocabulary_text,
+        resource_context.project_rules,
+        resource_context.rules_source,
+        resource_context.vocabulary_source,
+    )
 
 
 def build_batches(work_items: List[Any], parallel_requests: int, batch_size: int) -> List[List[Any]]:
@@ -361,7 +367,7 @@ def build_batches(work_items: List[Any], parallel_requests: int, batch_size: int
         return all_batches
 
     batches = math.ceil(total / batch_size)
-    all_batches = [work_items[i * batch_size:(i + 1) * batch_size] for i in range(batches)]
+    all_batches = build_fixed_batches(work_items, batch_size)
     print(f"Found {total} items to translate. Running up to {parallel_requests} batch requests in parallel.")
     return all_batches
 
@@ -383,55 +389,52 @@ async def run_translation_batches(
 ) -> int:
     batches = len(all_batches)
 
-    async def process_batch(batch_index: int, batch: List[Any], sem: asyncio.Semaphore):
-        async with sem:
-            msg_map = {str(i): build_prompt_message_payload(entry) for i, entry in enumerate(batch)}
-            prompt = build_prompt(msg_map, source_lang, target_lang, vocabulary_text, project_rules)
-            response = await provider.generate_with_retry(
-                client=client,
-                model=model,
-                prompt=prompt,
-                batch_label=f"batch {batch_index + 1}/{batches}",
-                max_attempts=5,
-                config=translation_config,
-            )
-            translations = parse_response(response)
-            missing_indices = [i for i in range(len(batch)) if not translation_has_content(translations.get(str(i)))]
-            if missing_indices:
-                print(
-                    f"  Warning [batch {batch_index + 1}/{batches}]: "
-                    f"{len(missing_indices)} items missing from response. Retrying them..."
-                )
-                retry_map = {str(idx): build_prompt_message_payload(batch[idx]) for idx in missing_indices}
-                retry_prompt = build_prompt(
-                    retry_map,
-                    source_lang,
-                    target_lang,
-                    vocabulary_text,
-                    project_rules,
-                    force_non_empty=True,
-                )
-                try:
-                    retry_resp = await provider.generate_with_retry(
-                        client=client,
-                        model=model,
-                        prompt=retry_prompt,
-                        batch_label=f"batch {batch_index + 1}/{batches} missing-items",
-                        max_attempts=3,
-                        config=translation_config,
-                    )
-                    translations.update(parse_response(retry_resp))
-                except Exception as exc:
-                    print(f"  Retry failed [batch {batch_index + 1}/{batches}]: {exc}")
-            return batch_index, batch, translations
-
     translated_count = 0
-    sem = asyncio.Semaphore(parallel_requests)
-    tasks = [asyncio.create_task(process_batch(batch_index, batch, sem)) for batch_index, batch in enumerate(all_batches)]
     completed_batches = 0
 
-    for finished in asyncio.as_completed(tasks):
-        batch_index, batch, translations = await finished
+    async def process_batch(batch_index: int, batch: List[Any]) -> Dict[str, TranslationResult]:
+        msg_map = {str(i): build_prompt_message_payload(entry) for i, entry in enumerate(batch)}
+        prompt = build_prompt(msg_map, source_lang, target_lang, vocabulary_text, project_rules)
+        response = await provider.generate_with_retry(
+            client=client,
+            model=model,
+            prompt=prompt,
+            batch_label=f"batch {batch_index + 1}/{batches}",
+            max_attempts=5,
+            config=translation_config,
+        )
+        translations = parse_response(response)
+        missing_indices = [i for i in range(len(batch)) if not translation_has_content(translations.get(str(i)))]
+        if missing_indices:
+            print(
+                f"  Warning [batch {batch_index + 1}/{batches}]: "
+                f"{len(missing_indices)} items missing from response. Retrying them..."
+            )
+            retry_map = {str(idx): build_prompt_message_payload(batch[idx]) for idx in missing_indices}
+            retry_prompt = build_prompt(
+                retry_map,
+                source_lang,
+                target_lang,
+                vocabulary_text,
+                project_rules,
+                force_non_empty=True,
+            )
+            try:
+                retry_resp = await provider.generate_with_retry(
+                    client=client,
+                    model=model,
+                    prompt=retry_prompt,
+                    batch_label=f"batch {batch_index + 1}/{batches} missing-items",
+                    max_attempts=3,
+                    config=translation_config,
+                )
+                translations.update(parse_response(retry_resp))
+            except Exception as exc:
+                print(f"  Retry failed [batch {batch_index + 1}/{batches}]: {exc}")
+        return translations
+
+    def on_batch_completed(batch_index: int, batch: List[Any], translations: Dict[str, TranslationResult]) -> None:
+        nonlocal translated_count, completed_batches
         batch_translated = 0
         for i, entry in enumerate(batch):
             result = translations.get(str(i))
@@ -450,6 +453,13 @@ async def run_translation_batches(
         )
         if save_callback:
             save_callback()
+
+    await run_parallel_batches(
+        batches=all_batches,
+        parallel_requests=parallel_requests,
+        process_batch=process_batch,
+        on_batch_completed=on_batch_completed,
+    )
     return translated_count
 
 

@@ -30,19 +30,14 @@ from core.formats import (
 from core.formats.strings import _detect_text_encoding, _write_text_with_encoding_fallback
 from core.entries import normalize_model_escaped_text
 from core.providers import DEFAULT_PROVIDER, DEFAULT_PROVIDER_NAME, get_translation_provider
-from core.resources import (
-    detect_rules_source,
-    merge_project_rules,
-    read_optional_text_file,
-    read_optional_vocabulary_file,
-    resolve_resource_path,
-)
 from core.runtime import add_thinking_level_argument
 from core.review_flow import (
     has_reviewable_translation as has_shared_reviewable_translation,
     limit_items,
     normalize_limits as normalize_review_limits,
 )
+from core.task_batches import build_fixed_batches, run_parallel_batches
+from core.task_resources import load_task_resource_context
 
 
 DEFAULT_REVISION_BATCH_SIZE = 120
@@ -773,23 +768,12 @@ def run_from_args(args: argparse.Namespace) -> None:
         print("No translated entries found to review.")
         return
 
-    vocabulary_path = resolve_resource_path(
-        explicit_path=args.vocab,
-        prefix="vocab",
-        extension="txt",
+    resource_context = load_task_resource_context(
         target_lang=args.target_lang,
+        explicit_vocab_path=args.vocab,
+        explicit_rules_path=args.rules,
+        inline_rules=args.rules_str,
     )
-    rules_path = resolve_resource_path(
-        explicit_path=args.rules,
-        prefix="rules",
-        extension="md",
-        target_lang=args.target_lang,
-    )
-    vocabulary_text = read_optional_vocabulary_file(vocabulary_path, "Vocabulary")
-    rules_text = read_optional_text_file(rules_path, "Rules")
-    project_rules = merge_project_rules(rules_text, args.rules_str)
-    rules_source = detect_rules_source(rules_path, rules_text, args.rules_str)
-    vocabulary_source = f"file:{vocabulary_path}" if vocabulary_text and vocabulary_path else "none"
 
     provider = get_translation_provider(args.provider)
     client = provider.create_client_from_env()
@@ -813,26 +797,26 @@ def run_from_args(args: argparse.Namespace) -> None:
     print(f"  Limits mode: {limits_mode}")
     print(f"  Review items: {len(review_items)}")
     print(f"  Source file: {args.source_file or 'embedded in translated file'}")
-    print(f"  Vocabulary source: {vocabulary_source}")
-    print(f"  Rules source: {rules_source or 'none'}")
+    print(f"  Vocabulary source: {resource_context.vocabulary_source}")
+    print(f"  Rules source: {resource_context.rules_source or 'none'}")
     print(f"  Output path: {final_output_path}")
     print(f"  Dry run: {'yes' if args.dry_run else 'no'}")
     for warning in review_bundle.warnings:
         print(f"Warning: {warning}")
 
-    all_batches = [
-        review_items[index: index + batch_size]
-        for index in range(0, len(review_items), batch_size)
-    ]
+    all_batches = build_fixed_batches(review_items, batch_size)
     total_batches = len(all_batches)
     print(f"Total batches: {total_batches}")
 
-    async def process_batch(
-        batch_index: int,
-        batch: List[ReviewItem],
-        sem: asyncio.Semaphore,
-    ) -> Tuple[int, List[ReviewItem], Dict[str, RevisionResult]]:
-        async with sem:
+    async def run_revision() -> Tuple[int, List[Tuple[ReviewItem, RevisionResult]]]:
+        changed_total = 0
+        changed_items: List[Tuple[ReviewItem, RevisionResult]] = []
+        completed_batches = 0
+
+        async def process_batch(
+            batch_index: int,
+            batch: List[ReviewItem],
+        ) -> Dict[str, RevisionResult]:
             msg_map: Dict[str, Dict[str, Any]] = {}
             for index, item in enumerate(batch):
                 msg_map[str(index)] = build_review_message_payload(item)
@@ -842,8 +826,8 @@ def run_from_args(args: argparse.Namespace) -> None:
                 source_lang=args.source_lang,
                 target_lang=args.target_lang,
                 instruction=args.instruction,
-                vocabulary=vocabulary_text,
-                translation_rules=project_rules,
+                vocabulary=resource_context.vocabulary_text,
+                translation_rules=resource_context.project_rules,
             )
 
             response = await generate_with_retry(
@@ -876,8 +860,8 @@ def run_from_args(args: argparse.Namespace) -> None:
                     source_lang=args.source_lang,
                     target_lang=args.target_lang,
                     instruction=args.instruction,
-                    vocabulary=vocabulary_text,
-                    translation_rules=project_rules,
+                    vocabulary=resource_context.vocabulary_text,
+                    translation_rules=resource_context.project_rules,
                 )
                 try:
                     retry_response = await generate_with_retry(
@@ -895,21 +879,14 @@ def run_from_args(args: argparse.Namespace) -> None:
                         f"  Retry failed [batch {batch_index + 1}/{total_batches}]: {exc}"
                     )
 
-            return batch_index, batch, revisions
+            return revisions
 
-    async def run_revision() -> Tuple[int, List[Tuple[ReviewItem, RevisionResult]]]:
-        sem = asyncio.Semaphore(parallel_requests)
-        tasks = [
-            asyncio.create_task(process_batch(batch_index, batch, sem))
-            for batch_index, batch in enumerate(all_batches)
-        ]
-
-        changed_total = 0
-        changed_items: List[Tuple[ReviewItem, RevisionResult]] = []
-        completed_batches = 0
-
-        for finished in asyncio.as_completed(tasks):
-            batch_index, batch, revisions = await finished
+        def on_batch_completed(
+            batch_index: int,
+            batch: List[ReviewItem],
+            revisions: Dict[str, RevisionResult],
+        ) -> None:
+            nonlocal changed_total, completed_batches
             batch_changed = 0
 
             for index, item in enumerate(batch):
@@ -927,6 +904,13 @@ def run_from_args(args: argparse.Namespace) -> None:
                 f"Progress: {percent:.1f}% ({completed_batches}/{total_batches} batches), "
                 f"changed so far: {changed_total}"
             )
+
+        await run_parallel_batches(
+            batches=all_batches,
+            parallel_requests=parallel_requests,
+            process_batch=process_batch,
+            on_batch_completed=on_batch_completed,
+        )
 
         return changed_total, changed_items
 
