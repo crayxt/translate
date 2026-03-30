@@ -1,6 +1,13 @@
 # Translation Toolkit
 Toolkit for translating, checking, revising, and extracting glossary terms from PO/TS/RESX/STRINGS/TXT localization files using Google Gemini API.
 
+# Recent Updates
+
+- Translation, check, revise, and extract now use real provider-level system instructions instead of embedding faux "system" text inside the normal request prompt.
+- Gemini requests now send structured batch payloads and use structured response schemas. Legacy text-prompt rendering is still kept as a provider fallback path.
+- `process_gui.py` now exposes a read-only instruction preview so you can inspect the resolved system prompt and language rules for the active task.
+- Shared runtime/bootstrap, CLI argument setup, and batch execution helpers were moved into `core/` to reduce duplication across task entrypoints.
+
 # Setup
 Install dependencies:
 
@@ -23,6 +30,18 @@ python translate_cli.py translate your_file.resx
 python translate_cli.py translate your_file.strings
 python translate_cli.py translate your_file.txt
 ```
+
+The Tk desktop UI is also available:
+
+```
+python process_gui.py
+```
+
+Each task tab shows the resolved instruction inputs for the current run:
+
+- system prompt preview
+- rules preview when the task uses language rules
+- target-language-sensitive prompt text where applicable
 
 Output files are written as `*.ai-translated.po`, `*.ai-translated.ts`, `*.ai-translated.resx`, `*.ai-translated.strings`, or `*.ai-translated.txt`.
 
@@ -258,6 +277,22 @@ Status values are normalized as:
 - `fuzzy`: review-required translations (for example PO `fuzzy` or TS `unfinished`)
 - `translated`: translated and not fuzzy
 - `skipped`: non-localizable entries (for example typed/binary `.resx` resources)
+
+## Prompt and Request Architecture
+
+The current request flow is split into three layers:
+
+- system instruction: hard invariants such as placeholder/tag preservation, glossary obedience, and task role
+- task payload: structured batch data (messages, vocabulary, rules, target language, and task-specific fields)
+- response schema: structured parsing of model output back into Python objects
+
+For Gemini, the toolkit sends structured request contents and uses schema-backed structured responses. The older plain-text prompt rendering is still present as a compatibility path for providers that do not support structured request contents.
+
+Language rules and vocabulary stay outside the system prompt:
+
+- system prompt handles non-negotiable behavior
+- `rules.md` handles language- or project-specific style policy
+- `vocab.txt` or glossary `.po` handles approved terminology
 
 # Notes
 
