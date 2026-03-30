@@ -31,14 +31,24 @@ from core.formats.strings import _detect_text_encoding, _write_text_with_encodin
 from core.entries import normalize_model_escaped_text
 from core.providers import DEFAULT_PROVIDER, DEFAULT_PROVIDER_NAME, get_translation_provider
 from core.request_contents import TaskRequestSpec, build_task_request_contents, render_text_fallback_prompt
-from core.runtime import add_thinking_level_argument
+from core.task_cli import (
+    add_language_arguments,
+    add_max_attempts_argument,
+    add_probe_argument,
+    add_provider_arguments,
+    add_rules_arguments,
+    add_runtime_limit_arguments,
+    add_vocabulary_argument,
+    build_task_parser,
+    run_task_main,
+)
 from core.review_flow import (
     has_reviewable_translation as has_shared_reviewable_translation,
     limit_items,
     normalize_limits as normalize_review_limits,
 )
 from core.task_batches import build_fixed_batches, run_parallel_batches
-from core.task_resources import load_task_resource_context
+from core.task_runtime import build_task_runtime_context, print_startup_configuration
 
 
 DEFAULT_REVISION_BATCH_SIZE = 120
@@ -131,26 +141,6 @@ def build_revision_generation_config(
     )
 
 
-async def generate_with_retry(
-    *,
-    provider: Any,
-    client: Any,
-    model: str,
-    contents: Any,
-    batch_label: str,
-    max_attempts: int = 5,
-    config: Any = None,
-) -> Any:
-    return await provider.generate_with_retry(
-        client=client,
-        model=model,
-        contents=contents,
-        batch_label=batch_label,
-        max_attempts=max_attempts,
-        config=config,
-    )
-
-
 def configure_stdio() -> None:
     for stream_name in ("stdout", "stderr"):
         stream = getattr(sys, stream_name, None)
@@ -181,10 +171,6 @@ def normalize_limits(
 
 def _clean(text: str | None) -> str:
     return str(text or "").strip()
-
-
-def _json_load_maybe(text: str) -> Any:
-    return json_load_maybe(text)
 
 
 def _normalize_revision_payload(payload: Any) -> Dict[str, RevisionResult]:
@@ -239,18 +225,14 @@ def parse_revision_response(response_payload: Any) -> Dict[str, RevisionResult]:
         return _normalize_revision_payload(response_payload)
 
     if isinstance(response_payload, str):
-        return _normalize_revision_payload(_json_load_maybe(response_payload))
+        return _normalize_revision_payload(json_load_maybe(response_payload))
 
     parsed_payload = getattr(response_payload, "parsed", None)
     if parsed_payload is not None:
         return _normalize_revision_payload(parsed_payload)
 
     text_payload = getattr(response_payload, "text", None) or ""
-    return _normalize_revision_payload(_json_load_maybe(text_payload))
-
-
-def _plural_key_sort_key(value: Any) -> Tuple[int, Any]:
-    return plural_key_sort_key(value)
+    return _normalize_revision_payload(json_load_maybe(text_payload))
 
 
 def get_plural_texts(entry: UnifiedEntry) -> List[str]:
@@ -258,7 +240,7 @@ def get_plural_texts(entry: UnifiedEntry) -> List[str]:
         return []
     return [
         str(entry.msgstr_plural[key] or "")
-        for key in sorted(entry.msgstr_plural.keys(), key=_plural_key_sort_key)
+        for key in sorted(entry.msgstr_plural.keys(), key=plural_key_sort_key)
     ]
 
 
@@ -675,7 +657,7 @@ def apply_revision_to_item(item: ReviewItem, result: RevisionResult) -> bool:
         if candidate_forms == item.current_plural_texts:
             return False
 
-        plural_keys = sorted(item.entry.msgstr_plural.keys(), key=_plural_key_sort_key)
+        plural_keys = sorted(item.entry.msgstr_plural.keys(), key=plural_key_sort_key)
         if not plural_keys:
             plural_keys = list(range(item.plural_form_count))
         for index, key in enumerate(plural_keys):
@@ -745,37 +727,24 @@ def configure_parser(parser: argparse.ArgumentParser) -> argparse.ArgumentParser
         default=None,
         help="Required for .resx, .strings, and .txt revision runs; optional otherwise.",
     )
-    parser.add_argument("--source-lang", default="en", help="Default: en")
-    parser.add_argument("--target-lang", default="kk", help="Default: kk")
-    parser.add_argument(
-        "--provider",
-        default=DEFAULT_PROVIDER_NAME,
-        help=f"Model provider (default: {DEFAULT_PROVIDER_NAME})",
+    add_language_arguments(parser)
+    add_provider_arguments(
+        parser,
+        default_provider_name=DEFAULT_PROVIDER_NAME,
+        default_model=DEFAULT_PROVIDER.default_model,
     )
-    parser.add_argument("--model", default=DEFAULT_PROVIDER.default_model)
-    add_thinking_level_argument(parser)
-    parser.add_argument("--batch-size", type=int, default=None, help="Batch size (auto if omitted)")
-    parser.add_argument("--parallel-requests", type=int, default=None, help="Concurrent requests (auto if omitted)")
-    parser.add_argument(
-        "--probe",
-        "--num-messages",
-        dest="num_messages",
-        type=int,
-        default=None,
-        help="Review only the first N reviewable entries.",
+    add_runtime_limit_arguments(parser)
+    add_probe_argument(
+        parser,
+        help_text="Review only the first N reviewable entries.",
     )
-    parser.add_argument("--max-attempts", type=int, default=5, help="Retry attempts per batch")
-    parser.add_argument(
-        "--vocab",
-        default=None,
-        help="Optional vocabulary file (auto: data/<target-lang>/vocab.txt). Supports .txt and glossary .po",
+    add_max_attempts_argument(parser)
+    add_vocabulary_argument(parser)
+    add_rules_arguments(
+        parser,
+        rules_help="Optional translation rules file (auto: data/<target-lang>/rules.md)",
+        rules_str_help="Optional inline translation rules",
     )
-    parser.add_argument(
-        "--rules",
-        default=None,
-        help="Optional translation rules file (auto: data/<target-lang>/rules.md)",
-    )
-    parser.add_argument("--rules-str", default=None, help="Optional inline translation rules")
     parser.add_argument("--out", default=None, help="Output path (default: <input>.revised.<ext>)")
     parser.add_argument("--in-place", action="store_true", help="Overwrite the translated input file")
     parser.add_argument("--dry-run", action="store_true", help="Review and report changes without writing output")
@@ -783,7 +752,7 @@ def configure_parser(parser: argparse.ArgumentParser) -> argparse.ArgumentParser
 
 
 def build_parser() -> argparse.ArgumentParser:
-    return configure_parser(argparse.ArgumentParser())
+    return build_task_parser(configure_parser)
 
 
 def run_from_args(args: argparse.Namespace) -> None:
@@ -813,15 +782,17 @@ def run_from_args(args: argparse.Namespace) -> None:
         print("No translated entries found to review.")
         return
 
-    resource_context = load_task_resource_context(
+    runtime_context = build_task_runtime_context(
+        provider_name=args.provider,
         target_lang=args.target_lang,
         explicit_vocab_path=args.vocab,
         explicit_rules_path=args.rules,
         inline_rules=args.rules_str,
+        get_translation_provider_fn=get_translation_provider,
     )
-
-    provider = get_translation_provider(args.provider)
-    client = provider.create_client_from_env()
+    provider = runtime_context.provider
+    client = runtime_context.client
+    resource_context = runtime_context.resources
     revision_config = build_revision_generation_config(
         args.thinking_level,
         provider=provider,
@@ -833,19 +804,20 @@ def run_from_args(args: argparse.Namespace) -> None:
         in_place=args.in_place,
     )
 
-    print("Startup configuration:")
-    print(f"  Provider: {provider.name}")
-    print(f"  Model: {args.model}")
-    print(f"  Thinking level: {args.thinking_level or 'provider default'}")
-    print(f"  Parallel requests: {parallel_requests}")
-    print(f"  Batch size: {batch_size}")
-    print(f"  Limits mode: {limits_mode}")
-    print(f"  Review items: {len(review_items)}")
-    print(f"  Source file: {args.source_file or 'embedded in translated file'}")
-    print(f"  Vocabulary source: {resource_context.vocabulary_source}")
-    print(f"  Rules source: {resource_context.rules_source or 'none'}")
-    print(f"  Output path: {final_output_path}")
-    print(f"  Dry run: {'yes' if args.dry_run else 'no'}")
+    print_startup_configuration(
+        ("Provider", provider.name),
+        ("Model", args.model),
+        ("Thinking level", args.thinking_level or "provider default"),
+        ("Parallel requests", parallel_requests),
+        ("Batch size", batch_size),
+        ("Limits mode", limits_mode),
+        ("Review items", len(review_items)),
+        ("Source file", args.source_file or "embedded in translated file"),
+        ("Vocabulary source", resource_context.vocabulary_source),
+        ("Rules source", resource_context.rules_source or "none"),
+        ("Output path", final_output_path),
+        ("Dry run", "yes" if args.dry_run else "no"),
+    )
     for warning in review_bundle.warnings:
         print(f"Warning: {warning}")
 
@@ -876,8 +848,7 @@ def run_from_args(args: argparse.Namespace) -> None:
                 provider=provider,
             )
 
-            response = await generate_with_retry(
-                provider=provider,
+            response = await provider.generate_with_retry(
                 client=client,
                 model=args.model,
                 contents=contents,
@@ -911,8 +882,7 @@ def run_from_args(args: argparse.Namespace) -> None:
                     provider=provider,
                 )
                 try:
-                    retry_response = await generate_with_retry(
-                        provider=provider,
+                    retry_response = await provider.generate_with_retry(
                         client=client,
                         model=args.model,
                         contents=retry_contents,
@@ -990,9 +960,11 @@ def run_from_args(args: argparse.Namespace) -> None:
 
 
 def main(argv: list[str] | None = None) -> None:
-    parser = build_parser()
-    args = parser.parse_args(argv)
-    run_from_args(args)
+    run_task_main(
+        configure_parser_fn=configure_parser,
+        run_from_args_fn=run_from_args,
+        argv=argv,
+    )
 
 
 if __name__ == "__main__":

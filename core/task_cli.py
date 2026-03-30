@@ -1,0 +1,110 @@
+from __future__ import annotations
+
+import argparse
+from typing import Callable
+
+from core.runtime import add_thinking_level_argument
+
+
+def add_language_arguments(
+    parser: argparse.ArgumentParser,
+    *,
+    source_default: str = "en",
+    target_default: str = "kk",
+) -> None:
+    parser.add_argument("--source-lang", default=source_default, help=f"Default: {source_default}")
+    parser.add_argument("--target-lang", default=target_default, help=f"Default: {target_default}")
+
+
+def add_provider_arguments(
+    parser: argparse.ArgumentParser,
+    *,
+    default_provider_name: str,
+    default_model: str,
+    include_thinking: bool = True,
+) -> None:
+    parser.add_argument(
+        "--provider",
+        default=default_provider_name,
+        help=f"Model provider (default: {default_provider_name})",
+    )
+    parser.add_argument("--model", default=default_model)
+    if include_thinking:
+        add_thinking_level_argument(parser)
+
+
+def add_runtime_limit_arguments(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--batch-size", type=int, default=None, help="Batch size (auto if omitted)")
+    parser.add_argument("--parallel-requests", type=int, default=None, help="Concurrent requests (auto if omitted)")
+
+
+def add_vocabulary_argument(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--vocab",
+        default=None,
+        help="Optional vocabulary file (auto: data/<target-lang>/vocab.txt). Supports .txt and glossary .po",
+    )
+
+
+def add_rules_arguments(
+    parser: argparse.ArgumentParser,
+    *,
+    rules_help: str,
+    rules_str_help: str,
+) -> None:
+    parser.add_argument(
+        "--rules",
+        default=None,
+        help=rules_help,
+    )
+    parser.add_argument("--rules-str", default=None, help=rules_str_help)
+
+
+def add_probe_argument(parser: argparse.ArgumentParser, *, help_text: str) -> None:
+    parser.add_argument(
+        "--probe",
+        "--num-messages",
+        dest="num_messages",
+        type=int,
+        default=None,
+        help=help_text,
+    )
+
+
+def add_max_attempts_argument(
+    parser: argparse.ArgumentParser,
+    *,
+    default: int = 5,
+    help_text: str = "Retry attempts per batch",
+) -> None:
+    parser.add_argument("--max-attempts", type=int, default=default, help=help_text)
+
+
+def build_task_parser(
+    configure_parser_fn: Callable[[argparse.ArgumentParser], argparse.ArgumentParser],
+) -> argparse.ArgumentParser:
+    return configure_parser_fn(argparse.ArgumentParser())
+
+
+def run_task_main(
+    *,
+    configure_parser_fn: Callable[[argparse.ArgumentParser], argparse.ArgumentParser],
+    run_from_args_fn: Callable[[argparse.Namespace], None],
+    argv: list[str] | None = None,
+) -> None:
+    parser = build_task_parser(configure_parser_fn)
+    args = parser.parse_args(argv)
+    run_from_args_fn(args)
+
+
+__all__ = [
+    "add_language_arguments",
+    "add_max_attempts_argument",
+    "add_probe_argument",
+    "add_provider_arguments",
+    "add_rules_arguments",
+    "add_runtime_limit_arguments",
+    "add_vocabulary_argument",
+    "build_task_parser",
+    "run_task_main",
+]

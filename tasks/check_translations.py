@@ -23,15 +23,25 @@ from core.formats import (
 )
 from core.providers import DEFAULT_PROVIDER, DEFAULT_PROVIDER_NAME, get_translation_provider
 from core.request_contents import TaskRequestSpec, build_task_request_contents, render_text_fallback_prompt
+from core.task_cli import (
+    add_language_arguments,
+    add_max_attempts_argument,
+    add_probe_argument,
+    add_provider_arguments,
+    add_rules_arguments,
+    add_runtime_limit_arguments,
+    add_vocabulary_argument,
+    build_task_parser,
+    run_task_main,
+)
 from core.resources import read_optional_text_file, read_optional_vocabulary_file, resolve_resource_path
-from core.runtime import add_thinking_level_argument
 from core.review_flow import (
     has_reviewable_translation as has_shared_reviewable_translation,
     limit_items,
     normalize_limits as normalize_review_limits,
 )
 from core.task_batches import build_fixed_batches, run_parallel_batches
-from core.task_resources import load_task_resource_context
+from core.task_runtime import build_task_runtime_context, print_startup_configuration
 
 
 DEFAULT_CHECK_BATCH_SIZE = 150
@@ -110,26 +120,6 @@ def build_check_generation_config(
     )
 
 
-async def generate_with_retry(
-    *,
-    provider: Any,
-    client: Any,
-    model: str,
-    contents: Any,
-    batch_label: str,
-    max_attempts: int = 5,
-    config: Any = None,
-) -> Any:
-    return await provider.generate_with_retry(
-        client=client,
-        model=model,
-        contents=contents,
-        batch_label=batch_label,
-        max_attempts=max_attempts,
-        config=config,
-    )
-
-
 def build_check_output_path(file_path: str) -> str:
     root, _ = os.path.splitext(file_path)
     return f"{root}.translation-check.json"
@@ -152,14 +142,6 @@ def normalize_limits(
 
 def _normalize_space(text: str) -> str:
     return " ".join(str(text or "").split())
-
-
-def _json_load_maybe(text: str) -> Any:
-    return json_load_maybe(text)
-
-
-def _plural_key_sort_key(value: Any) -> Tuple[int, Any]:
-    return plural_key_sort_key(value)
 
 
 def get_translation_plural_forms(entry: Any) -> List[str]:
@@ -333,11 +315,11 @@ def parse_check_response(response_payload: Any) -> Dict[str, List[CheckIssue]]:
     if isinstance(response_payload, dict):
         payload = response_payload
     elif isinstance(response_payload, str):
-        payload = _json_load_maybe(response_payload)
+        payload = json_load_maybe(response_payload)
     else:
         payload = getattr(response_payload, "parsed", None)
         if payload is None:
-            payload = _json_load_maybe(getattr(response_payload, "text", None) or "")
+            payload = json_load_maybe(getattr(response_payload, "text", None) or "")
 
     if not isinstance(payload, dict):
         return {}
@@ -414,44 +396,31 @@ def dedupe_issues(issues: List[CheckIssue]) -> List[CheckIssue]:
 def configure_parser(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
     parser.description = "Check translated PO files using the configured provider"
     parser.add_argument("file", help="Input translated .po file")
-    parser.add_argument("--source-lang", default="en", help="Default: en")
-    parser.add_argument("--target-lang", default="kk", help="Default: kk")
-    parser.add_argument(
-        "--provider",
-        default=DEFAULT_PROVIDER_NAME,
-        help=f"Model provider (default: {DEFAULT_PROVIDER_NAME})",
+    add_language_arguments(parser)
+    add_provider_arguments(
+        parser,
+        default_provider_name=DEFAULT_PROVIDER_NAME,
+        default_model=DEFAULT_PROVIDER.default_model,
     )
-    parser.add_argument("--model", default=DEFAULT_PROVIDER.default_model)
-    add_thinking_level_argument(parser)
-    parser.add_argument("--batch-size", type=int, default=None, help="Batch size (auto if omitted)")
-    parser.add_argument("--parallel-requests", type=int, default=None, help="Concurrent requests (auto if omitted)")
-    parser.add_argument(
-        "--vocab",
-        default=None,
-        help="Optional vocabulary file (auto: data/<target-lang>/vocab.txt). Supports .txt and glossary .po",
+    add_runtime_limit_arguments(parser)
+    add_vocabulary_argument(parser)
+    add_rules_arguments(
+        parser,
+        rules_help="Optional translation rules/instructions file (auto: data/<target-lang>/rules.md)",
+        rules_str_help="Optional inline translation rules/instructions",
     )
-    parser.add_argument(
-        "--rules",
-        default=None,
-        help="Optional translation rules/instructions file (auto: data/<target-lang>/rules.md)",
-    )
-    parser.add_argument("--rules-str", default=None, help="Optional inline translation rules/instructions")
-    parser.add_argument(
-        "--probe",
-        "--num-messages",
-        dest="num_messages",
-        type=int,
-        default=None,
-        help="Limit how many translated messages are sent for checking (testing only)",
+    add_probe_argument(
+        parser,
+        help_text="Limit how many translated messages are sent for checking (testing only)",
     )
     parser.add_argument("--out", default=None, help="Output JSON path (default: <input>.translation-check.json)")
     parser.add_argument("--include-ok", action="store_true", help="Include entries with no issues in the output JSON")
-    parser.add_argument("--max-attempts", type=int, default=5, help="Retry attempts per batch")
+    add_max_attempts_argument(parser)
     return parser
 
 
 def build_parser() -> argparse.ArgumentParser:
-    return configure_parser(argparse.ArgumentParser())
+    return build_task_parser(configure_parser)
 
 
 def run_from_args(args: argparse.Namespace) -> None:
@@ -467,18 +436,20 @@ def run_from_args(args: argparse.Namespace) -> None:
     if file_kind != FileKind.PO:
         sys.exit("ERROR: the check command currently supports only .po files")
 
-    provider = get_translation_provider(args.provider)
-    client = provider.create_client_from_env()
-
-    resource_context = load_task_resource_context(
+    runtime_context = build_task_runtime_context(
+        provider_name=args.provider,
         target_lang=args.target_lang,
         explicit_vocab_path=args.vocab,
         explicit_rules_path=args.rules,
         inline_rules=args.rules_str,
+        get_translation_provider_fn=get_translation_provider,
         resolve_resource_path_fn=resolve_resource_path,
         read_optional_vocabulary_file_fn=read_optional_vocabulary_file,
         read_optional_text_file_fn=read_optional_text_file,
     )
+    provider = runtime_context.provider
+    client = runtime_context.client
+    resource_context = runtime_context.resources
 
     entries, _, _ = load_po(args.file)
     try:
@@ -511,18 +482,19 @@ def run_from_args(args: argparse.Namespace) -> None:
         system_instruction=build_check_system_instruction(args.target_lang),
     )
 
-    print("Startup configuration:")
-    print(f"  Provider: {provider.name}")
-    print(f"  Model: {args.model}")
-    print(f"  Thinking level: {args.thinking_level or 'provider default'}")
-    print(f"  Parallel requests: {parallel_requests}")
-    print(f"  Batch size: {batch_size}")
-    print(f"  Limits mode: {limits_mode}")
-    print(f"  Vocabulary source: {resource_context.vocabulary_source}")
-    print(f"  Rules source: {resource_context.rules_source or 'none'}")
-    print(f"  Probe limit: {args.num_messages if args.num_messages is not None else 'none'}")
-    print(f"  Total translated entries: {total}")
-    print(f"  Total batches: {len(all_batches)}")
+    print_startup_configuration(
+        ("Provider", provider.name),
+        ("Model", args.model),
+        ("Thinking level", args.thinking_level or "provider default"),
+        ("Parallel requests", parallel_requests),
+        ("Batch size", batch_size),
+        ("Limits mode", limits_mode),
+        ("Vocabulary source", resource_context.vocabulary_source),
+        ("Rules source", resource_context.rules_source or "none"),
+        ("Probe limit", args.num_messages if args.num_messages is not None else "none"),
+        ("Total translated entries", total),
+        ("Total batches", len(all_batches)),
+    )
 
     async def run_checks() -> List[Dict[str, Any]]:
         results: List[Dict[str, Any]] = []
@@ -549,8 +521,7 @@ def run_from_args(args: argparse.Namespace) -> None:
                 provider=provider,
             )
 
-            response = await generate_with_retry(
-                provider=provider,
+            response = await provider.generate_with_retry(
                 client=client,
                 model=args.model,
                 contents=contents,
@@ -637,9 +608,11 @@ def run_from_args(args: argparse.Namespace) -> None:
 
 
 def main(argv: list[str] | None = None) -> None:
-    parser = build_parser()
-    args = parser.parse_args(argv)
-    run_from_args(args)
+    run_task_main(
+        configure_parser_fn=configure_parser,
+        run_from_args_fn=run_from_args,
+        argv=argv,
+    )
 
 
 if __name__ == "__main__":

@@ -22,11 +22,17 @@ class _DummyProvider:
     supports_structured_json = True
     supports_thinking = True
 
+    def __init__(self, response=None):
+        self.response = response or _DummyResponse(parsed={"terms": []})
+
     def create_client_from_env(self):
         return object()
 
     def build_generation_config(self, *, thinking_level, json_schema, system_instruction):
         return object()
+
+    async def generate_with_retry(self, *, client, model, contents, batch_label, max_attempts, config):
+        return self.response
 
 
 class _DummyEntry:
@@ -270,9 +276,10 @@ class ExtractTermsSmokeTests(unittest.TestCase):
         )
 
     def test_main_missing_po_output_loads_vocabulary_pairs_for_merged_po(self):
+        provider = _DummyProvider(response=_DummyResponse(parsed={"terms": []}))
         with (
             patch.dict(os.environ, {"GOOGLE_API_KEY": "test-key"}, clear=False),
-            patch("tasks.extract_terms.get_translation_provider", return_value=_DummyProvider()),
+            patch("tasks.extract_terms.get_translation_provider", return_value=provider),
             patch(
                 "tasks.extract_terms.resolve_resource_path",
                 return_value=os.path.join("data", "kk", "vocab.txt"),
@@ -282,7 +289,6 @@ class ExtractTermsSmokeTests(unittest.TestCase):
             patch("tasks.extract_terms.detect_file_kind", return_value=process.FileKind.TXT),
             patch("tasks.extract_terms.load_entries_for_file", return_value=[_DummyEntry("Open file")]),
             patch("tasks.extract_terms.normalize_limits", return_value=(100, 1, "manual")),
-            patch("tasks.extract_terms.generate_with_retry", return_value=_DummyResponse(parsed={"terms": []})),
             patch("tasks.extract_terms.sys.argv", ["extract_terms.py", "input.po", "--mode", "missing", "--out-format", "po"]),
             patch("builtins.print"),
         ):

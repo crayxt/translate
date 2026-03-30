@@ -23,11 +23,17 @@ class _DummyProvider:
     supports_structured_json = True
     supports_thinking = True
 
+    def __init__(self, response=None):
+        self.response = response or _DummyResponse(parsed={"results": []})
+
     def create_client_from_env(self):
         return object()
 
     def build_generation_config(self, *, thinking_level, json_schema, system_instruction):
         return object()
+
+    async def generate_with_retry(self, *, client, model, contents, batch_label, max_attempts, config):
+        return self.response
 
 
 class CheckTranslationsSmokeTests(unittest.TestCase):
@@ -162,33 +168,32 @@ class CheckTranslationsSmokeTests(unittest.TestCase):
         ]
 
         try:
+            provider = _DummyProvider(
+                response=_DummyResponse(
+                    parsed={
+                        "results": [
+                            {
+                                "id": "0",
+                                "issues": [
+                                    {
+                                        "category": "meaning",
+                                        "severity": "warning",
+                                        "message": "Translation may omit part of the source meaning.",
+                                    }
+                                ],
+                            }
+                        ]
+                    }
+                )
+            )
             with (
                 patch.dict(os.environ, {"GOOGLE_API_KEY": "test-key"}, clear=False),
-                patch("tasks.check_translations.get_translation_provider", return_value=_DummyProvider()),
+                patch("tasks.check_translations.get_translation_provider", return_value=provider),
                 patch("tasks.check_translations.detect_file_kind", return_value=process.FileKind.PO),
                 patch("tasks.check_translations.resolve_resource_path", side_effect=[os.path.join("data", "kk", "vocab.txt"), os.path.join("data", "kk", "rules.md")]),
                 patch("tasks.check_translations.read_optional_vocabulary_file", return_value="addon - qosymsha"),
                 patch("tasks.check_translations.read_optional_text_file", return_value="Use imperative tone."),
                 patch("tasks.check_translations.load_po", return_value=(entries, None, None)),
-                patch(
-                    "tasks.check_translations.generate_with_retry",
-                    return_value=_DummyResponse(
-                        parsed={
-                            "results": [
-                                {
-                                    "id": "0",
-                                    "issues": [
-                                        {
-                                            "category": "meaning",
-                                            "severity": "warning",
-                                            "message": "Translation may omit part of the source meaning.",
-                                        }
-                                    ],
-                                }
-                            ]
-                        }
-                    ),
-                ),
                 patch(
                     "tasks.check_translations.sys.argv",
                     ["check_translations.py", "input.po", "--out", out_path, "--probe", "1"],
