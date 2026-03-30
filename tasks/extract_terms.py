@@ -35,7 +35,7 @@ from core.task_cli import (
 )
 from core.resources import load_vocabulary_pairs, read_optional_vocabulary_file, resolve_resource_path
 from core.runtime import resolve_runtime_limits
-from core.task_batches import build_fixed_batches, run_parallel_batches
+from core.task_batches import build_fixed_batches, build_indexed_batch_map, run_model_batches
 from core.task_runtime import build_task_runtime_context, print_startup_configuration
 
 
@@ -536,10 +536,9 @@ def run_from_args(args: argparse.Namespace) -> None:
         all_candidates: List[TermCandidate] = []
         completed = 0
 
-        async def process_batch(batch_index: int, batch: List[str]) -> List[TermCandidate]:
-            msg_map = {str(i): text for i, text in enumerate(batch)}
-            contents = build_term_request_contents(
-                messages=msg_map,
+        def build_contents(_batch_index: int, batch: List[str]) -> Any:
+            return build_term_request_contents(
+                messages=build_indexed_batch_map(batch, lambda text: text),
                 source_lang=args.source_lang,
                 target_lang=args.target_lang,
                 mode=args.mode,
@@ -547,15 +546,6 @@ def run_from_args(args: argparse.Namespace) -> None:
                 max_terms_per_batch=args.max_terms_per_batch,
                 provider=provider,
             )
-            response = await provider.generate_with_retry(
-                client=client,
-                model=args.model,
-                contents=contents,
-                batch_label=f"terms batch {batch_index + 1}/{len(batches)}",
-                max_attempts=args.max_attempts,
-                config=term_config,
-            )
-            return parse_term_response(response)
 
         def on_batch_completed(
             batch_index: int,
@@ -571,11 +561,18 @@ def run_from_args(args: argparse.Namespace) -> None:
                 f"raw terms collected: {len(all_candidates)}"
             )
 
-        await run_parallel_batches(
+        await run_model_batches(
             batches=batches,
             parallel_requests=parallel_requests,
-            process_batch=process_batch,
+            provider=provider,
+            client=client,
+            model=args.model,
+            config=term_config,
+            max_attempts=args.max_attempts,
+            build_contents=build_contents,
+            parse_response=parse_term_response,
             on_batch_completed=on_batch_completed,
+            build_batch_label=lambda batch_index: f"terms batch {batch_index + 1}/{len(batches)}",
         )
 
         return all_candidates

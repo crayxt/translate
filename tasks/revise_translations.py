@@ -47,7 +47,13 @@ from core.review_flow import (
     limit_items,
     normalize_limits as normalize_review_limits,
 )
-from core.task_batches import build_fixed_batches, run_parallel_batches
+from core.task_batches import (
+    build_fixed_batches,
+    build_indexed_batch_map,
+    find_missing_index_keys,
+    merge_mapping_results,
+    run_model_batches,
+)
 from core.task_runtime import build_task_runtime_context, print_startup_configuration
 
 
@@ -830,16 +836,9 @@ def run_from_args(args: argparse.Namespace) -> None:
         changed_items: List[Tuple[ReviewItem, RevisionResult]] = []
         completed_batches = 0
 
-        async def process_batch(
-            batch_index: int,
-            batch: List[ReviewItem],
-        ) -> Dict[str, RevisionResult]:
-            msg_map: Dict[str, Dict[str, Any]] = {}
-            for index, item in enumerate(batch):
-                msg_map[str(index)] = build_review_message_payload(item)
-
-            contents = build_revision_request_contents(
-                messages=msg_map,
+        def build_contents(_batch_index: int, batch: List[ReviewItem]) -> Any:
+            return build_revision_request_contents(
+                messages=build_indexed_batch_map(batch, build_review_message_payload),
                 source_lang=args.source_lang,
                 target_lang=args.target_lang,
                 instruction=args.instruction,
@@ -848,55 +847,24 @@ def run_from_args(args: argparse.Namespace) -> None:
                 provider=provider,
             )
 
-            response = await provider.generate_with_retry(
-                client=client,
-                model=args.model,
-                contents=contents,
-                batch_label=f"revision batch {batch_index + 1}/{total_batches}",
-                max_attempts=args.max_attempts,
-                config=revision_config,
+        def build_retry_contents(
+            _batch_index: int,
+            batch: List[ReviewItem],
+            missing_indices: List[int],
+        ) -> Any:
+            return build_revision_request_contents(
+                messages=build_indexed_batch_map(
+                    missing_indices,
+                    lambda item_index: build_review_message_payload(batch[item_index]),
+                    key_builder=lambda _retry_index, item_index: str(item_index),
+                ),
+                source_lang=args.source_lang,
+                target_lang=args.target_lang,
+                instruction=args.instruction,
+                vocabulary=resource_context.vocabulary_text,
+                translation_rules=resource_context.project_rules,
+                provider=provider,
             )
-            revisions = parse_revision_response(response)
-
-            missing_indices = [
-                index
-                for index in range(len(batch))
-                if str(index) not in revisions
-            ]
-            if missing_indices:
-                print(
-                    f"  Warning [batch {batch_index + 1}/{total_batches}]: "
-                    f"{len(missing_indices)} items missing from response. Retrying them..."
-                )
-                retry_map: Dict[str, Dict[str, Any]] = {}
-                for index in missing_indices:
-                    retry_map[str(index)] = build_review_message_payload(batch[index])
-
-                retry_contents = build_revision_request_contents(
-                    messages=retry_map,
-                    source_lang=args.source_lang,
-                    target_lang=args.target_lang,
-                    instruction=args.instruction,
-                    vocabulary=resource_context.vocabulary_text,
-                    translation_rules=resource_context.project_rules,
-                    provider=provider,
-                )
-                try:
-                    retry_response = await provider.generate_with_retry(
-                        client=client,
-                        model=args.model,
-                        contents=retry_contents,
-                        batch_label=f"revision batch {batch_index + 1}/{total_batches} missing-items",
-                        max_attempts=max(2, min(args.max_attempts, 3)),
-                        config=revision_config,
-                    )
-                    revisions.update(parse_revision_response(retry_response))
-                except Exception as exc:
-                    print(
-                        f"  Retry failed [batch {batch_index + 1}/{total_batches}]: {exc}"
-                    )
-
-            return revisions
 
         def on_batch_completed(
             batch_index: int,
@@ -922,11 +890,30 @@ def run_from_args(args: argparse.Namespace) -> None:
                 f"changed so far: {changed_total}"
             )
 
-        await run_parallel_batches(
+        await run_model_batches(
             batches=all_batches,
             parallel_requests=parallel_requests,
-            process_batch=process_batch,
+            provider=provider,
+            client=client,
+            model=args.model,
+            config=revision_config,
+            max_attempts=args.max_attempts,
+            build_contents=build_contents,
+            parse_response=parse_revision_response,
             on_batch_completed=on_batch_completed,
+            build_batch_label=lambda batch_index: f"revision batch {batch_index + 1}/{total_batches}",
+            find_missing_indices=lambda batch, revisions: find_missing_index_keys(len(batch), revisions),
+            build_retry_contents=build_retry_contents,
+            build_retry_label=lambda batch_index: f"revision batch {batch_index + 1}/{total_batches} missing-items",
+            retry_max_attempts=lambda _batch_index: max(2, min(args.max_attempts, 3)),
+            merge_retry_result=merge_mapping_results,
+            on_missing_indices=lambda batch_index, _batch, missing_indices: print(
+                f"  Warning [batch {batch_index + 1}/{total_batches}]: "
+                f"{len(missing_indices)} items missing from response. Retrying them..."
+            ),
+            on_retry_error=lambda batch_index, _batch, _missing_indices, exc: print(
+                f"  Retry failed [batch {batch_index + 1}/{total_batches}]: {exc}"
+            ),
         )
 
         return changed_total, changed_items
