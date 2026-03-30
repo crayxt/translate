@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-import json
 import math
 import os
 import sys
@@ -63,6 +62,7 @@ from core.resources import (
     resolve_resource_path as _core_resolve_resource_path,
 )
 from core.providers import DEFAULT_PROVIDER, DEFAULT_PROVIDER_NAME, get_translation_provider
+from core.request_contents import TaskRequestSpec, build_task_request_contents, render_text_fallback_prompt
 from core.runtime import (
     MIN_ITEMS_PER_WORKER,
     add_thinking_level_argument,
@@ -135,6 +135,85 @@ def build_translation_generation_config(
     )
 
 
+def build_translation_request_spec(force_non_empty: bool = False) -> TaskRequestSpec:
+    non_empty_block = (
+        (
+            "Every translation must be non-empty.",
+            "Never return empty strings. If uncertain, provide your best translation.",
+        )
+        if force_non_empty
+        else ()
+    )
+    return TaskRequestSpec(
+        task_intro="Translate each software localization message item.",
+        task_lines=(
+            "Translate each message independently.",
+            "Do not merge messages.",
+        ),
+        payload_lines=(
+            "The payload includes source language, target language, optional approved vocabulary/glossary, optional project translation rules/instructions, and a `messages` map.",
+        ),
+        output_lines=(
+            "Return only the corrected final JSON.",
+            "Keep each translation item's `id` exactly the same as the input key.",
+            "Use `plural_texts` only for plural entries when you can provide explicit forms.",
+            "For plural entries (source contains `Singular:`/`Plural:` or `item.plural_forms` is present), return non-empty `plural_texts` with exactly `item.plural_forms` forms (or at least 2 if absent).",
+            "If the target language effectively has one plural form but multiple slots are required, repeat the same wording in all required plural slots.",
+            "For target languages with no plural difference, prefer the source plural form as the basis for translation.",
+            "Run a silent vocabulary audit before finalizing each translation and prefer approved terminology when applicable.",
+            "If project rules are present, follow them exactly; they are mandatory, not advisory.",
+            "Preserve every numeric placeholder like `%d` or `%n` exactly.",
+            *non_empty_block,
+        ),
+    )
+
+
+def build_translation_request_payload(
+    messages: Dict[str, Dict[str, Any]],
+    source_lang: str,
+    target_lang: str,
+    vocabulary: str | None,
+    translation_rules: str | None,
+    force_non_empty: bool = False,
+) -> dict[str, Any]:
+    return {
+        "project_type": "software_ui_localization",
+        "source_lang": source_lang,
+        "target_lang": target_lang,
+        "vocabulary": vocabulary,
+        "translation_rules": translation_rules,
+        "force_non_empty": force_non_empty,
+        "messages": messages,
+    }
+
+
+def build_translation_request_contents(
+    messages: Dict[str, Dict[str, Any]],
+    source_lang: str,
+    target_lang: str,
+    vocabulary: str | None,
+    translation_rules: str | None,
+    *,
+    provider: Any = DEFAULT_PROVIDER,
+    force_non_empty: bool = False,
+) -> Any:
+    task_spec = build_translation_request_spec(force_non_empty=force_non_empty)
+    payload = build_translation_request_payload(
+        messages=messages,
+        source_lang=source_lang,
+        target_lang=target_lang,
+        vocabulary=vocabulary,
+        translation_rules=translation_rules,
+        force_non_empty=force_non_empty,
+    )
+    return build_task_request_contents(
+        provider=provider,
+        task_spec=task_spec,
+        function_name="translation_batch",
+        payload=payload,
+    )
+
+
 def build_prompt(
     messages: Dict[str, Dict[str, Any]],
     source_lang: str,
@@ -143,48 +222,17 @@ def build_prompt(
     translation_rules: str | None,
     force_non_empty: bool = False,
 ) -> str:
-    vocab_block = f"\nProject vocabulary (mandatory):\n{vocabulary}\n" if vocabulary else ""
-    rules_block = (
-        f"\nProject translation rules/instructions (mandatory when present):\n{translation_rules}\n"
-        if translation_rules
-        else ""
+    return render_text_fallback_prompt(
+        task_spec=build_translation_request_spec(force_non_empty=force_non_empty),
+        payload=build_translation_request_payload(
+            messages=messages,
+            source_lang=source_lang,
+            target_lang=target_lang,
+            vocabulary=vocabulary,
+            translation_rules=translation_rules,
+            force_non_empty=force_non_empty,
+        ),
     )
-    non_empty_block = (
-        "- Every translation must be non-empty.\n"
-        "- Never return empty strings. If uncertain, provide your best translation.\n"
-        if force_non_empty
-        else ""
-    )
-    messages_json = json.dumps(messages, ensure_ascii=False, indent=2)
-
-    return f"""
-Project context:
-This is a software application UI localization project.
-Source language: {source_lang}
-Target language: {target_lang}
-{vocab_block}
-{rules_block}
-
-Instructions:
-- Translate each message independently
-- Do NOT merge messages
-- Return ONLY valid JSON, no Markdown fences or extra text
-- Keep each translation item's "id" exactly the same as the input key
-- Use "plural_texts" only for plural entries when you can provide explicit forms
-- For plural entries (source contains 'Singular:'/'Plural:' or item.plural_forms is present),
-  return non-empty "plural_texts" with exactly item.plural_forms forms (or at least 2 if absent)
-- If the target language effectively has one plural form but multiple slots are required,
-  repeat the same wording in all required plural slots
-- For target languages with no plural difference, prefer the source plural form as the basis for translation
-- run a silent vocabulary audit before finalizing each translation and prefer approved terminology when applicable
-- If project rules are present, follow them exactly; it is mandatory, not advisory
-- Return only the corrected final JSON.
-- Preserve every numeric placeholder like %d or %n exactly.
-{non_empty_block}
-
-Input messages:
-{messages_json}
-""".strip()
 
 
 def load_po(file_path: str):
@@ -394,11 +442,18 @@ async def run_translation_batches(
 
     async def process_batch(batch_index: int, batch: List[Any]) -> Dict[str, TranslationResult]:
         msg_map = {str(i): build_prompt_message_payload(entry) for i, entry in enumerate(batch)}
-        prompt = build_prompt(msg_map, source_lang, target_lang, vocabulary_text, project_rules)
+        contents = build_translation_request_contents(
+            msg_map,
+            source_lang,
+            target_lang,
+            vocabulary_text,
+            project_rules,
+            provider=provider,
+        )
         response = await provider.generate_with_retry(
             client=client,
             model=model,
-            prompt=prompt,
+            contents=contents,
             batch_label=f"batch {batch_index + 1}/{batches}",
             max_attempts=5,
             config=translation_config,
@@ -411,19 +466,20 @@ async def run_translation_batches(
                 f"{len(missing_indices)} items missing from response. Retrying them..."
             )
             retry_map = {str(idx): build_prompt_message_payload(batch[idx]) for idx in missing_indices}
-            retry_prompt = build_prompt(
+            retry_contents = build_translation_request_contents(
                 retry_map,
                 source_lang,
                 target_lang,
                 vocabulary_text,
                 project_rules,
+                provider=provider,
                 force_non_empty=True,
             )
             try:
                 retry_resp = await provider.generate_with_retry(
                     client=client,
                     model=model,
-                    prompt=retry_prompt,
+                    contents=retry_contents,
                     batch_label=f"batch {batch_index + 1}/{batches} missing-items",
                     max_attempts=3,
                     config=translation_config,

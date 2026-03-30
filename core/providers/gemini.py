@@ -15,6 +15,7 @@ class GeminiTranslationProvider:
     default_model = "gemini-3-flash-preview"
     api_key_env = "GOOGLE_API_KEY"
     supports_structured_json = True
+    supports_structured_input = True
     supports_thinking = True
 
     _SCHEMA_TYPE_MAP = {
@@ -69,6 +70,28 @@ class GeminiTranslationProvider:
             sys.exit(f"ERROR: {self.api_key_env} environment variable is not set")
         return genai.Client(api_key=api_key)
 
+    def build_request_contents(
+        self,
+        *,
+        task_instruction: str,
+        function_name: str,
+        payload: dict[str, Any],
+        fallback_prompt: str,
+    ) -> Any:
+        _ = fallback_prompt
+        return [
+            genai_types.Content(
+                role="user",
+                parts=[
+                    genai_types.Part.from_text(text=task_instruction.strip()),
+                    genai_types.Part.from_function_response(
+                        name=function_name,
+                        response=payload,
+                    ),
+                ],
+            )
+        ]
+
     def build_generation_config(
         self,
         *,
@@ -93,7 +116,7 @@ class GeminiTranslationProvider:
         *,
         client: genai.Client,
         model: str,
-        prompt: str,
+        contents: Any,
         batch_label: str,
         max_attempts: int,
         config: genai_types.GenerateContentConfig | None,
@@ -101,7 +124,7 @@ class GeminiTranslationProvider:
         return await generate_with_retry(
             client=client,
             model=model,
-            prompt=prompt,
+            contents=contents,
             batch_label=batch_label,
             max_attempts=max_attempts,
             config=config,

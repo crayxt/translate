@@ -22,6 +22,7 @@ from core.formats import (
     load_po,
 )
 from core.providers import DEFAULT_PROVIDER, DEFAULT_PROVIDER_NAME, get_translation_provider
+from core.request_contents import TaskRequestSpec, build_task_request_contents, render_text_fallback_prompt
 from core.resources import read_optional_text_file, read_optional_vocabulary_file, resolve_resource_path
 from core.runtime import add_thinking_level_argument
 from core.review_flow import (
@@ -114,7 +115,7 @@ async def generate_with_retry(
     provider: Any,
     client: Any,
     model: str,
-    prompt: str,
+    contents: Any,
     batch_label: str,
     max_attempts: int = 5,
     config: Any = None,
@@ -122,7 +123,7 @@ async def generate_with_retry(
     return await provider.generate_with_retry(
         client=client,
         model=model,
-        prompt=prompt,
+        contents=contents,
         batch_label=batch_label,
         max_attempts=max_attempts,
         config=config,
@@ -229,6 +230,70 @@ def build_check_system_instruction(target_lang: str) -> str:
     return "\n\n".join(parts)
 
 
+def build_check_request_spec() -> TaskRequestSpec:
+    return TaskRequestSpec(
+        task_intro="Review each software localization translation item.",
+        task_lines=(
+            "Review each item independently against the source and current translation.",
+        ),
+        payload_lines=(
+            "The payload contains source language, target language, optional approved vocabulary/glossary, optional project translation rules/instructions, and a `messages` map.",
+            "Each message item may include `source`, `translation`, optional `translation_plural_forms`, `context`, and `note`.",
+        ),
+        output_lines=(
+            "Return only valid JSON, with no markdown or commentary.",
+            "Keep each result `id` exactly the same as the input key.",
+            "Return an empty `issues` list when the translation is acceptable.",
+            "Use severity `error` for broken placeholders, tags, accelerators, terminology violations, or incorrect meaning.",
+            "Use severity `warning` for likely but less certain QA issues.",
+            "`suggested_translation` is optional and should be included only when you can provide a clear fix.",
+            "If you provide `suggested_translation`, it must use the real target-language alphabet/script.",
+            "Do not duplicate the same issue in multiple phrasings.",
+            "Do not flag a terminology issue solely because the translation uses an inflected or derived form instead of the exact glossary dictionary form.",
+        ),
+    )
+
+
+def build_check_request_payload(
+    messages: Dict[str, Dict[str, Any]],
+    source_lang: str,
+    target_lang: str,
+    vocabulary: str | None,
+    translation_rules: str | None,
+) -> dict[str, Any]:
+    return {
+        "project_type": "software_ui_localization_qa",
+        "source_lang": source_lang,
+        "target_lang": target_lang,
+        "vocabulary": vocabulary,
+        "translation_rules": translation_rules,
+        "messages": messages,
+    }
+
+
+def build_check_request_contents(
+    messages: Dict[str, Dict[str, Any]],
+    source_lang: str,
+    target_lang: str,
+    vocabulary: str | None,
+    translation_rules: str | None,
+    *,
+    provider: Any = DEFAULT_PROVIDER,
+) -> Any:
+    return build_task_request_contents(
+        provider=provider,
+        task_spec=build_check_request_spec(),
+        function_name="translation_check_batch",
+        payload=build_check_request_payload(
+            messages=messages,
+            source_lang=source_lang,
+            target_lang=target_lang,
+            vocabulary=vocabulary,
+            translation_rules=translation_rules,
+        ),
+    )
+
+
 def build_check_prompt(
     messages: Dict[str, Dict[str, Any]],
     source_lang: str,
@@ -236,42 +301,16 @@ def build_check_prompt(
     vocabulary: str | None,
     translation_rules: str | None,
 ) -> str:
-    vocab_block = f"\nApproved vocabulary/glossary (mandatory):\n{vocabulary}\n" if vocabulary else ""
-    rules_block = (
-        f"\nProject translation rules/instructions (mandatory when present):\n{translation_rules}\n"
-        if translation_rules
-        else ""
+    return render_text_fallback_prompt(
+        task_spec=build_check_request_spec(),
+        payload=build_check_request_payload(
+            messages=messages,
+            source_lang=source_lang,
+            target_lang=target_lang,
+            vocabulary=vocabulary,
+            translation_rules=translation_rules,
+        ),
     )
-    messages_json = json.dumps(messages, ensure_ascii=False, indent=2)
-
-    return f"""
-Project context:
-This is a software UI localization QA pass.
-Source language: {source_lang}
-Target language: {target_lang}
-{vocab_block}
-{rules_block}
-
-Output requirements:
-- Return ONLY valid JSON, with no markdown or commentary
-- Use this schema exactly: {{"results": [{{"id": "...", "issues": [{{"category": "...", "severity": "...", "message": "...", "source_fragment": "...", "translation_fragment": "...", "suggested_translation": "..."}}]}}]}}
-- Keep each result "id" exactly the same as the input key
-- Return an empty "issues" list when the translation is acceptable
-- Use severity "error" for broken placeholders, tags, accelerators, terminology violations, or incorrect meaning
-- Use severity "warning" for likely but less certain QA issues
-- `suggested_translation` is optional and should be included only when you can provide a clear fix
-- If you provide `suggested_translation`, it must use the real target-language alphabet/script
-- Do not duplicate the same issue in multiple phrasings
-- Do not flag a terminology issue solely because the translation uses an inflected or derived form instead of the exact glossary dictionary form
-
-Messages to review (JSON map of id -> item):
-- item.source: source text
-- item.translation: translated text to check
-- item.translation_plural_forms: optional list of plural translation slots
-- item.context: optional disambiguation context
-- item.note: optional developer/translator note
-{messages_json}
-"""
 
 
 def build_check_message_payload(entry: Any) -> Dict[str, Any]:
@@ -501,19 +540,20 @@ def run_from_args(args: argparse.Namespace) -> None:
                 item_id = str(i)
                 msg_map[item_id] = build_check_message_payload(entry)
 
-            prompt = build_check_prompt(
+            contents = build_check_request_contents(
                 messages=msg_map,
                 source_lang=args.source_lang,
                 target_lang=args.target_lang,
                 vocabulary=resource_context.vocabulary_text,
                 translation_rules=resource_context.project_rules,
+                provider=provider,
             )
 
             response = await generate_with_retry(
                 provider=provider,
                 client=client,
                 model=args.model,
-                prompt=prompt,
+                contents=contents,
                 batch_label=f"check batch {batch_index + 1}/{len(all_batches)}",
                 max_attempts=args.max_attempts,
                 config=config,

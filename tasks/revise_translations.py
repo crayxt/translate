@@ -30,6 +30,7 @@ from core.formats import (
 from core.formats.strings import _detect_text_encoding, _write_text_with_encoding_fallback
 from core.entries import normalize_model_escaped_text
 from core.providers import DEFAULT_PROVIDER, DEFAULT_PROVIDER_NAME, get_translation_provider
+from core.request_contents import TaskRequestSpec, build_task_request_contents, render_text_fallback_prompt
 from core.runtime import add_thinking_level_argument
 from core.review_flow import (
     has_reviewable_translation as has_shared_reviewable_translation,
@@ -135,7 +136,7 @@ async def generate_with_retry(
     provider: Any,
     client: Any,
     model: str,
-    prompt: str,
+    contents: Any,
     batch_label: str,
     max_attempts: int = 5,
     config: Any = None,
@@ -143,7 +144,7 @@ async def generate_with_retry(
     return await provider.generate_with_retry(
         client=client,
         model=model,
-        prompt=prompt,
+        contents=contents,
         batch_label=batch_label,
         max_attempts=max_attempts,
         config=config,
@@ -296,6 +297,73 @@ def build_revision_system_instruction(target_lang: str) -> str:
     return "\n\n".join(parts)
 
 
+def build_revision_request_spec() -> TaskRequestSpec:
+    return TaskRequestSpec(
+        task_intro="Revise each software localization translation item.",
+        task_lines=(
+            "Review each item against the source text, current translation, and user instruction.",
+        ),
+        payload_lines=(
+            "The payload contains the user instruction, source language, target language, optional approved vocabulary/glossary, optional project translation rules/instructions, and an `items` map.",
+        ),
+        output_lines=(
+            "Return only valid JSON, with no markdown or commentary.",
+            "Return one result for every input item id.",
+            "Keep each result `id` exactly the same as the input key.",
+            "Use action `keep` when no change is needed.",
+            "Use action `update` only when the current translation should change to satisfy the instruction.",
+            "If action is `update`, provide the full corrected target text.",
+            "For plural items, if action is `update`, provide exactly `item.plural_forms` plural_texts.",
+            "If the target language effectively uses one plural wording, repeat it in all required plural slots.",
+            "Keep `reason` short and concrete.",
+        ),
+    )
+
+
+def build_revision_request_payload(
+    messages: Dict[str, Dict[str, Any]],
+    source_lang: str,
+    target_lang: str,
+    instruction: str,
+    vocabulary: str | None,
+    translation_rules: str | None,
+) -> dict[str, Any]:
+    return {
+        "project_type": "software_ui_revision",
+        "source_lang": source_lang,
+        "target_lang": target_lang,
+        "instruction": instruction,
+        "vocabulary": vocabulary,
+        "translation_rules": translation_rules,
+        "items": messages,
+    }
+
+
+def build_revision_request_contents(
+    messages: Dict[str, Dict[str, Any]],
+    source_lang: str,
+    target_lang: str,
+    instruction: str,
+    vocabulary: str | None,
+    translation_rules: str | None,
+    *,
+    provider: Any = DEFAULT_PROVIDER,
+) -> Any:
+    return build_task_request_contents(
+        provider=provider,
+        task_spec=build_revision_request_spec(),
+        function_name="translation_revision_batch",
+        payload=build_revision_request_payload(
+            messages=messages,
+            source_lang=source_lang,
+            target_lang=target_lang,
+            instruction=instruction,
+            vocabulary=vocabulary,
+            translation_rules=translation_rules,
+        ),
+    )
+
+
 def build_revision_prompt(
     messages: Dict[str, Dict[str, Any]],
     source_lang: str,
@@ -304,40 +372,17 @@ def build_revision_prompt(
     vocabulary: str | None,
     translation_rules: str | None,
 ) -> str:
-    vocab_block = f"\nApproved vocabulary/glossary (mandatory):\n{vocabulary}\n" if vocabulary else ""
-    rules_block = (
-        f"\nProject translation rules/instructions (mandatory when present):\n{translation_rules}\n"
-        if translation_rules
-        else ""
+    return render_text_fallback_prompt(
+        task_spec=build_revision_request_spec(),
+        payload=build_revision_request_payload(
+            messages=messages,
+            source_lang=source_lang,
+            target_lang=target_lang,
+            instruction=instruction,
+            vocabulary=vocabulary,
+            translation_rules=translation_rules,
+        ),
     )
-    messages_json = json.dumps(messages, ensure_ascii=False, indent=2)
-
-    return f"""
-User instruction:
-{instruction}
-
-Project context:
-This is a software UI localization revision pass.
-Source language: {source_lang}
-Target language: {target_lang}
-{vocab_block}
-{rules_block}
-
-Output requirements:
-- Return ONLY valid JSON with this schema:
-  {{"revisions": [{{"id": "...", "action": "keep|update", "text": "...", "plural_texts": ["..."], "reason": "..."}}]}}
-- Return one result for every input item id
-- Keep each result id exactly the same as the input key
-- Use action "keep" when no change is needed
-- Use action "update" only when the current translation should change to satisfy the instruction
-- If action is "update", provide the full corrected target text
-- For plural items, if action is "update", provide exactly item.plural_forms plural_texts
-- If the target language effectively uses one plural wording, repeat it in all required plural slots
-- Keep reason short and concrete
-
-Items:
-{messages_json}
-""".strip()
 
 
 def build_review_message_payload(item: ReviewItem) -> Dict[str, Any]:
@@ -821,20 +866,21 @@ def run_from_args(args: argparse.Namespace) -> None:
             for index, item in enumerate(batch):
                 msg_map[str(index)] = build_review_message_payload(item)
 
-            prompt = build_revision_prompt(
+            contents = build_revision_request_contents(
                 messages=msg_map,
                 source_lang=args.source_lang,
                 target_lang=args.target_lang,
                 instruction=args.instruction,
                 vocabulary=resource_context.vocabulary_text,
                 translation_rules=resource_context.project_rules,
+                provider=provider,
             )
 
             response = await generate_with_retry(
                 provider=provider,
                 client=client,
                 model=args.model,
-                prompt=prompt,
+                contents=contents,
                 batch_label=f"revision batch {batch_index + 1}/{total_batches}",
                 max_attempts=args.max_attempts,
                 config=revision_config,
@@ -855,20 +901,21 @@ def run_from_args(args: argparse.Namespace) -> None:
                 for index in missing_indices:
                     retry_map[str(index)] = build_review_message_payload(batch[index])
 
-                retry_prompt = build_revision_prompt(
+                retry_contents = build_revision_request_contents(
                     messages=retry_map,
                     source_lang=args.source_lang,
                     target_lang=args.target_lang,
                     instruction=args.instruction,
                     vocabulary=resource_context.vocabulary_text,
                     translation_rules=resource_context.project_rules,
+                    provider=provider,
                 )
                 try:
                     retry_response = await generate_with_retry(
                         provider=provider,
                         client=client,
                         model=args.model,
-                        prompt=retry_prompt,
+                        contents=retry_contents,
                         batch_label=f"revision batch {batch_index + 1}/{total_batches} missing-items",
                         max_attempts=max(2, min(args.max_attempts, 3)),
                         config=revision_config,

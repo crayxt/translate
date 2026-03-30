@@ -23,6 +23,7 @@ from core.formats import (
     load_ts,
 )
 from core.providers import DEFAULT_PROVIDER, DEFAULT_PROVIDER_NAME, get_translation_provider
+from core.request_contents import TaskRequestSpec, build_task_request_contents, render_text_fallback_prompt
 from core.resources import load_vocabulary_pairs, read_optional_vocabulary_file, resolve_resource_path
 from core.runtime import (
     add_thinking_level_argument,
@@ -120,6 +121,41 @@ def collect_source_messages(entries: List[Any]) -> List[str]:
     return results
 
 
+def build_term_request_spec(mode: DiscoveryMode, max_terms_per_batch: int) -> TaskRequestSpec:
+    task_lines: tuple[str, ...]
+    if mode == "all":
+        task_lines = (
+            "Inspect source UI messages and extract a comprehensive project glossary.",
+            "Focus on product, domain, and UI terms that should be standardized.",
+            "Also extract generic IT terminology as we are updating the glossary.",
+            "Exclude generic words and stop words.",
+            "If vocabulary is provided, use it for consistency but do not limit extraction to only missing terms.",
+        )
+    else:
+        task_lines = (
+            "Inspect source UI messages and find terms that are missing from the provided project vocabulary.",
+            "Focus on product, domain, and UI terms that should be standardized in a glossary.",
+            "Exclude generic words, stop words, and terms already present in the vocabulary.",
+        )
+
+    return TaskRequestSpec(
+        task_intro="Extract glossary term candidates from software localization source messages.",
+        task_lines=task_lines,
+        payload_lines=(
+            "The payload contains source language, target language, discovery mode, optional known vocabulary, per-batch term limit, and a `messages` map.",
+            "Inspect only the provided source UI messages.",
+        ),
+        output_lines=(
+            "Return only valid JSON, with no markdown or commentary.",
+            "Return glossary-ready terms, not full-sentence translations.",
+            "Keep `source_term` concise and canonical.",
+            "Keep source terms and suggested translations lowercase and singular where natural.",
+            f"Provide at most {max_terms_per_batch} terms for this batch.",
+            "If vocabulary is provided, use it for consistency and avoid conflicting alternatives.",
+        ),
+    )
+
+
 def build_terms_prompt(
     messages: Dict[str, str],
     source_lang: str,
@@ -128,49 +164,17 @@ def build_terms_prompt(
     vocabulary: str | None,
     max_terms_per_batch: int,
 ) -> str:
-    if vocabulary:
-        vocab_block = vocabulary
-    else:
-        vocab_block = "(No vocabulary provided)"
-
-    if mode == "all":
-        task_block = """
-Task:
-- Inspect source UI messages and extract a comprehensive project glossary.
-- Focus on product/domain/UI terms that should be standardized.
-- Also extract generic IT terminology as we are updating our glossary.
-- Exclude generic words and stop words.
-- If vocabulary is provided, use it for consistency but do not limit extraction to only missing terms.
-"""
-    else:
-        task_block = """
-Task:
-- Inspect source UI messages and find terms that are missing from the provided project vocabulary.
-- Focus on product/domain/UI terms that should be standardized in a glossary.
-- Exclude generic words, stop words, and terms already present in the vocabulary.
-"""
-    messages_json = json.dumps(messages, ensure_ascii=False, indent=2)
-
-    return f"""
-{task_block}
-
-Output requirements:
-- Return ONLY valid JSON (no markdown).
-- Use this schema exactly: {{"terms": [{{"source_term": "...", "suggested_translation": "...", "reason": "...", "example_source": "..."}}]}}
-- Keep "source_term" concise and canonical.
-- Keep source term and translation lowercase, in singular form.
-- Provide at most {max_terms_per_batch} terms for this batch.
-
-Project context:
-- Source language: {source_lang}
-- Target language: {target_lang}
-
-Known vocabulary:
-{vocab_block}
-
-Messages (id -> source text):
-{messages_json}
-"""
+    return render_text_fallback_prompt(
+        task_spec=build_term_request_spec(mode=mode, max_terms_per_batch=max_terms_per_batch),
+        payload=build_term_request_payload(
+            messages=messages,
+            source_lang=source_lang,
+            target_lang=target_lang,
+            mode=mode,
+            vocabulary=vocabulary,
+            max_terms_per_batch=max_terms_per_batch,
+        ),
+    )
 
 
 def _json_load_maybe(text: str) -> Any:
@@ -269,7 +273,7 @@ async def generate_with_retry(
     provider: Any,
     client: Any,
     model: str,
-    prompt: str,
+    contents: Any,
     batch_label: str,
     max_attempts: int = 5,
     config: Any = None,
@@ -277,7 +281,7 @@ async def generate_with_retry(
     return await provider.generate_with_retry(
         client=client,
         model=model,
-        prompt=prompt,
+        contents=contents,
         batch_label=batch_label,
         max_attempts=max_attempts,
         config=config,
@@ -293,6 +297,50 @@ def build_term_system_instruction(target_lang: str) -> str:
     if script_guidance:
         parts.append(f"- {script_guidance}")
     return "\n\n".join(parts)
+
+
+def build_term_request_payload(
+    messages: Dict[str, str],
+    source_lang: str,
+    target_lang: str,
+    mode: DiscoveryMode,
+    vocabulary: str | None,
+    max_terms_per_batch: int,
+) -> dict[str, Any]:
+    return {
+        "project_type": "software_ui_term_extraction",
+        "source_lang": source_lang,
+        "target_lang": target_lang,
+        "mode": mode,
+        "vocabulary": vocabulary,
+        "max_terms_per_batch": max_terms_per_batch,
+        "messages": messages,
+    }
+
+
+def build_term_request_contents(
+    messages: Dict[str, str],
+    source_lang: str,
+    target_lang: str,
+    mode: DiscoveryMode,
+    vocabulary: str | None,
+    max_terms_per_batch: int,
+    *,
+    provider: Any = DEFAULT_PROVIDER,
+) -> Any:
+    return build_task_request_contents(
+        provider=provider,
+        task_spec=build_term_request_spec(mode=mode, max_terms_per_batch=max_terms_per_batch),
+        function_name="term_extraction_batch",
+        payload=build_term_request_payload(
+            messages=messages,
+            source_lang=source_lang,
+            target_lang=target_lang,
+            mode=mode,
+            vocabulary=vocabulary,
+            max_terms_per_batch=max_terms_per_batch,
+        ),
+    )
 
 
 def save_terms_as_po(
@@ -509,19 +557,20 @@ def run_from_args(args: argparse.Namespace) -> None:
 
         async def process_batch(batch_index: int, batch: List[str]) -> List[TermCandidate]:
             msg_map = {str(i): text for i, text in enumerate(batch)}
-            prompt = build_terms_prompt(
+            contents = build_term_request_contents(
                 messages=msg_map,
                 source_lang=args.source_lang,
                 target_lang=args.target_lang,
                 mode=args.mode,
                 vocabulary=resource_context.vocabulary_text,
                 max_terms_per_batch=args.max_terms_per_batch,
+                provider=provider,
             )
             response = await generate_with_retry(
                 provider=provider,
                 client=client,
                 model=args.model,
-                prompt=prompt,
+                contents=contents,
                 batch_label=f"terms batch {batch_index + 1}/{len(batches)}",
                 max_attempts=args.max_attempts,
                 config=term_config,

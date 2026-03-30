@@ -65,7 +65,7 @@ class CheckTranslationsSmokeTests(unittest.TestCase):
             translation_rules="Use imperative tone.",
         )
 
-        self.assertIn("Approved vocabulary/glossary", prompt)
+        self.assertIn("approved vocabulary/glossary", prompt.lower())
         self.assertIn("Use imperative tone.", prompt)
         self.assertIn('"translation": "Ashu <b>%s</b>"', prompt)
         self.assertIn("Do not flag a terminology issue solely because", prompt)

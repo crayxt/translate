@@ -72,19 +72,19 @@ def resolve_runtime_limits(
 async def generate_content_async(
     client: genai.Client,
     model: str,
-    prompt: str,
+    contents: Any,
     config: genai_types.GenerateContentConfig | None = None,
 ) -> Any:
     if hasattr(client, "aio") and client.aio:
         return await client.aio.models.generate_content(
             model=model,
-            contents=prompt,
+            contents=contents,
             config=config,
         )
     return await asyncio.to_thread(
         client.models.generate_content,
         model=model,
-        contents=prompt,
+        contents=contents,
         config=config,
     )
 
@@ -92,14 +92,14 @@ async def generate_content_async(
 async def generate_with_retry(
     client: genai.Client,
     model: str,
-    prompt: str,
+    contents: Any,
     batch_label: str,
     max_attempts: int = 5,
     config: genai_types.GenerateContentConfig | None = None,
 ) -> Any:
     for attempt in range(1, max_attempts + 1):
         try:
-            return await generate_content_async(client, model, prompt, config=config)
+            return await generate_content_async(client, model, contents, config=config)
         except Exception as exc:
             print(f"\nAPI Error [{batch_label}] (Attempt {attempt}/{max_attempts}): {exc}")
             if attempt == max_attempts:

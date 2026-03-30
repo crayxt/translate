@@ -45,14 +45,14 @@ class ProcessSmokeTests(unittest.TestCase):
             vocabulary="open - ashy",
             translation_rules="Use imperative tone.",
         )
-        self.assertIn("Project translation rules/instructions", prompt)
+        self.assertIn("project translation rules/instructions", prompt.lower())
         self.assertIn("Use imperative tone.", prompt)
         self.assertIn('"context": "menu action"', prompt)
-        self.assertIn("it is mandatory, not advisory", prompt)
-        self.assertIn("run a silent vocabulary audit", prompt)
+        self.assertIn("mandatory, not advisory", prompt.lower())
+        self.assertIn("run a silent vocabulary audit", prompt.lower())
         self.assertIn("Return only the corrected final JSON.", prompt)
         self.assertIn("prefer the source plural form as the basis for translation", prompt)
-        self.assertIn("numeric placeholder like %d or %n", prompt)
+        self.assertIn("numeric placeholder", prompt.lower())
 
     def test_build_thinking_config_maps_cli_value(self):
         config = process.build_thinking_config("high")
