@@ -7,9 +7,10 @@ Toolkit for translating, checking, revising, and extracting glossary terms from 
 - Gemini requests now send structured batch payloads and use structured response schemas. Legacy text-prompt rendering is still kept as a provider fallback path.
 - Added native OpenAI provider support, including structured JSON output support and Flex mode.
 - Added native Anthropic provider support using the Messages API and tool-use for structured task results.
+- Gemini now supports both AI Studio and Vertex API-key mode through the same provider. Vertex API-key mode currently uses the global endpoint only.
 - Translate now supports CLI and GUI multi-file batching for same-format files, so smaller files can share one request batch.
 - `process_gui.py` now exposes a read-only instruction preview so you can inspect the resolved system prompt and language rules for the active task.
-- Provider, API key, thinking level, and Flex mode are now shared GUI controls across task tabs.
+- Provider, API key, thinking level, Flex mode, and Gemini backend settings are now shared GUI controls across task tabs.
 - Shared runtime/bootstrap, CLI argument setup, and batch execution helpers were moved into `core/` to reduce duplication across task entrypoints.
 
 # Setup
@@ -19,11 +20,18 @@ Install dependencies:
 pip install -r requirements.txt
 ```
 
-Obtain a Google API key (for example from AI Studio), then set:
+Obtain a Google API key, then set:
 
 ```
 set GOOGLE_API_KEY=your_google_api_key
 ```
+
+That same variable is used for:
+
+- Gemini AI Studio / Gemini API mode
+- Gemini Vertex API-key mode
+
+Vertex API-key mode currently supports the global endpoint only.
 
 Or use another supported provider:
 
@@ -50,6 +58,13 @@ python translate_cli.py translate your_file.po --provider openai --model gpt-4.1
 python translate_cli.py translate your_file.po --provider anthropic --model claude-sonnet-4-20250514
 ```
 
+Gemini backend examples:
+
+```
+python translate_cli.py translate your_file.po --provider gemini --model gemini-3-flash-preview
+python translate_cli.py translate your_file.po --provider gemini --gemini-backend vertex --google-cloud-location global --model gemini-3-flash-preview
+```
+
 Multi-file translation is supported when all input files use the same format:
 
 ```
@@ -67,6 +82,13 @@ Each task tab shares provider/model/API-key controls and shows the resolved inst
 - system prompt preview
 - rules preview when the task uses language rules
 - target-language-sensitive prompt text where applicable
+
+For Gemini, the shared controls also include:
+
+- backend: `studio` or `vertex`
+- Google Cloud location
+
+Current constraint: Gemini Vertex API-key mode supports `global` only.
 
 Output files are written as `*.ai-translated.po`, `*.ai-translated.ts`, `*.ai-translated.resx`, `*.ai-translated.strings`, or `*.ai-translated.txt`.
 
