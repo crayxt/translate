@@ -80,6 +80,49 @@ class ProcessGuiSmokeTests(unittest.TestCase):
         self.assertIn("Input file is required.", errors)
         self.assertTrue(any("GOOGLE_API_KEY is not set" in item for item in errors))
 
+    def test_validate_config_requires_api_key_for_gemini_vertex(self):
+        input_path = os.path.join(os.getcwd(), "_tmp_gui_vertex.po")
+        try:
+            with open(input_path, "w", encoding="utf-8") as handle:
+                handle.write('msgid "Open"\nmsgstr ""\n')
+
+            config = process_gui.ProcessGuiConfig(
+                input_file=input_path,
+                provider="gemini",
+                gemini_backend="vertex",
+            )
+
+            errors = process_gui.validate_process_gui_config(config, environ={})
+
+            self.assertTrue(any("GOOGLE_API_KEY is not set" in item for item in errors))
+        finally:
+            if os.path.exists(input_path):
+                os.remove(input_path)
+
+    def test_validate_config_rejects_non_global_location_for_gemini_vertex(self):
+        input_path = os.path.join(os.getcwd(), "_tmp_gui_vertex_location.po")
+        try:
+            with open(input_path, "w", encoding="utf-8") as handle:
+                handle.write('msgid "Open"\nmsgstr ""\n')
+
+            config = process_gui.ProcessGuiConfig(
+                input_file=input_path,
+                provider="gemini",
+                gemini_backend="vertex",
+                google_cloud_location="us-central1",
+                api_key="vertex-key",
+            )
+
+            errors = process_gui.validate_process_gui_config(config, environ={})
+
+            self.assertIn(
+                "Gemini Vertex API-key mode currently supports only the global endpoint.",
+                errors,
+            )
+        finally:
+            if os.path.exists(input_path):
+                os.remove(input_path)
+
     def test_validate_config_rejects_bad_optional_values(self):
         input_path = os.path.join(os.getcwd(), "_tmp_gui_input.po")
         try:
@@ -276,6 +319,39 @@ class ProcessGuiSmokeTests(unittest.TestCase):
                 if os.path.exists(path):
                     os.remove(path)
 
+    def test_build_process_command_includes_gemini_vertex_args(self):
+        input_path = os.path.join(os.getcwd(), "_tmp_gui_vertex_args.po")
+        script_path = os.path.join(os.getcwd(), "_tmp_process_script.py")
+        try:
+            with open(input_path, "w", encoding="utf-8") as handle:
+                handle.write('msgid "Open"\nmsgstr ""\n')
+            with open(script_path, "w", encoding="utf-8") as handle:
+                handle.write("print('stub')\n")
+
+            config = process_gui.ProcessGuiConfig(
+                input_file=input_path,
+                provider="gemini",
+                gemini_backend="vertex",
+                google_cloud_location="global",
+                model="gemini-3-flash-preview",
+                api_key="vertex-key",
+            )
+
+            command = process_gui.build_process_command(
+                config,
+                python_executable="python",
+                script_path=script_path,
+            )
+
+            self.assertIn("--gemini-backend", command)
+            self.assertIn("vertex", command)
+            self.assertIn("--google-cloud-location", command)
+            self.assertIn("global", command)
+        finally:
+            for path in (input_path, script_path):
+                if os.path.exists(path):
+                    os.remove(path)
+
     def test_build_process_env_prefers_gui_api_key(self):
         config = process_gui.ProcessGuiConfig(
             input_file="dummy.po",
@@ -289,6 +365,24 @@ class ProcessGuiSmokeTests(unittest.TestCase):
 
         self.assertEqual(env["GOOGLE_API_KEY"], "gui-key")
         self.assertEqual(env["PATH"], "x")
+
+    def test_build_process_env_sets_gemini_vertex_env(self):
+        config = process_gui.ProcessGuiConfig(
+            input_file="dummy.po",
+            provider="gemini",
+            gemini_backend="vertex",
+            google_cloud_location="global",
+            api_key="vertex-key",
+        )
+
+        env = process_gui.build_process_env(
+            config,
+            base_env={"PATH": "x"},
+        )
+
+        self.assertEqual(env["GOOGLE_API_KEY"], "vertex-key")
+        self.assertEqual(env["GOOGLE_GENAI_USE_VERTEXAI"], "true")
+        self.assertEqual(env["GOOGLE_CLOUD_LOCATION"], "global")
 
     def test_build_process_env_uses_openai_api_key_env_for_openai_provider(self):
         config = process_gui.ProcessGuiConfig(

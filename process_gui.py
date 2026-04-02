@@ -35,6 +35,7 @@ DEFAULT_PROVIDER = DEFAULT_PROVIDER_NAME
 SUPPORTED_PROVIDER_CHOICES = tuple(sorted(SUPPORTED_TRANSLATION_PROVIDERS))
 DEFAULT_MODEL = DEFAULT_PROVIDER_SPEC.default_model
 THINKING_LEVEL_CHOICES = ("", "minimal", "low", "medium", "high")
+GEMINI_BACKEND_CHOICES = ("studio", "vertex")
 EXTRACT_MODE_CHOICES = ("missing", "all")
 EXTRACT_OUTPUT_CHOICES = ("po", "json")
 PROGRESS_PERCENT_RE = re.compile(r"Progress:\s*(?P<pct>\d+(?:\.\d+)?)%")
@@ -77,6 +78,8 @@ class ProcessGuiConfig:
     source_lang: str = DEFAULT_SOURCE_LANG
     target_lang: str = DEFAULT_TARGET_LANG
     provider: str = DEFAULT_PROVIDER
+    gemini_backend: str = "studio"
+    google_cloud_location: str = "global"
     model: str = DEFAULT_MODEL
     thinking_level: str = ""
     batch_size: str = ""
@@ -95,6 +98,8 @@ class ExtractGuiConfig:
     source_lang: str = DEFAULT_SOURCE_LANG
     target_lang: str = DEFAULT_TARGET_LANG
     provider: str = DEFAULT_PROVIDER
+    gemini_backend: str = "studio"
+    google_cloud_location: str = "global"
     model: str = DEFAULT_MODEL
     thinking_level: str = ""
     batch_size: str = ""
@@ -115,6 +120,8 @@ class CheckGuiConfig:
     source_lang: str = DEFAULT_SOURCE_LANG
     target_lang: str = DEFAULT_TARGET_LANG
     provider: str = DEFAULT_PROVIDER
+    gemini_backend: str = "studio"
+    google_cloud_location: str = "global"
     model: str = DEFAULT_MODEL
     thinking_level: str = ""
     batch_size: str = ""
@@ -137,6 +144,8 @@ class ReviseGuiConfig:
     source_lang: str = DEFAULT_SOURCE_LANG
     target_lang: str = DEFAULT_TARGET_LANG
     provider: str = DEFAULT_PROVIDER
+    gemini_backend: str = "studio"
+    google_cloud_location: str = "global"
     model: str = DEFAULT_MODEL
     thinking_level: str = ""
     batch_size: str = ""
@@ -341,6 +350,8 @@ def _validate_base_config(
     source_lang: str,
     target_lang: str,
     provider: str,
+    gemini_backend: str,
+    google_cloud_location: str,
     model: str,
     thinking_level: str,
     batch_size: str,
@@ -358,6 +369,8 @@ def _validate_base_config(
     cleaned_source = _clean(source_lang)
     cleaned_target = _clean(target_lang)
     cleaned_provider = _clean(provider)
+    cleaned_gemini_backend = _clean(gemini_backend).lower()
+    cleaned_google_cloud_location = _clean(google_cloud_location)
     cleaned_model = _clean(model)
     cleaned_vocab = _clean(vocab_path)
     cleaned_rules = _clean(rules_path)
@@ -385,6 +398,22 @@ def _validate_base_config(
             get_translation_provider(cleaned_provider)
         except ValueError as exc:
             errors.append(str(exc))
+
+    if cleaned_provider == "gemini":
+        try:
+            _validate_choice(cleaned_gemini_backend, GEMINI_BACKEND_CHOICES, "Gemini backend")
+        except ValueError as exc:
+            errors.append(str(exc))
+        if cleaned_gemini_backend == "vertex" and (
+            cleaned_google_cloud_location and cleaned_google_cloud_location.lower() != "global"
+        ):
+            errors.append(
+                "Gemini Vertex API-key mode currently supports only the global endpoint."
+            )
+        if cleaned_gemini_backend != "vertex" and (
+            cleaned_google_cloud_location and cleaned_google_cloud_location.lower() != "global"
+        ):
+            errors.append("Set Gemini backend to 'vertex' to use a custom Google Cloud location.")
 
     if not cleaned_model:
         errors.append("Model is required.")
@@ -416,7 +445,12 @@ def _validate_base_config(
             provider_spec = None
         if provider_spec is not None:
             api_key_env = provider_spec.api_key_env
-            if api_key_env and not cleaned_api_key and not env.get(api_key_env):
+            if cleaned_provider == "gemini" and cleaned_gemini_backend == "vertex":
+                if api_key_env and not cleaned_api_key and not env.get(api_key_env):
+                    errors.append(
+                        f"{api_key_env} is not set. Provide an API key in the GUI or the environment."
+                    )
+            elif api_key_env and not cleaned_api_key and not env.get(api_key_env):
                 errors.append(
                     f"{api_key_env} is not set. Provide an API key in the GUI or the environment."
                 )
@@ -435,6 +469,8 @@ def validate_process_gui_config(
         source_lang=config.source_lang,
         target_lang=config.target_lang,
         provider=config.provider,
+        gemini_backend=config.gemini_backend,
+        google_cloud_location=config.google_cloud_location,
         model=config.model,
         thinking_level=config.thinking_level,
         batch_size=config.batch_size,
@@ -460,6 +496,8 @@ def validate_extract_gui_config(
         source_lang=config.source_lang,
         target_lang=config.target_lang,
         provider=config.provider,
+        gemini_backend=config.gemini_backend,
+        google_cloud_location=config.google_cloud_location,
         model=config.model,
         thinking_level=config.thinking_level,
         batch_size=config.batch_size,
@@ -500,6 +538,8 @@ def validate_check_gui_config(
         source_lang=config.source_lang,
         target_lang=config.target_lang,
         provider=config.provider,
+        gemini_backend=config.gemini_backend,
+        google_cloud_location=config.google_cloud_location,
         model=config.model,
         thinking_level=config.thinking_level,
         batch_size=config.batch_size,
@@ -547,6 +587,8 @@ def validate_revise_gui_config(
         source_lang=config.source_lang,
         target_lang=config.target_lang,
         provider=config.provider,
+        gemini_backend=config.gemini_backend,
+        google_cloud_location=config.google_cloud_location,
         model=config.model,
         thinking_level=config.thinking_level,
         batch_size=config.batch_size,
@@ -595,6 +637,8 @@ def _append_common_cli_args(
     source_lang: str,
     target_lang: str,
     provider: str,
+    gemini_backend: str,
+    google_cloud_location: str,
     model: str,
     thinking_level: str,
     flex_mode: bool,
@@ -624,6 +668,13 @@ def _append_common_cli_args(
         provider_spec = get_translation_provider(provider_name)
     except ValueError:
         provider_spec = None
+    if provider_name == "gemini":
+        backend_value = _clean(gemini_backend).lower()
+        location_value = _clean(google_cloud_location)
+        if backend_value == "vertex" or (location_value and location_value.lower() != "global"):
+            command.extend(["--gemini-backend", "vertex"])
+            if location_value:
+                command.extend(["--google-cloud-location", location_value])
     if flex_mode and provider_spec is not None and getattr(provider_spec, "supports_flex_mode", False):
         command.append("--flex")
 
@@ -669,6 +720,8 @@ def build_process_command(
         source_lang=config.source_lang,
         target_lang=config.target_lang,
         provider=config.provider,
+        gemini_backend=config.gemini_backend,
+        google_cloud_location=config.google_cloud_location,
         model=config.model,
         thinking_level=config.thinking_level,
         flex_mode=config.flex_mode,
@@ -716,6 +769,8 @@ def build_extract_command(
         source_lang=config.source_lang,
         target_lang=config.target_lang,
         provider=config.provider,
+        gemini_backend=config.gemini_backend,
+        google_cloud_location=config.google_cloud_location,
         model=config.model,
         thinking_level=config.thinking_level,
         flex_mode=config.flex_mode,
@@ -771,6 +826,8 @@ def build_check_command(
         source_lang=config.source_lang,
         target_lang=config.target_lang,
         provider=config.provider,
+        gemini_backend=config.gemini_backend,
+        google_cloud_location=config.google_cloud_location,
         model=config.model,
         thinking_level=config.thinking_level,
         flex_mode=config.flex_mode,
@@ -838,6 +895,8 @@ def build_revise_command(
         source_lang=config.source_lang,
         target_lang=config.target_lang,
         provider=config.provider,
+        gemini_backend=config.gemini_backend,
+        google_cloud_location=config.google_cloud_location,
         model=config.model,
         thinking_level=config.thinking_level,
         flex_mode=config.flex_mode,
@@ -888,6 +947,8 @@ def build_revise_command(
 def build_script_env(
     api_key: str,
     provider: str = DEFAULT_PROVIDER,
+    gemini_backend: str = "studio",
+    google_cloud_location: str = "global",
     base_env: dict[str, str] | None = None,
 ) -> dict[str, str]:
     env = dict(base_env if base_env is not None else os.environ)
@@ -896,6 +957,13 @@ def build_script_env(
     api_key_env = provider_spec.api_key_env
     if cleaned_api_key and api_key_env:
         env[api_key_env] = cleaned_api_key
+    if _clean(provider).lower() == "gemini":
+        backend_value = _clean(gemini_backend).lower() or "studio"
+        env["GOOGLE_GENAI_USE_VERTEXAI"] = "true" if backend_value == "vertex" else "false"
+        if backend_value == "vertex":
+            location_value = _clean(google_cloud_location)
+            if location_value:
+                env["GOOGLE_CLOUD_LOCATION"] = location_value
     return env
 
 
@@ -903,7 +971,13 @@ def build_process_env(
     config: ProcessGuiConfig,
     base_env: dict[str, str] | None = None,
 ) -> dict[str, str]:
-    return build_script_env(config.api_key, provider=config.provider, base_env=base_env)
+    return build_script_env(
+        config.api_key,
+        provider=config.provider,
+        gemini_backend=config.gemini_backend,
+        google_cloud_location=config.google_cloud_location,
+        base_env=base_env,
+    )
 
 
 class BaseToolTab(ttk.Frame):
@@ -935,6 +1009,8 @@ class BaseToolTab(ttk.Frame):
         self._auto_model = DEFAULT_MODEL
         self.api_key_var = app.api_key_var
         self.provider_var = app.provider_var
+        self.gemini_backend_var = app.gemini_backend_var
+        self.google_cloud_location_var = app.google_cloud_location_var
         self.thinking_level_var = app.thinking_level_var
         self.flex_mode_var = app.flex_mode_var
 
@@ -955,6 +1031,8 @@ class BaseToolTab(ttk.Frame):
         self.system_prompt_text: ScrolledText | None = None
         self.flex_mode_button: ttk.Checkbutton | None = None
         self.thinking_level_combo: ttk.Combobox | None = None
+        self.gemini_backend_combo: ttk.Combobox | None = None
+        self.google_cloud_location_entry: ttk.Entry | None = None
 
         self.columnconfigure(0, weight=1)
         self.rowconfigure(0, weight=1)
@@ -969,6 +1047,7 @@ class BaseToolTab(ttk.Frame):
 
         self.api_key_var.trace_add("write", self._on_api_key_changed)
         self.provider_var.trace_add("write", self._on_provider_changed)
+        self.gemini_backend_var.trace_add("write", self._on_api_key_changed)
         self.target_lang_var.trace_add("write", self._on_target_lang_changed)
         self.rules_path_var.trace_add("write", self._on_rules_path_changed)
 
@@ -1008,6 +1087,21 @@ class BaseToolTab(ttk.Frame):
             variable=self.provider_var,
             values=SUPPORTED_PROVIDER_CHOICES,
         )
+        row += 1
+        ttk.Label(form, text="Gemini backend").grid(row=row, column=0, sticky="w", pady=4)
+        self.gemini_backend_combo = ttk.Combobox(
+            form,
+            textvariable=self.gemini_backend_var,
+            values=GEMINI_BACKEND_CHOICES,
+        )
+        self.gemini_backend_combo.grid(row=row, column=1, sticky="ew", pady=4)
+        row += 1
+        ttk.Label(form, text="GCP location").grid(row=row, column=0, sticky="w", pady=4)
+        self.google_cloud_location_entry = ttk.Entry(
+            form,
+            textvariable=self.google_cloud_location_var,
+        )
+        self.google_cloud_location_entry.grid(row=row, column=1, sticky="ew", pady=4)
         row += 1
         self._add_entry_row(form, row=row, label="Model", variable=self.model_var)
         row += 1
@@ -1259,6 +1353,18 @@ class BaseToolTab(ttk.Frame):
             self.api_status_var.set("API key source: not required")
             return
 
+        if provider_name == "gemini" and _clean(self.gemini_backend_var.get()).lower() == "vertex":
+            if _clean(self.api_key_var.get()):
+                self.api_status_var.set(f"API key source: GUI field ({api_key_env})")
+                return
+
+            if os.environ.get(api_key_env):
+                self.api_status_var.set(f"API key source: {api_key_env} environment variable")
+                return
+
+            self.api_status_var.set(f"API key source: missing ({api_key_env})")
+            return
+
         if _clean(self.api_key_var.get()):
             self.api_status_var.set(f"API key source: GUI field ({api_key_env})")
             return
@@ -1270,7 +1376,11 @@ class BaseToolTab(ttk.Frame):
         self.api_status_var.set(f"API key source: missing ({api_key_env})")
 
     def _refresh_provider_specific_controls(self) -> None:
-        if self.flex_mode_button is None and self.thinking_level_combo is None:
+        if (
+            self.flex_mode_button is None
+            and self.thinking_level_combo is None
+            and self.gemini_backend_combo is None
+        ):
             return
 
         provider_name = _clean(self.provider_var.get()) or DEFAULT_PROVIDER
@@ -1279,9 +1389,11 @@ class BaseToolTab(ttk.Frame):
         except ValueError:
             flex_state = "disabled"
             thinking_state = "disabled"
+            gemini_state = "disabled"
         else:
             flex_state = "normal" if getattr(provider_spec, "supports_flex_mode", False) else "disabled"
             thinking_state = "normal" if getattr(provider_spec, "supports_thinking", False) else "disabled"
+            gemini_state = "normal" if provider_name == "gemini" else "disabled"
         if self.flex_mode_button is not None:
             self.flex_mode_button.configure(state=flex_state)
         if flex_state == "disabled":
@@ -1290,6 +1402,12 @@ class BaseToolTab(ttk.Frame):
             self.thinking_level_combo.configure(state=thinking_state)
         if thinking_state == "disabled":
             self.thinking_level_var.set("")
+        for widget in (
+            self.gemini_backend_combo,
+            self.google_cloud_location_entry,
+        ):
+            if widget is not None:
+                widget.configure(state=gemini_state)
 
     def _apply_default_model(self, force: bool = False) -> None:
         provider_name = _clean(self.provider_var.get()) or DEFAULT_PROVIDER
@@ -1394,7 +1512,12 @@ class BaseToolTab(ttk.Frame):
         self.log_text.configure(state="disabled")
 
     def build_env(self) -> dict[str, str]:
-        return build_script_env(self.api_key_var.get(), provider=self.provider_var.get())
+        return build_script_env(
+            self.api_key_var.get(),
+            provider=self.provider_var.get(),
+            gemini_backend=self.gemini_backend_var.get(),
+            google_cloud_location=self.google_cloud_location_var.get(),
+        )
 
     def build_command(self) -> list[str]:
         raise NotImplementedError
@@ -1452,6 +1575,8 @@ class ProcessToolTab(BaseToolTab):
             source_lang=self.source_lang_var.get(),
             target_lang=self.target_lang_var.get(),
             provider=self.provider_var.get(),
+            gemini_backend=self.gemini_backend_var.get(),
+            google_cloud_location=self.google_cloud_location_var.get(),
             model=self.model_var.get(),
             thinking_level=self.thinking_level_var.get(),
             batch_size=self.batch_size_var.get(),
@@ -1539,6 +1664,8 @@ class ExtractToolTab(BaseToolTab):
             source_lang=self.source_lang_var.get(),
             target_lang=self.target_lang_var.get(),
             provider=self.provider_var.get(),
+            gemini_backend=self.gemini_backend_var.get(),
+            google_cloud_location=self.google_cloud_location_var.get(),
             model=self.model_var.get(),
             thinking_level=self.thinking_level_var.get(),
             batch_size=self.batch_size_var.get(),
@@ -1616,6 +1743,8 @@ class CheckToolTab(BaseToolTab):
             source_lang=self.source_lang_var.get(),
             target_lang=self.target_lang_var.get(),
             provider=self.provider_var.get(),
+            gemini_backend=self.gemini_backend_var.get(),
+            google_cloud_location=self.google_cloud_location_var.get(),
             model=self.model_var.get(),
             thinking_level=self.thinking_level_var.get(),
             batch_size=self.batch_size_var.get(),
@@ -1741,6 +1870,8 @@ class ReviseToolTab(BaseToolTab):
             source_lang=self.source_lang_var.get(),
             target_lang=self.target_lang_var.get(),
             provider=self.provider_var.get(),
+            gemini_backend=self.gemini_backend_var.get(),
+            google_cloud_location=self.google_cloud_location_var.get(),
             model=self.model_var.get(),
             thinking_level=self.thinking_level_var.get(),
             batch_size=self.batch_size_var.get(),
@@ -1769,6 +1900,8 @@ class ProcessGuiApp(ttk.Frame):
         self.resource_root = build_resource_root()
         self.api_key_var = tk.StringVar()
         self.provider_var = tk.StringVar(value=DEFAULT_PROVIDER)
+        self.gemini_backend_var = tk.StringVar(value="studio")
+        self.google_cloud_location_var = tk.StringVar(value="global")
         self.thinking_level_var = tk.StringVar()
         self.flex_mode_var = tk.BooleanVar(value=False)
         self.queue: queue.Queue[tuple[str, str, object]] = queue.Queue()

@@ -14,6 +14,9 @@ class GeminiTranslationProvider:
     name = "gemini"
     default_model = "gemini-3-flash-preview"
     api_key_env = "GOOGLE_API_KEY"
+    vertex_flag_env = "GOOGLE_GENAI_USE_VERTEXAI"
+    vertex_location_env = "GOOGLE_CLOUD_LOCATION"
+    default_vertex_location = "global"
     supports_structured_json = True
     supports_structured_input = True
     supports_thinking = True
@@ -66,13 +69,47 @@ class GeminiTranslationProvider:
 
         return genai_types.Schema(**schema_kwargs)
 
+    def _use_vertex_from_env(self) -> bool:
+        raw_value = str(os.getenv(self.vertex_flag_env, "")).strip().lower()
+        return raw_value in {"1", "true", "yes", "on"}
+
+    def _build_http_options(self, *, use_vertex: bool, flex_mode: bool) -> genai_types.HttpOptions | None:
+        options_kwargs: Dict[str, Any] = {}
+        if use_vertex:
+            options_kwargs["api_version"] = "v1"
+        if flex_mode:
+            options_kwargs["timeout"] = self.flex_timeout_seconds
+        if not options_kwargs:
+            return None
+        return genai_types.HttpOptions(**options_kwargs)
+
     def create_client_from_env(self, *, flex_mode: bool = False) -> genai.Client:
+        use_vertex = self._use_vertex_from_env()
+        http_options = self._build_http_options(use_vertex=use_vertex, flex_mode=flex_mode)
+
+        if use_vertex:
+            api_key = str(os.getenv(self.api_key_env, "")).strip()
+            location = (
+                str(os.getenv(self.vertex_location_env, "")).strip()
+                or self.default_vertex_location
+            )
+            if not api_key:
+                sys.exit(f"ERROR: {self.api_key_env} environment variable is not set")
+            if location.lower() != self.default_vertex_location:
+                sys.exit(
+                    "ERROR: Gemini Vertex API-key mode currently supports only the global endpoint"
+                )
+            client_kwargs: Dict[str, Any] = {
+                "vertexai": True,
+                "api_key": api_key,
+            }
+            if http_options is not None:
+                client_kwargs["http_options"] = http_options
+            return genai.Client(**client_kwargs)
+
         api_key = os.getenv(self.api_key_env)
         if not api_key:
             sys.exit(f"ERROR: {self.api_key_env} environment variable is not set")
-        http_options = None
-        if flex_mode:
-            http_options = genai_types.HttpOptions(timeout=self.flex_timeout_seconds)
         return genai.Client(api_key=api_key, http_options=http_options)
 
     def build_request_contents(

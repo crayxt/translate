@@ -3,6 +3,7 @@ import unittest
 from unittest.mock import patch
 
 from core.task_cli import (
+    apply_provider_environment_from_args,
     add_language_arguments,
     add_max_attempts_argument,
     add_probe_argument,
@@ -44,6 +45,10 @@ class TaskCliSmokeTests(unittest.TestCase):
                 "kk",
                 "--provider",
                 "gemini",
+                "--gemini-backend",
+                "vertex",
+                "--google-cloud-location",
+                "global",
                 "--model",
                 "gemini-2.5-flash",
                 "--flex",
@@ -67,6 +72,8 @@ class TaskCliSmokeTests(unittest.TestCase):
         self.assertEqual(args.source_lang, "ru")
         self.assertEqual(args.target_lang, "kk")
         self.assertEqual(args.provider, "gemini")
+        self.assertEqual(args.gemini_backend, "vertex")
+        self.assertEqual(args.google_cloud_location, "global")
         self.assertEqual(args.model, "gemini-2.5-flash")
         self.assertTrue(args.flex_mode)
         self.assertEqual(args.batch_size, 10)
@@ -103,6 +110,19 @@ class TaskCliSmokeTests(unittest.TestCase):
     def test_resolve_provider_model_uses_selected_provider_default(self):
         model = resolve_provider_model("openai", None)
         self.assertEqual(model, "gpt-5-mini")
+
+    def test_apply_provider_environment_from_args_sets_gemini_vertex_env(self):
+        args = argparse.Namespace(
+            provider="gemini",
+            gemini_backend="vertex",
+            google_cloud_location="global",
+        )
+        env = {}
+
+        apply_provider_environment_from_args(args, environ=env)
+
+        self.assertEqual(env["GOOGLE_GENAI_USE_VERTEXAI"], "true")
+        self.assertEqual(env["GOOGLE_CLOUD_LOCATION"], "global")
 
 
 if __name__ == "__main__":

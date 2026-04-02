@@ -1,10 +1,14 @@
 from __future__ import annotations
 
 import argparse
+import os
 from typing import Callable
 
 from core.providers import get_translation_provider
 from core.runtime import add_thinking_level_argument
+
+
+GEMINI_BACKEND_CHOICES = ("studio", "vertex")
 
 
 def add_language_arguments(
@@ -44,6 +48,17 @@ def add_provider_arguments(
             action="store_true",
             help="Use provider flex mode when supported",
         )
+    parser.add_argument(
+        "--gemini-backend",
+        choices=GEMINI_BACKEND_CHOICES,
+        default=None,
+        help="Gemini backend override: studio or vertex",
+    )
+    parser.add_argument(
+        "--google-cloud-location",
+        default=None,
+        help="Google Cloud location for Gemini Vertex AI mode (default: global)",
+    )
 
 
 def resolve_provider_model(
@@ -120,14 +135,36 @@ def run_task_main(
 ) -> None:
     parser = build_task_parser(configure_parser_fn)
     args = parser.parse_args(argv)
+    apply_provider_environment_from_args(args)
     run_from_args_fn(args)
 
 
+def apply_provider_environment_from_args(
+    args: argparse.Namespace,
+    environ: dict[str, str] | None = None,
+) -> None:
+    env = environ if environ is not None else os.environ
+    provider_name = str(getattr(args, "provider", "") or "").strip().lower()
+    if provider_name != "gemini":
+        return
+
+    backend = str(getattr(args, "gemini_backend", "") or "").strip().lower()
+    if backend:
+        env["GOOGLE_GENAI_USE_VERTEXAI"] = "true" if backend == "vertex" else "false"
+
+    if backend == "vertex":
+        location = str(getattr(args, "google_cloud_location", "") or "").strip()
+        if location:
+            env["GOOGLE_CLOUD_LOCATION"] = location
+
+
 __all__ = [
+    "GEMINI_BACKEND_CHOICES",
     "add_language_arguments",
     "add_max_attempts_argument",
     "add_probe_argument",
     "add_provider_arguments",
+    "apply_provider_environment_from_args",
     "add_rules_arguments",
     "add_runtime_limit_arguments",
     "add_vocabulary_argument",
