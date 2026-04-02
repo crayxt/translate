@@ -1,11 +1,15 @@
 # Translation Toolkit
-Toolkit for translating, checking, revising, and extracting glossary terms from PO/TS/RESX/STRINGS/TXT localization files using Google Gemini API.
+Toolkit for translating, checking, revising, and extracting glossary terms from PO/TS/RESX/STRINGS/TXT localization files using Gemini, OpenAI, or Anthropic APIs.
 
 # Recent Updates
 
 - Translation, check, revise, and extract now use real provider-level system instructions instead of embedding faux "system" text inside the normal request prompt.
 - Gemini requests now send structured batch payloads and use structured response schemas. Legacy text-prompt rendering is still kept as a provider fallback path.
+- Added native OpenAI provider support, including structured JSON output support and Flex mode.
+- Added native Anthropic provider support using the Messages API and tool-use for structured task results.
+- Translate now supports CLI and GUI multi-file batching for same-format files, so smaller files can share one request batch.
 - `process_gui.py` now exposes a read-only instruction preview so you can inspect the resolved system prompt and language rules for the active task.
+- Provider, API key, thinking level, and Flex mode are now shared GUI controls across task tabs.
 - Shared runtime/bootstrap, CLI argument setup, and batch execution helpers were moved into `core/` to reduce duplication across task entrypoints.
 
 # Setup
@@ -21,6 +25,13 @@ Obtain a Google API key (for example from AI Studio), then set:
 set GOOGLE_API_KEY=your_google_api_key
 ```
 
+Or use another supported provider:
+
+```
+set OPENAI_API_KEY=your_openai_api_key
+set ANTHROPIC_API_KEY=your_anthropic_api_key
+```
+
 # Run
 
 ```
@@ -31,13 +42,27 @@ python translate_cli.py translate your_file.strings
 python translate_cli.py translate your_file.txt
 ```
 
+Provider examples:
+
+```
+python translate_cli.py translate your_file.po --provider gemini --model gemini-3-flash-preview
+python translate_cli.py translate your_file.po --provider openai --model gpt-4.1-mini
+python translate_cli.py translate your_file.po --provider anthropic --model claude-sonnet-4-20250514
+```
+
+Multi-file translation is supported when all input files use the same format:
+
+```
+python translate_cli.py translate a.po b.po c.po
+```
+
 The Tk desktop UI is also available:
 
 ```
 python process_gui.py
 ```
 
-Each task tab shows the resolved instruction inputs for the current run:
+Each task tab shares provider/model/API-key controls and shows the resolved instruction inputs for the current run:
 
 - system prompt preview
 - rules preview when the task uses language rules
@@ -51,6 +76,12 @@ Set target language (default is `kk`):
 python translate_cli.py translate your_file.po --target-lang fr
 python translate_cli.py translate your_file.po --target-lang fr_CA
 python translate_cli.py translate your_file.po --thinking-level medium
+```
+
+Use Flex mode when the selected provider supports it:
+
+```
+python translate_cli.py translate your_file.po --provider openai --model gpt-4.1-mini --flex
 ```
 
 Force re-translation of all translatable messages:
@@ -286,7 +317,13 @@ The current request flow is split into three layers:
 - task payload: structured batch data (messages, vocabulary, rules, target language, and task-specific fields)
 - response schema: structured parsing of model output back into Python objects
 
-For Gemini, the toolkit sends structured request contents and uses schema-backed structured responses. The older plain-text prompt rendering is still present as a compatibility path for providers that do not support structured request contents.
+Provider transport details:
+
+- Gemini: structured request contents plus schema-backed structured responses
+- OpenAI: text fallback input plus Structured Outputs on the response side
+- Anthropic: native Messages API input plus tool-use for structured task results
+
+The older plain-text prompt rendering is still present as a compatibility path for providers that do not support structured request contents.
 
 Language rules and vocabulary stay outside the system prompt:
 
