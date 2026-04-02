@@ -954,6 +954,7 @@ class BaseToolTab(ttk.Frame):
         self.rules_text: ScrolledText | None = None
         self.system_prompt_text: ScrolledText | None = None
         self.flex_mode_button: ttk.Checkbutton | None = None
+        self.thinking_level_combo: ttk.Combobox | None = None
 
         self.columnconfigure(0, weight=1)
         self.rowconfigure(0, weight=1)
@@ -1010,13 +1011,13 @@ class BaseToolTab(ttk.Frame):
         row += 1
         self._add_entry_row(form, row=row, label="Model", variable=self.model_var)
         row += 1
-        self._add_combo_row(
+        ttk.Label(form, text="Thinking level").grid(row=row, column=0, sticky="w", pady=4)
+        self.thinking_level_combo = ttk.Combobox(
             form,
-            row=row,
-            label="Thinking level",
-            variable=self.thinking_level_var,
+            textvariable=self.thinking_level_var,
             values=THINKING_LEVEL_CHOICES,
         )
+        self.thinking_level_combo.grid(row=row, column=1, sticky="ew", pady=4)
         row += 1
         self.flex_mode_button = ttk.Checkbutton(
             form,
@@ -1269,19 +1270,26 @@ class BaseToolTab(ttk.Frame):
         self.api_status_var.set(f"API key source: missing ({api_key_env})")
 
     def _refresh_provider_specific_controls(self) -> None:
-        if self.flex_mode_button is None:
+        if self.flex_mode_button is None and self.thinking_level_combo is None:
             return
 
         provider_name = _clean(self.provider_var.get()) or DEFAULT_PROVIDER
         try:
             provider_spec = get_translation_provider(provider_name)
         except ValueError:
-            state = "disabled"
+            flex_state = "disabled"
+            thinking_state = "disabled"
         else:
-            state = "normal" if getattr(provider_spec, "supports_flex_mode", False) else "disabled"
-        self.flex_mode_button.configure(state=state)
-        if state == "disabled":
+            flex_state = "normal" if getattr(provider_spec, "supports_flex_mode", False) else "disabled"
+            thinking_state = "normal" if getattr(provider_spec, "supports_thinking", False) else "disabled"
+        if self.flex_mode_button is not None:
+            self.flex_mode_button.configure(state=flex_state)
+        if flex_state == "disabled":
             self.flex_mode_var.set(False)
+        if self.thinking_level_combo is not None:
+            self.thinking_level_combo.configure(state=thinking_state)
+        if thinking_state == "disabled":
+            self.thinking_level_var.set("")
 
     def _apply_default_model(self, force: bool = False) -> None:
         provider_name = _clean(self.provider_var.get()) or DEFAULT_PROVIDER

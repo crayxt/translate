@@ -1,3 +1,4 @@
+anthropic
 google-genai>=1.0.0
 openai>=2.30.0
 polib>=1.2.0

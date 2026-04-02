@@ -1,5 +1,6 @@
 import unittest
 
+from core.providers.anthropic import AnthropicTranslationProvider
 from core.providers.gemini import GeminiTranslationProvider
 from core.providers.openai import OpenAITranslationProvider
 from core.request_contents import TaskRequestSpec, build_task_request_contents
@@ -55,6 +56,20 @@ class RequestContentsSmokeTests(unittest.TestCase):
         )
 
         self.assertEqual(contents, "plain prompt")
+
+    def test_anthropic_provider_build_request_contents_uses_message_blocks(self):
+        provider = AnthropicTranslationProvider()
+
+        contents = provider.build_request_contents(
+            task_instruction="Translate items",
+            function_name="sample_batch",
+            payload={"items": [{"id": "0"}]},
+            fallback_prompt="plain prompt",
+        )
+
+        self.assertEqual(contents[0]["role"], "user")
+        self.assertIn("response_payload", contents[0]["content"][0]["text"])
+        self.assertIn('"id": "0"', contents[0]["content"][1]["text"])
 
     def test_translate_request_contents_use_structured_batch_payload(self):
         contents = translate.build_translation_request_contents(
