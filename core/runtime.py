@@ -19,7 +19,7 @@ def add_thinking_level_argument(parser: argparse.ArgumentParser) -> None:
         "--thinking-level",
         choices=THINKING_LEVEL_CHOICES,
         default=None,
-        help="Gemini thinking level (default: provider/model default)",
+        help="Provider reasoning/thinking level (default: provider/model default)",
     )
 
 

@@ -1,6 +1,7 @@
 import unittest
 
 from core.providers.gemini import GeminiTranslationProvider
+from core.providers.openai import OpenAITranslationProvider
 from core.request_contents import TaskRequestSpec, build_task_request_contents
 from tasks import check_translations
 from tasks import extract_terms
@@ -42,6 +43,18 @@ class RequestContentsSmokeTests(unittest.TestCase):
         self.assertEqual(contents[0].parts[0].text, "Translate items")
         self.assertEqual(contents[0].parts[1].function_response.name, "sample_batch")
         self.assertEqual(contents[0].parts[1].function_response.response["items"][0]["id"], "0")
+
+    def test_openai_provider_build_request_contents_uses_text_fallback(self):
+        provider = OpenAITranslationProvider()
+
+        contents = provider.build_request_contents(
+            task_instruction="Translate items",
+            function_name="sample_batch",
+            payload={"items": [{"id": "0"}]},
+            fallback_prompt="plain prompt",
+        )
+
+        self.assertEqual(contents, "plain prompt")
 
     def test_translate_request_contents_use_structured_batch_payload(self):
         contents = translate.build_translation_request_contents(

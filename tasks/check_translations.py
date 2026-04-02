@@ -32,6 +32,7 @@ from core.task_cli import (
     add_runtime_limit_arguments,
     add_vocabulary_argument,
     build_task_parser,
+    resolve_provider_model,
     run_task_main,
 )
 from core.resources import read_optional_text_file, read_optional_vocabulary_file, resolve_resource_path
@@ -424,6 +425,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def run_from_args(args: argparse.Namespace) -> None:
+    model_name = resolve_provider_model(args.provider, args.model)
 
     if args.max_attempts <= 0:
         sys.exit("ERROR: --max-attempts must be greater than 0")
@@ -484,7 +486,7 @@ def run_from_args(args: argparse.Namespace) -> None:
 
     print_startup_configuration(
         ("Provider", provider.name),
-        ("Model", args.model),
+        ("Model", model_name),
         ("Thinking level", args.thinking_level or "provider default"),
         ("Parallel requests", parallel_requests),
         ("Batch size", batch_size),
@@ -554,7 +556,7 @@ def run_from_args(args: argparse.Namespace) -> None:
             parallel_requests=parallel_requests,
             provider=provider,
             client=client,
-            model=args.model,
+            model=model_name,
             config=config,
             max_attempts=args.max_attempts,
             build_contents=build_contents,
@@ -575,7 +577,7 @@ def run_from_args(args: argparse.Namespace) -> None:
         "source_file": args.file,
         "output_file": out_path,
         "provider": provider.name,
-        "model": args.model,
+        "model": model_name,
         "source_lang": args.source_lang,
         "target_lang": args.target_lang,
         "vocabulary_source": resource_context.vocabulary_source,

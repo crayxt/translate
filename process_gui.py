@@ -915,14 +915,15 @@ class BaseToolTab(ttk.Frame):
         self.resource_root = app.resource_root
         self._auto_vocab_path = ""
         self._auto_rules_path = ""
+        self._auto_model = DEFAULT_MODEL
         self.api_key_var = app.api_key_var
+        self.provider_var = app.provider_var
+        self.thinking_level_var = app.thinking_level_var
 
         self.input_file_var = tk.StringVar()
         self.source_lang_var = tk.StringVar(value=DEFAULT_SOURCE_LANG)
         self.target_lang_var = tk.StringVar(value=DEFAULT_TARGET_LANG)
-        self.provider_var = tk.StringVar(value=DEFAULT_PROVIDER)
         self.model_var = tk.StringVar(value=DEFAULT_MODEL)
-        self.thinking_level_var = tk.StringVar()
         self.batch_size_var = tk.StringVar()
         self.parallel_requests_var = tk.StringVar()
         self.vocab_path_var = tk.StringVar()
@@ -939,6 +940,7 @@ class BaseToolTab(ttk.Frame):
         self.rowconfigure(0, weight=1)
 
         self._build_widgets()
+        self._apply_default_model(force=True)
         self._refresh_api_status()
         self._apply_default_resources(force=True)
         self._load_rules_preview()
@@ -1205,6 +1207,7 @@ class BaseToolTab(ttk.Frame):
         self._refresh_api_status()
 
     def _on_provider_changed(self, *_args: object) -> None:
+        self._apply_default_model()
         self._refresh_api_status()
 
     def _on_target_lang_changed(self, *_args: object) -> None:
@@ -1236,6 +1239,24 @@ class BaseToolTab(ttk.Frame):
             return
 
         self.api_status_var.set(f"API key source: missing ({api_key_env})")
+
+    def _apply_default_model(self, force: bool = False) -> None:
+        provider_name = _clean(self.provider_var.get()) or DEFAULT_PROVIDER
+        try:
+            provider_spec = get_translation_provider(provider_name)
+        except ValueError:
+            new_default_model = DEFAULT_MODEL
+        else:
+            new_default_model = _clean(provider_spec.default_model) or DEFAULT_MODEL
+
+        model_value, self._auto_model = choose_resource_field_value(
+            current_value=self.model_var.get(),
+            previous_auto_value=self._auto_model,
+            new_auto_value=new_default_model,
+            force=force,
+        )
+        if model_value != self.model_var.get():
+            self.model_var.set(model_value)
 
     def _apply_default_resources(self, force: bool = False) -> None:
         vocab_path, rules_path = detect_default_resource_paths(
@@ -1692,6 +1713,8 @@ class ProcessGuiApp(ttk.Frame):
         self.master = master
         self.resource_root = build_resource_root()
         self.api_key_var = tk.StringVar()
+        self.provider_var = tk.StringVar(value=DEFAULT_PROVIDER)
+        self.thinking_level_var = tk.StringVar()
         self.queue: queue.Queue[tuple[str, str, object]] = queue.Queue()
         self.process: subprocess.Popen[str] | None = None
         self.active_tool_key: str | None = None

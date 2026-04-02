@@ -70,6 +70,7 @@ from core.task_cli import (
     add_runtime_limit_arguments,
     add_vocabulary_argument,
     build_task_parser,
+    resolve_provider_model,
     run_task_main,
 )
 from core.runtime import (
@@ -365,7 +366,7 @@ def config_from_args(args: argparse.Namespace) -> TranslationRunConfig:
         source_lang=args.source_lang,
         target_lang=args.target_lang,
         provider=args.provider,
-        model=args.model,
+        model=resolve_provider_model(args.provider, args.model),
         thinking_level=args.thinking_level,
         batch_size=args.batch_size,
         parallel_requests=args.parallel_requests,

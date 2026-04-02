@@ -11,6 +11,7 @@ from core.task_cli import (
     add_runtime_limit_arguments,
     add_vocabulary_argument,
     build_task_parser,
+    resolve_provider_model,
     run_task_main,
 )
 
@@ -96,6 +97,10 @@ class TaskCliSmokeTests(unittest.TestCase):
             )
 
         self.assertEqual(captured, ["sample.po"])
+
+    def test_resolve_provider_model_uses_selected_provider_default(self):
+        model = resolve_provider_model("openai", None)
+        self.assertEqual(model, "gpt-5-mini")
 
 
 if __name__ == "__main__":

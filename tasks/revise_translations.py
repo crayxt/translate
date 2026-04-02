@@ -40,6 +40,7 @@ from core.task_cli import (
     add_runtime_limit_arguments,
     add_vocabulary_argument,
     build_task_parser,
+    resolve_provider_model,
     run_task_main,
 )
 from core.review_flow import (
@@ -763,6 +764,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 def run_from_args(args: argparse.Namespace) -> None:
     configure_stdio()
+    model_name = resolve_provider_model(args.provider, args.model)
 
     if args.out and args.in_place:
         sys.exit("ERROR: --out and --in-place cannot be used together")
@@ -812,7 +814,7 @@ def run_from_args(args: argparse.Namespace) -> None:
 
     print_startup_configuration(
         ("Provider", provider.name),
-        ("Model", args.model),
+        ("Model", model_name),
         ("Thinking level", args.thinking_level or "provider default"),
         ("Parallel requests", parallel_requests),
         ("Batch size", batch_size),
@@ -895,7 +897,7 @@ def run_from_args(args: argparse.Namespace) -> None:
             parallel_requests=parallel_requests,
             provider=provider,
             client=client,
-            model=args.model,
+            model=model_name,
             config=revision_config,
             max_attempts=args.max_attempts,
             build_contents=build_contents,

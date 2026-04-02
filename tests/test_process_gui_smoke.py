@@ -261,6 +261,21 @@ class ProcessGuiSmokeTests(unittest.TestCase):
         self.assertEqual(env["GOOGLE_API_KEY"], "gui-key")
         self.assertEqual(env["PATH"], "x")
 
+    def test_build_process_env_uses_openai_api_key_env_for_openai_provider(self):
+        config = process_gui.ProcessGuiConfig(
+            input_file="dummy.po",
+            provider="openai",
+            api_key="openai-key",
+        )
+
+        env = process_gui.build_process_env(
+            config,
+            base_env={"PATH": "x"},
+        )
+
+        self.assertEqual(env["OPENAI_API_KEY"], "openai-key")
+        self.assertEqual(env["PATH"], "x")
+
     def test_build_extract_command_includes_extract_specific_flags(self):
         input_path = os.path.join(os.getcwd(), "_tmp_gui_extract.po")
         script_path = os.path.join(os.getcwd(), "_tmp_extract_script.py")

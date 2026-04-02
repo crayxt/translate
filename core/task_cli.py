@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 from typing import Callable
 
+from core.providers import get_translation_provider
 from core.runtime import add_thinking_level_argument
 
 
@@ -28,9 +29,26 @@ def add_provider_arguments(
         default=default_provider_name,
         help=f"Model provider (default: {default_provider_name})",
     )
-    parser.add_argument("--model", default=default_model)
+    parser.add_argument(
+        "--model",
+        default=None,
+        help=f"Model name (default: provider default; {default_model} for {default_provider_name})",
+    )
     if include_thinking:
         add_thinking_level_argument(parser)
+
+
+def resolve_provider_model(
+    provider_name: str | None,
+    model_name: str | None,
+    *,
+    get_translation_provider_fn: Callable[[str | None], object] = get_translation_provider,
+) -> str:
+    cleaned_model = str(model_name or "").strip()
+    if cleaned_model:
+        return cleaned_model
+    provider = get_translation_provider_fn(provider_name)
+    return str(getattr(provider, "default_model", "")).strip()
 
 
 def add_runtime_limit_arguments(parser: argparse.ArgumentParser) -> None:
@@ -106,5 +124,6 @@ __all__ = [
     "add_runtime_limit_arguments",
     "add_vocabulary_argument",
     "build_task_parser",
+    "resolve_provider_model",
     "run_task_main",
 ]

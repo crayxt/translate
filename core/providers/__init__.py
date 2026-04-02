@@ -2,12 +2,15 @@ from __future__ import annotations
 
 from core.providers.base import TranslationProvider
 from core.providers.gemini import GeminiTranslationProvider
+from core.providers.openai import OpenAITranslationProvider
 
 GEMINI_PROVIDER = GeminiTranslationProvider()
+OPENAI_PROVIDER = OpenAITranslationProvider()
 DEFAULT_PROVIDER = GEMINI_PROVIDER
 DEFAULT_PROVIDER_NAME = DEFAULT_PROVIDER.name
 SUPPORTED_TRANSLATION_PROVIDERS = {
-    DEFAULT_PROVIDER_NAME: DEFAULT_PROVIDER,
+    GEMINI_PROVIDER.name: GEMINI_PROVIDER,
+    OPENAI_PROVIDER.name: OPENAI_PROVIDER,
 }
 
 
@@ -24,6 +27,7 @@ __all__ = [
     "DEFAULT_PROVIDER",
     "DEFAULT_PROVIDER_NAME",
     "GEMINI_PROVIDER",
+    "OPENAI_PROVIDER",
     "SUPPORTED_TRANSLATION_PROVIDERS",
     "TranslationProvider",
     "get_translation_provider",
