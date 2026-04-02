@@ -17,6 +17,8 @@ class GeminiTranslationProvider:
     supports_structured_json = True
     supports_structured_input = True
     supports_thinking = True
+    supports_flex_mode = True
+    flex_timeout_seconds = 600
 
     _SCHEMA_TYPE_MAP = {
         "string": genai_types.Type.STRING,
@@ -64,11 +66,14 @@ class GeminiTranslationProvider:
 
         return genai_types.Schema(**schema_kwargs)
 
-    def create_client_from_env(self) -> genai.Client:
+    def create_client_from_env(self, *, flex_mode: bool = False) -> genai.Client:
         api_key = os.getenv(self.api_key_env)
         if not api_key:
             sys.exit(f"ERROR: {self.api_key_env} environment variable is not set")
-        return genai.Client(api_key=api_key)
+        http_options = None
+        if flex_mode:
+            http_options = genai_types.HttpOptions(timeout=self.flex_timeout_seconds)
+        return genai.Client(api_key=api_key, http_options=http_options)
 
     def build_request_contents(
         self,
@@ -98,6 +103,7 @@ class GeminiTranslationProvider:
         thinking_level: str | None,
         json_schema: dict[str, Any] | None,
         system_instruction: str | None,
+        flex_mode: bool = False,
     ) -> genai_types.GenerateContentConfig:
         config_kwargs: Dict[str, Any] = {}
         response_schema = self._build_response_schema(json_schema)
@@ -106,6 +112,10 @@ class GeminiTranslationProvider:
             config_kwargs["response_schema"] = response_schema
         if system_instruction and system_instruction.strip():
             config_kwargs["system_instruction"] = system_instruction.strip()
+        if flex_mode:
+            config_kwargs["model_selection_config"] = genai_types.ModelSelectionConfig(
+                feature_selection_preference=genai_types.FeatureSelectionPreference.PRIORITIZE_COST,
+            )
         thinking_config = build_thinking_config(thinking_level)
         if thinking_config is not None:
             config_kwargs["thinking_config"] = thinking_config

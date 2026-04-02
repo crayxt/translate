@@ -136,11 +136,13 @@ def build_translation_generation_config(
     *,
     provider: Any = DEFAULT_PROVIDER,
     system_instruction: str | None = None,
+    flex_mode: bool = False,
 ) -> Any:
     return provider.build_generation_config(
         thinking_level=thinking_level,
         json_schema=TRANSLATION_RESPONSE_SCHEMA,
         system_instruction=SYSTEM_INSTRUCTION if system_instruction is None else system_instruction,
+        flex_mode=flex_mode,
     )
 
 
@@ -309,6 +311,7 @@ class TranslationRunConfig:
     rules: str | None
     rules_str: str | None
     retranslate_all: bool
+    flex_mode: bool
 
 
 @dataclass
@@ -374,6 +377,7 @@ def config_from_args(args: argparse.Namespace) -> TranslationRunConfig:
         rules=args.rules,
         rules_str=args.rules_str,
         retranslate_all=args.retranslate_all,
+        flex_mode=args.flex_mode,
     )
 
 
@@ -609,6 +613,7 @@ def run_translation(config: TranslationRunConfig) -> None:
     runtime_context = build_task_runtime_context(
         provider_name=config.provider,
         target_lang=config.target_lang,
+        flex_mode=config.flex_mode,
         explicit_vocab_path=config.vocab,
         explicit_rules_path=config.rules,
         inline_rules=config.rules_str,
@@ -636,6 +641,7 @@ def run_translation(config: TranslationRunConfig) -> None:
     translation_config = build_translation_generation_config(
         config.thinking_level,
         provider=provider,
+        flex_mode=config.flex_mode,
     )
 
     print_startup_configuration(
@@ -643,6 +649,7 @@ def run_translation(config: TranslationRunConfig) -> None:
         ("File kind", file_kind.value),
         ("Provider", provider.name),
         ("Model", config.model),
+        ("Flex mode", "yes" if config.flex_mode and getattr(provider, "supports_flex_mode", False) else "no"),
         ("Thinking level", config.thinking_level or "provider default"),
         ("Parallel requests", parallel_requests),
         ("Batch size", batch_size),

@@ -25,10 +25,10 @@ class _DummyProvider:
     def __init__(self, response=None):
         self.response = response or _DummyResponse(parsed={"terms": []})
 
-    def create_client_from_env(self):
+    def create_client_from_env(self, *, flex_mode: bool = False):
         return object()
 
-    def build_generation_config(self, *, thinking_level, json_schema, system_instruction):
+    def build_generation_config(self, *, thinking_level, json_schema, system_instruction, flex_mode=False):
         return object()
 
     async def generate_with_retry(self, *, client, model, contents, batch_label, max_attempts, config):

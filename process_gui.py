@@ -85,6 +85,7 @@ class ProcessGuiConfig:
     rules_path: str = ""
     rules_str: str = ""
     api_key: str = ""
+    flex_mode: bool = False
     retranslate_all: bool = False
 
 
@@ -100,6 +101,7 @@ class ExtractGuiConfig:
     parallel_requests: str = ""
     vocab_path: str = ""
     api_key: str = ""
+    flex_mode: bool = False
     mode: str = "missing"
     out_format: str = "po"
     out_path: str = ""
@@ -121,6 +123,7 @@ class CheckGuiConfig:
     rules_path: str = ""
     rules_str: str = ""
     api_key: str = ""
+    flex_mode: bool = False
     num_messages: str = ""
     out_path: str = ""
     include_ok: bool = False
@@ -142,6 +145,7 @@ class ReviseGuiConfig:
     rules_path: str = ""
     rules_str: str = ""
     api_key: str = ""
+    flex_mode: bool = False
     instruction: str = ""
     num_messages: str = ""
     out_path: str = ""
@@ -593,10 +597,12 @@ def _append_common_cli_args(
     provider: str,
     model: str,
     thinking_level: str,
+    flex_mode: bool,
     batch_size: str,
     parallel_requests: str,
     vocab_path: str = "",
 ) -> None:
+    provider_name = _clean(provider) or DEFAULT_PROVIDER
     command.extend(
         [
             "--source-lang",
@@ -604,7 +610,7 @@ def _append_common_cli_args(
             "--target-lang",
             _clean(target_lang),
             "--provider",
-            _clean(provider) or DEFAULT_PROVIDER,
+            provider_name,
             "--model",
             _clean(model),
         ]
@@ -613,6 +619,13 @@ def _append_common_cli_args(
     thinking_level_value = _clean(thinking_level)
     if thinking_level_value:
         command.extend(["--thinking-level", thinking_level_value])
+
+    try:
+        provider_spec = get_translation_provider(provider_name)
+    except ValueError:
+        provider_spec = None
+    if flex_mode and provider_spec is not None and getattr(provider_spec, "supports_flex_mode", False):
+        command.append("--flex")
 
     batch_size_value = _validate_optional_positive_int(batch_size, "Batch size")
     if batch_size_value:
@@ -658,6 +671,7 @@ def build_process_command(
         provider=config.provider,
         model=config.model,
         thinking_level=config.thinking_level,
+        flex_mode=config.flex_mode,
         batch_size=config.batch_size,
         parallel_requests=config.parallel_requests,
         vocab_path=config.vocab_path,
@@ -704,6 +718,7 @@ def build_extract_command(
         provider=config.provider,
         model=config.model,
         thinking_level=config.thinking_level,
+        flex_mode=config.flex_mode,
         batch_size=config.batch_size,
         parallel_requests=config.parallel_requests,
         vocab_path=config.vocab_path,
@@ -758,6 +773,7 @@ def build_check_command(
         provider=config.provider,
         model=config.model,
         thinking_level=config.thinking_level,
+        flex_mode=config.flex_mode,
         batch_size=config.batch_size,
         parallel_requests=config.parallel_requests,
         vocab_path=config.vocab_path,
@@ -824,6 +840,7 @@ def build_revise_command(
         provider=config.provider,
         model=config.model,
         thinking_level=config.thinking_level,
+        flex_mode=config.flex_mode,
         batch_size=config.batch_size,
         parallel_requests=config.parallel_requests,
         vocab_path=config.vocab_path,
@@ -919,6 +936,7 @@ class BaseToolTab(ttk.Frame):
         self.api_key_var = app.api_key_var
         self.provider_var = app.provider_var
         self.thinking_level_var = app.thinking_level_var
+        self.flex_mode_var = app.flex_mode_var
 
         self.input_file_var = tk.StringVar()
         self.source_lang_var = tk.StringVar(value=DEFAULT_SOURCE_LANG)
@@ -935,12 +953,14 @@ class BaseToolTab(ttk.Frame):
         self.rules_preview_text: ScrolledText | None = None
         self.rules_text: ScrolledText | None = None
         self.system_prompt_text: ScrolledText | None = None
+        self.flex_mode_button: ttk.Checkbutton | None = None
 
         self.columnconfigure(0, weight=1)
         self.rowconfigure(0, weight=1)
 
         self._build_widgets()
         self._apply_default_model(force=True)
+        self._refresh_provider_specific_controls()
         self._refresh_api_status()
         self._apply_default_resources(force=True)
         self._load_rules_preview()
@@ -997,6 +1017,13 @@ class BaseToolTab(ttk.Frame):
             variable=self.thinking_level_var,
             values=THINKING_LEVEL_CHOICES,
         )
+        row += 1
+        self.flex_mode_button = ttk.Checkbutton(
+            form,
+            text="Flex mode",
+            variable=self.flex_mode_var,
+        )
+        self.flex_mode_button.grid(row=row, column=0, columnspan=3, sticky="w", pady=(0, 4))
         row += 1
         self._add_entry_row(form, row=row, label="Batch size", variable=self.batch_size_var)
         row += 1
@@ -1208,6 +1235,7 @@ class BaseToolTab(ttk.Frame):
 
     def _on_provider_changed(self, *_args: object) -> None:
         self._apply_default_model()
+        self._refresh_provider_specific_controls()
         self._refresh_api_status()
 
     def _on_target_lang_changed(self, *_args: object) -> None:
@@ -1239,6 +1267,21 @@ class BaseToolTab(ttk.Frame):
             return
 
         self.api_status_var.set(f"API key source: missing ({api_key_env})")
+
+    def _refresh_provider_specific_controls(self) -> None:
+        if self.flex_mode_button is None:
+            return
+
+        provider_name = _clean(self.provider_var.get()) or DEFAULT_PROVIDER
+        try:
+            provider_spec = get_translation_provider(provider_name)
+        except ValueError:
+            state = "disabled"
+        else:
+            state = "normal" if getattr(provider_spec, "supports_flex_mode", False) else "disabled"
+        self.flex_mode_button.configure(state=state)
+        if state == "disabled":
+            self.flex_mode_var.set(False)
 
     def _apply_default_model(self, force: bool = False) -> None:
         provider_name = _clean(self.provider_var.get()) or DEFAULT_PROVIDER
@@ -1409,6 +1452,7 @@ class ProcessToolTab(BaseToolTab):
             rules_path=self.rules_path_var.get(),
             rules_str=self.rules_text.get("1.0", "end-1c") if self.rules_text else "",
             api_key=self.api_key_var.get(),
+            flex_mode=self.flex_mode_var.get(),
             retranslate_all=self.retranslate_all_var.get(),
         )
 
@@ -1493,6 +1537,7 @@ class ExtractToolTab(BaseToolTab):
             parallel_requests=self.parallel_requests_var.get(),
             vocab_path=self.vocab_path_var.get(),
             api_key=self.api_key_var.get(),
+            flex_mode=self.flex_mode_var.get(),
             mode=self.mode_var.get(),
             out_format=self.out_format_var.get(),
             out_path=self.out_path_var.get(),
@@ -1571,6 +1616,7 @@ class CheckToolTab(BaseToolTab):
             rules_path=self.rules_path_var.get(),
             rules_str=self.rules_text.get("1.0", "end-1c") if self.rules_text else "",
             api_key=self.api_key_var.get(),
+            flex_mode=self.flex_mode_var.get(),
             num_messages=self.num_messages_var.get(),
             out_path=self.out_path_var.get(),
             include_ok=self.include_ok_var.get(),
@@ -1695,6 +1741,7 @@ class ReviseToolTab(BaseToolTab):
             rules_path=self.rules_path_var.get(),
             rules_str=self.rules_text.get("1.0", "end-1c") if self.rules_text else "",
             api_key=self.api_key_var.get(),
+            flex_mode=self.flex_mode_var.get(),
             instruction=self.instruction_text.get("1.0", "end-1c") if self.instruction_text else "",
             num_messages=self.num_messages_var.get(),
             out_path=self.out_path_var.get(),
@@ -1715,6 +1762,7 @@ class ProcessGuiApp(ttk.Frame):
         self.api_key_var = tk.StringVar()
         self.provider_var = tk.StringVar(value=DEFAULT_PROVIDER)
         self.thinking_level_var = tk.StringVar()
+        self.flex_mode_var = tk.BooleanVar(value=False)
         self.queue: queue.Queue[tuple[str, str, object]] = queue.Queue()
         self.process: subprocess.Popen[str] | None = None
         self.active_tool_key: str | None = None

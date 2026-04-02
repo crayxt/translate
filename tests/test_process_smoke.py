@@ -74,6 +74,13 @@ class ProcessSmokeTests(unittest.TestCase):
         )
         self.assertIn("professional software localization translator", config.system_instruction)
 
+    def test_build_translation_generation_config_includes_flex_model_selection(self):
+        config = process.build_translation_generation_config("minimal", flex_mode=True)
+        self.assertEqual(
+            config.model_selection_config.feature_selection_preference,
+            genai_types.FeatureSelectionPreference.PRIORITIZE_COST,
+        )
+
     def test_build_prompt_no_longer_embeds_system_instruction(self):
         prompt = process.build_prompt(
             messages={"0": {"source": "Open file"}},

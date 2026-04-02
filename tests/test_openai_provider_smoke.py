@@ -106,6 +106,18 @@ class OpenAIProviderSmokeTests(unittest.TestCase):
         self.assertFalse(schema["properties"]["nested"]["additionalProperties"])
         self.assertEqual(schema["properties"]["nested"]["required"], ["value"])
 
+    def test_build_generation_config_sets_flex_service_tier(self):
+        provider = OpenAITranslationProvider()
+
+        config = provider.build_generation_config(
+            thinking_level=None,
+            json_schema=None,
+            system_instruction="You are a translator.",
+            flex_mode=True,
+        )
+
+        self.assertEqual(config["service_tier"], "flex")
+
     def test_describe_api_error_includes_connection_cause(self):
         provider = OpenAITranslationProvider()
         request = httpx.Request("POST", "https://api.openai.com/v1/responses")

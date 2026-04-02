@@ -24,6 +24,7 @@ def build_task_runtime_context(
     *,
     provider_name: str | None,
     target_lang: str,
+    flex_mode: bool = False,
     explicit_vocab_path: str | None = None,
     explicit_rules_path: str | None = None,
     inline_rules: str | None = None,
@@ -38,7 +39,7 @@ def build_task_runtime_context(
     load_vocabulary_pairs_fn: Callable[..., list[tuple[str, str]]] = load_vocabulary_pairs,
 ) -> TaskRuntimeContext:
     provider = get_translation_provider_fn(provider_name)
-    client = provider.create_client_from_env()
+    client = provider.create_client_from_env(flex_mode=flex_mode)
     resources = load_task_resource_context_fn(
         target_lang=target_lang,
         explicit_vocab_path=explicit_vocab_path,

@@ -28,6 +28,7 @@ class OpenAITranslationProvider:
     supports_structured_json = True
     supports_structured_input = False
     supports_thinking = True
+    supports_flex_mode = True
 
     def _read_timeout_seconds(self) -> float:
         raw_timeout = str(os.getenv(self.timeout_env, "")).strip()
@@ -64,7 +65,8 @@ class OpenAITranslationProvider:
 
         return cleaned_api_key
 
-    def create_client_from_env(self) -> OpenAI:
+    def create_client_from_env(self, *, flex_mode: bool = False) -> OpenAI:
+        _ = flex_mode
         api_key = self._read_api_key()
         base_url = str(os.getenv(self.base_url_env, "")).strip() or None
         timeout = self._read_timeout_seconds()
@@ -142,6 +144,7 @@ class OpenAITranslationProvider:
         thinking_level: str | None,
         json_schema: dict[str, Any] | None,
         system_instruction: str | None,
+        flex_mode: bool = False,
     ) -> dict[str, Any]:
         config: Dict[str, Any] = {}
         if json_schema is not None:
@@ -156,6 +159,8 @@ class OpenAITranslationProvider:
             }
         if system_instruction and system_instruction.strip():
             config["instructions"] = system_instruction.strip()
+        if flex_mode:
+            config["service_tier"] = "flex"
         if thinking_level is not None:
             normalized = str(thinking_level).strip().lower()
             if normalized:

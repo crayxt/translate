@@ -8,28 +8,33 @@ from core.task_runtime import build_task_runtime_context, print_startup_configur
 class _DummyProvider:
     def __init__(self):
         self.name = "dummy"
+        self.last_flex_mode = None
 
-    def create_client_from_env(self):
+    def create_client_from_env(self, *, flex_mode: bool = False):
+        self.last_flex_mode = flex_mode
         return object()
 
 
 class TaskRuntimeSmokeTests(unittest.TestCase):
     def test_build_task_runtime_context_builds_provider_client_and_resources(self):
         resources = TaskResourceContext(vocabulary_source="file:vocab.txt", rules_source="file:rules.md")
+        provider = _DummyProvider()
 
         context = build_task_runtime_context(
             provider_name="dummy",
             target_lang="kk",
+            flex_mode=True,
             explicit_vocab_path="vocab.txt",
             explicit_rules_path="rules.md",
             inline_rules="Rule A",
-            get_translation_provider_fn=lambda name: _DummyProvider(),
+            get_translation_provider_fn=lambda name: provider,
             load_task_resource_context_fn=lambda **kwargs: resources,
         )
 
         self.assertEqual(context.provider.name, "dummy")
         self.assertIs(context.resources, resources)
         self.assertIsNotNone(context.client)
+        self.assertTrue(provider.last_flex_mode)
 
     def test_print_startup_configuration_prints_label_value_pairs(self):
         with patch("builtins.print") as mocked_print:

@@ -23,6 +23,7 @@ def add_provider_arguments(
     default_provider_name: str,
     default_model: str,
     include_thinking: bool = True,
+    include_flex: bool = True,
 ) -> None:
     parser.add_argument(
         "--provider",
@@ -36,6 +37,13 @@ def add_provider_arguments(
     )
     if include_thinking:
         add_thinking_level_argument(parser)
+    if include_flex:
+        parser.add_argument(
+            "--flex",
+            dest="flex_mode",
+            action="store_true",
+            help="Use provider flex mode when supported",
+        )
 
 
 def resolve_provider_model(

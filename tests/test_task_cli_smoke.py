@@ -46,6 +46,7 @@ class TaskCliSmokeTests(unittest.TestCase):
                 "gemini",
                 "--model",
                 "gemini-2.5-flash",
+                "--flex",
                 "--batch-size",
                 "10",
                 "--parallel-requests",
@@ -67,6 +68,7 @@ class TaskCliSmokeTests(unittest.TestCase):
         self.assertEqual(args.target_lang, "kk")
         self.assertEqual(args.provider, "gemini")
         self.assertEqual(args.model, "gemini-2.5-flash")
+        self.assertTrue(args.flex_mode)
         self.assertEqual(args.batch_size, 10)
         self.assertEqual(args.parallel_requests, 2)
         self.assertEqual(args.vocab, "vocab.txt")

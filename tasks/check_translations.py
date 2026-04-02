@@ -113,11 +113,13 @@ def build_check_generation_config(
     *,
     provider: Any = DEFAULT_PROVIDER,
     system_instruction: str | None = None,
+    flex_mode: bool = False,
 ) -> Any:
     return provider.build_generation_config(
         thinking_level=thinking_level,
         json_schema=CHECK_RESPONSE_SCHEMA,
         system_instruction=CHECK_SYSTEM_INSTRUCTION if system_instruction is None else system_instruction,
+        flex_mode=flex_mode,
     )
 
 
@@ -441,6 +443,7 @@ def run_from_args(args: argparse.Namespace) -> None:
     runtime_context = build_task_runtime_context(
         provider_name=args.provider,
         target_lang=args.target_lang,
+        flex_mode=args.flex_mode,
         explicit_vocab_path=args.vocab,
         explicit_rules_path=args.rules,
         inline_rules=args.rules_str,
@@ -482,11 +485,13 @@ def run_from_args(args: argparse.Namespace) -> None:
         args.thinking_level,
         provider=provider,
         system_instruction=build_check_system_instruction(args.target_lang),
+        flex_mode=args.flex_mode,
     )
 
     print_startup_configuration(
         ("Provider", provider.name),
         ("Model", model_name),
+        ("Flex mode", "yes" if args.flex_mode and getattr(provider, "supports_flex_mode", False) else "no"),
         ("Thinking level", args.thinking_level or "provider default"),
         ("Parallel requests", parallel_requests),
         ("Batch size", batch_size),

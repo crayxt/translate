@@ -10,8 +10,9 @@ class TranslationProvider(Protocol):
     supports_structured_json: bool
     supports_structured_input: bool
     supports_thinking: bool
+    supports_flex_mode: bool
 
-    def create_client_from_env(self) -> Any:
+    def create_client_from_env(self, *, flex_mode: bool = False) -> Any:
         ...
 
     def build_request_contents(
@@ -30,6 +31,7 @@ class TranslationProvider(Protocol):
         thinking_level: str | None,
         json_schema: dict[str, Any] | None,
         system_instruction: str | None,
+        flex_mode: bool = False,
     ) -> Any:
         ...
 
