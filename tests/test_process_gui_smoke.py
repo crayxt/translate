@@ -6,6 +6,13 @@ import process_gui
 
 
 class ProcessGuiSmokeTests(unittest.TestCase):
+    def test_summarize_input_files_formats_multi_file_display(self):
+        summary = process_gui.summarize_input_files(
+            [r"C:\tmp\one.po", r"C:\tmp\two.po", r"C:\tmp\three.po"]
+        )
+
+        self.assertEqual(summary, r"C:\tmp\one.po (+2 more)")
+
     def test_build_system_prompt_preview_for_translate_uses_translation_system_prompt(self):
         preview = process_gui.build_system_prompt_preview("process", "kk")
         self.assertIn("professional software localization translator", preview)
@@ -98,6 +105,32 @@ class ProcessGuiSmokeTests(unittest.TestCase):
             if os.path.exists(input_path):
                 os.remove(input_path)
 
+    def test_validate_process_config_rejects_mixed_file_types(self):
+        input_po = os.path.join(os.getcwd(), "_tmp_gui_input.po")
+        input_ts = os.path.join(os.getcwd(), "_tmp_gui_input.ts")
+        try:
+            with open(input_po, "w", encoding="utf-8") as handle:
+                handle.write('msgid "Open"\nmsgstr ""\n')
+            with open(input_ts, "w", encoding="utf-8") as handle:
+                handle.write("<TS></TS>\n")
+
+            config = process_gui.ProcessGuiConfig(
+                input_file=input_po,
+                input_files=(input_po, input_ts),
+                api_key="test-key",
+            )
+
+            errors = process_gui.validate_process_gui_config(config, environ={})
+
+            self.assertIn(
+                "Multi-file translation requires all input files to use the same format.",
+                errors,
+            )
+        finally:
+            for path in (input_po, input_ts):
+                if os.path.exists(path):
+                    os.remove(path)
+
     def test_build_process_command_includes_required_and_optional_flags(self):
         input_path = os.path.join(os.getcwd(), "_tmp_gui_input.po")
         script_path = os.path.join(os.getcwd(), "_tmp_process_script.py")
@@ -161,6 +194,56 @@ class ProcessGuiSmokeTests(unittest.TestCase):
             )
         finally:
             for path in (input_path, script_path):
+                if os.path.exists(path):
+                    os.remove(path)
+
+    def test_build_process_command_supports_multiple_input_files(self):
+        input_one = os.path.join(os.getcwd(), "_tmp_gui_one.po")
+        input_two = os.path.join(os.getcwd(), "_tmp_gui_two.po")
+        script_path = os.path.join(os.getcwd(), "_tmp_process_script.py")
+        try:
+            for path in (input_one, input_two):
+                with open(path, "w", encoding="utf-8") as handle:
+                    handle.write('msgid "Open"\nmsgstr ""\n')
+            with open(script_path, "w", encoding="utf-8") as handle:
+                handle.write("print('stub')\n")
+
+            config = process_gui.ProcessGuiConfig(
+                input_file=input_one,
+                input_files=(input_one, input_two),
+                source_lang="en",
+                target_lang="fr",
+                model="gemini-test",
+                api_key="test-key",
+            )
+
+            command = process_gui.build_process_command(
+                config,
+                python_executable="python",
+                script_path=script_path,
+            )
+
+            self.assertEqual(
+                command,
+                [
+                    "python",
+                    "-u",
+                    os.path.abspath(script_path),
+                    "translate",
+                    input_one,
+                    input_two,
+                    "--source-lang",
+                    "en",
+                    "--target-lang",
+                    "fr",
+                    "--provider",
+                    "gemini",
+                    "--model",
+                    "gemini-test",
+                ],
+            )
+        finally:
+            for path in (input_one, input_two, script_path):
                 if os.path.exists(path):
                     os.remove(path)
 

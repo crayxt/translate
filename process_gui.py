@@ -73,6 +73,7 @@ READONLY_STATES = frozenset({"disabled", "readonly"})
 @dataclass(slots=True)
 class ProcessGuiConfig:
     input_file: str = ""
+    input_files: tuple[str, ...] = ()
     source_lang: str = DEFAULT_SOURCE_LANG
     target_lang: str = DEFAULT_TARGET_LANG
     provider: str = DEFAULT_PROVIDER
@@ -312,9 +313,27 @@ def parse_progress_percent(line: str) -> float | None:
     return None
 
 
+def summarize_input_files(file_paths: list[str] | tuple[str, ...]) -> str:
+    cleaned_paths = [_clean(path) for path in file_paths if _clean(path)]
+    if not cleaned_paths:
+        return ""
+    if len(cleaned_paths) == 1:
+        return cleaned_paths[0]
+    return f"{cleaned_paths[0]} (+{len(cleaned_paths) - 1} more)"
+
+
+def resolve_process_input_files(config: ProcessGuiConfig) -> list[str]:
+    explicit_files = [_clean(path) for path in config.input_files if _clean(path)]
+    if explicit_files:
+        return explicit_files
+    cleaned_input = _clean(config.input_file)
+    return [cleaned_input] if cleaned_input else []
+
+
 def _validate_base_config(
     *,
     input_file: str,
+    input_files: list[str] | None = None,
     source_lang: str,
     target_lang: str,
     provider: str,
@@ -331,6 +350,7 @@ def _validate_base_config(
     errors: list[str] = []
 
     cleaned_input = _clean(input_file)
+    cleaned_input_files = [_clean(path) for path in (input_files or []) if _clean(path)]
     cleaned_source = _clean(source_lang)
     cleaned_target = _clean(target_lang)
     cleaned_provider = _clean(provider)
@@ -339,7 +359,11 @@ def _validate_base_config(
     cleaned_rules = _clean(rules_path)
     cleaned_api_key = _clean(api_key)
 
-    if not cleaned_input:
+    if cleaned_input_files:
+        for file_path in cleaned_input_files:
+            if not os.path.isfile(file_path):
+                errors.append(f"Input file does not exist: {file_path}")
+    elif not cleaned_input:
         errors.append("Input file is required.")
     elif not os.path.isfile(cleaned_input):
         errors.append(f"Input file does not exist: {cleaned_input}")
@@ -400,8 +424,10 @@ def validate_process_gui_config(
     config: ProcessGuiConfig,
     environ: dict[str, str] | None = None,
 ) -> list[str]:
-    return _validate_base_config(
-        input_file=config.input_file,
+    input_files = resolve_process_input_files(config)
+    errors = _validate_base_config(
+        input_file=input_files[0] if input_files else config.input_file,
+        input_files=input_files,
         source_lang=config.source_lang,
         target_lang=config.target_lang,
         provider=config.provider,
@@ -414,6 +440,11 @@ def validate_process_gui_config(
         api_key=config.api_key,
         environ=environ,
     )
+    try:
+        translate_task.validate_translation_files(input_files)
+    except ValueError as exc:
+        errors.append(str(exc))
+    return errors
 
 
 def validate_extract_gui_config(
@@ -612,12 +643,13 @@ def build_process_command(
     if not os.path.isfile(resolved_script):
         raise ValueError(f"translate_cli.py not found at: {resolved_script}")
 
+    input_files = resolve_process_input_files(config)
     command = [
         python_executable or sys.executable,
         "-u",
         resolved_script,
         "translate",
-        _clean(config.input_file),
+        *input_files,
     ]
     _append_common_cli_args(
         command,
@@ -869,6 +901,7 @@ class BaseToolTab(ttk.Frame):
         input_filetypes: list[tuple[str, str]],
         supports_vocab: bool = True,
         supports_rules: bool = False,
+        input_label: str = "Input file",
     ) -> None:
         super().__init__(notebook)
         self.app = app
@@ -878,6 +911,7 @@ class BaseToolTab(ttk.Frame):
         self.input_filetypes = input_filetypes
         self.supports_vocab = supports_vocab
         self.supports_rules = supports_rules
+        self.input_label = input_label
         self.resource_root = app.resource_root
         self._auto_vocab_path = ""
         self._auto_rules_path = ""
@@ -935,7 +969,7 @@ class BaseToolTab(ttk.Frame):
         self._add_entry_row(
             form,
             row=row,
-            label="Input file",
+            label=self.input_label,
             variable=self.input_file_var,
             browse_command=self._browse_input_file,
         )
@@ -1297,6 +1331,8 @@ class BaseToolTab(ttk.Frame):
 class ProcessToolTab(BaseToolTab):
     def __init__(self, app: "ProcessGuiApp", notebook: ttk.Notebook) -> None:
         self.retranslate_all_var = tk.BooleanVar(value=False)
+        self.selected_input_files: tuple[str, ...] = ()
+        self._selected_input_files_display = ""
         super().__init__(
             app,
             notebook,
@@ -1306,7 +1342,27 @@ class ProcessToolTab(BaseToolTab):
             input_filetypes=TRANSLATABLE_FILETYPES,
             supports_vocab=True,
             supports_rules=True,
+            input_label="Input file(s)",
         )
+
+    def _browse_input_file(self) -> None:
+        selected = tuple(
+            filedialog.askopenfilenames(
+                title=f"Select input files for {self.title}",
+                filetypes=self.input_filetypes,
+            )
+        )
+        if not selected:
+            return
+        self.selected_input_files = selected
+        self._selected_input_files_display = summarize_input_files(selected)
+        self.input_file_var.set(self._selected_input_files_display)
+
+    def _resolve_selected_input_files(self) -> tuple[str, ...]:
+        display_value = _clean(self.input_file_var.get())
+        if self.selected_input_files and display_value == self._selected_input_files_display:
+            return self.selected_input_files
+        return (display_value,) if display_value else ()
 
     def _build_tool_specific_fields(self, parent: ttk.Frame, start_row: int) -> int:
         ttk.Checkbutton(
@@ -1317,8 +1373,10 @@ class ProcessToolTab(BaseToolTab):
         return start_row + 1
 
     def build_config(self) -> ProcessGuiConfig:
+        input_files = self._resolve_selected_input_files()
         return ProcessGuiConfig(
-            input_file=self.input_file_var.get(),
+            input_file=input_files[0] if len(input_files) == 1 else self.input_file_var.get(),
+            input_files=input_files,
             source_lang=self.source_lang_var.get(),
             target_lang=self.target_lang_var.get(),
             provider=self.provider_var.get(),

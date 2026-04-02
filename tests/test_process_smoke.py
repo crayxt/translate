@@ -15,6 +15,14 @@ class _DummyResponse:
         self.text = text
 
 
+class _BatchProvider:
+    def __init__(self, responses):
+        self.responses = responses
+
+    async def generate_with_retry(self, *, client, model, contents, batch_label, max_attempts, config):
+        return self.responses[batch_label]
+
+
 class ProcessSmokeTests(unittest.TestCase):
     def test_system_instruction_is_language_neutral(self):
         self.assertNotIn("Kazakh", process.SYSTEM_INSTRUCTION)
@@ -322,6 +330,10 @@ class ProcessSmokeTests(unittest.TestCase):
             process.FileKind.TXT,
         )
 
+    def test_validate_translation_files_rejects_mixed_file_types(self):
+        with self.assertRaisesRegex(ValueError, "same format"):
+            process.validate_translation_files(["first.po", "second.ts"])
+
     def test_select_work_items_respects_retranslate_all(self):
         entries = [
             process.UnifiedEntry(
@@ -362,6 +374,73 @@ class ProcessSmokeTests(unittest.TestCase):
 
         self.assertEqual([e.msgid for e in default_items], ["Untranslated", "Fuzzy"])
         self.assertEqual([e.msgid for e in forced_items], ["Untranslated", "Fuzzy", "Translated"])
+
+    def test_run_translation_batches_routes_results_to_correct_files(self):
+        saved: list[str] = []
+        entry_a = process.UnifiedEntry(
+            file_kind=process.FileKind.PO,
+            msgid="Open",
+            status=process.EntryStatus.UNTRANSLATED,
+        )
+        entry_b = process.UnifiedEntry(
+            file_kind=process.FileKind.PO,
+            msgid="Save",
+            status=process.EntryStatus.UNTRANSLATED,
+        )
+        job_a = process.TranslationFileJob(
+            file_path="one.po",
+            file_kind=process.FileKind.PO,
+            entries=[entry_a],
+            save_callback=lambda: saved.append("one"),
+            output_path="one.ai-translated.po",
+        )
+        job_b = process.TranslationFileJob(
+            file_path="two.po",
+            file_kind=process.FileKind.PO,
+            entries=[entry_b],
+            save_callback=lambda: saved.append("two"),
+            output_path="two.ai-translated.po",
+        )
+        provider = _BatchProvider(
+            {
+                "batch 1/1": _DummyResponse(
+                    parsed={
+                        "translations": [
+                            {"id": "0", "text": "Ashu"},
+                            {"id": "1", "text": "Saqtau"},
+                        ]
+                    }
+                )
+            }
+        )
+
+        translated_count = process.asyncio.run(
+            process.run_translation_batches(
+                provider=provider,
+                client=object(),
+                model="test-model",
+                translation_config=object(),
+                all_batches=[
+                    [
+                        process.TranslationQueueItem(job=job_a, entry=entry_a),
+                        process.TranslationQueueItem(job=job_b, entry=entry_b),
+                    ]
+                ],
+                total=2,
+                parallel_requests=1,
+                source_lang="en",
+                target_lang="kk",
+                vocabulary_text=None,
+                project_rules=None,
+            )
+        )
+
+        self.assertEqual(translated_count, 2)
+        self.assertEqual(entry_a.msgstr, "Ashu")
+        self.assertEqual(entry_b.msgstr, "Saqtau")
+        self.assertIn("fuzzy", entry_a.flags)
+        self.assertIn("fuzzy", entry_b.flags)
+        self.assertCountEqual(saved, ["one", "two"])
 
     def test_unified_entry_model_exposes_status_and_string_type(self):
         in_path = os.path.join(os.getcwd(), "_tmp_unified.strings")

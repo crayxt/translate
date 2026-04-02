@@ -10,8 +10,15 @@ class TranslateCliSmokeTests(unittest.TestCase):
             translate_cli.main(["translate", "input.po", "--target-lang", "fr"])
         mocked_main.assert_called_once()
         self.assertEqual(mocked_main.call_args.args[0].command, "translate")
-        self.assertEqual(mocked_main.call_args.args[0].file, "input.po")
+        self.assertEqual(mocked_main.call_args.args[0].files, ["input.po"])
         self.assertEqual(mocked_main.call_args.args[0].target_lang, "fr")
+
+    def test_translate_subcommand_accepts_multiple_files(self):
+        with patch("translate_cli.run_translate") as mocked_main:
+            translate_cli.main(["translate", "one.po", "two.po"])
+        mocked_main.assert_called_once()
+        self.assertEqual(mocked_main.call_args.args[0].command, "translate")
+        self.assertEqual(mocked_main.call_args.args[0].files, ["one.po", "two.po"])
 
     def test_extract_subcommand_dispatches_to_extract_terms(self):
         with patch("translate_cli.run_extract_terms") as mocked_main:

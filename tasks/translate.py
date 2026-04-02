@@ -8,7 +8,7 @@ import math
 import os
 import sys
 from dataclasses import dataclass
-from typing import Any, Dict, List
+from typing import Any, Callable, Dict, List
 
 import polib
 
@@ -296,7 +296,7 @@ def _build_unified_entry(
 
 @dataclass(frozen=True)
 class TranslationRunConfig:
-    file: str
+    files: List[str]
     source_lang: str
     target_lang: str
     provider: str
@@ -310,11 +310,30 @@ class TranslationRunConfig:
     retranslate_all: bool
 
 
+@dataclass
+class TranslationFileJob:
+    file_path: str
+    file_kind: FileKind
+    entries: List[Any]
+    save_callback: Callable[[], None] | None
+    output_path: str
+
+
+@dataclass(frozen=True)
+class TranslationQueueItem:
+    job: TranslationFileJob
+    entry: Any
+
+
 def configure_parser(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
     parser.description = (
         "Pre-process and translate PO, TS, RESX, STRINGS, or TXT files using a provider adapter"
     )
-    parser.add_argument("file", help="Input .po, .ts, .resx, .strings, or .txt file")
+    parser.add_argument(
+        "files",
+        nargs="+",
+        help="Input .po, .ts, .resx, .strings, or .txt file(s)",
+    )
     add_language_arguments(parser)
     add_provider_arguments(
         parser,
@@ -342,7 +361,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 def config_from_args(args: argparse.Namespace) -> TranslationRunConfig:
     return TranslationRunConfig(
-        file=args.file,
+        files=list(args.files),
         source_lang=args.source_lang,
         target_lang=args.target_lang,
         provider=args.provider,
@@ -372,6 +391,69 @@ def load_entries_for_translation(file_path: str):
     if file_kind == FileKind.TXT:
         return file_kind, *load_txt(file_path)
     return file_kind, *load_po(file_path)
+
+
+def _normalize_path(path: str) -> str:
+    return os.path.normcase(os.path.abspath(path))
+
+
+def validate_translation_files(file_paths: List[str]) -> FileKind:
+    expected_kind: FileKind | None = None
+    seen_inputs: set[str] = set()
+    seen_outputs: dict[str, str] = {}
+
+    for file_path in file_paths:
+        normalized_input = _normalize_path(file_path)
+        if normalized_input in seen_inputs:
+            raise ValueError(f"Duplicate input file: {file_path}")
+        seen_inputs.add(normalized_input)
+
+        file_kind = detect_file_kind(file_path)
+        if expected_kind is None:
+            expected_kind = file_kind
+        elif file_kind != expected_kind:
+            raise ValueError("Multi-file translation requires all input files to use the same format.")
+
+        output_path = build_output_path(file_path, file_kind)
+        normalized_output = _normalize_path(output_path)
+        conflict_input = seen_outputs.get(normalized_output)
+        if conflict_input is not None:
+            raise ValueError(
+                f"Conflicting output path '{output_path}' for inputs '{conflict_input}' and '{file_path}'."
+            )
+        seen_outputs[normalized_output] = file_path
+
+    if expected_kind is None:
+        raise ValueError("At least one input file is required.")
+    return expected_kind
+
+
+def load_translation_jobs(file_paths: List[str]) -> List[TranslationFileJob]:
+    jobs: List[TranslationFileJob] = []
+    for file_path in file_paths:
+        file_kind, entries, save_callback, output_path = load_entries_for_translation(file_path)
+        jobs.append(
+            TranslationFileJob(
+                file_path=file_path,
+                file_kind=file_kind,
+                entries=entries,
+                save_callback=save_callback,
+                output_path=output_path,
+            )
+        )
+    return jobs
+
+
+def build_translation_queue(
+    jobs: List[TranslationFileJob],
+    *,
+    retranslate_all: bool,
+) -> List[TranslationQueueItem]:
+    queue: List[TranslationQueueItem] = []
+    for job in jobs:
+        for entry in select_work_items(job.entries, retranslate_all=retranslate_all):
+            queue.append(TranslationQueueItem(job=job, entry=entry))
+    return queue
 
 
 def build_batches(work_items: List[Any], parallel_requests: int, batch_size: int) -> List[List[Any]]:
@@ -410,22 +492,24 @@ async def run_translation_batches(
     client: Any,
     model: str,
     translation_config: Any,
-    all_batches: List[List[Any]],
+    all_batches: List[List[TranslationQueueItem]],
     total: int,
     parallel_requests: int,
     source_lang: str,
     target_lang: str,
     vocabulary_text: str | None,
     project_rules: str | None,
-    save_callback,
 ) -> int:
     batches = len(all_batches)
 
     translated_count = 0
     completed_batches = 0
 
-    async def process_batch(batch_index: int, batch: List[Any]) -> Dict[str, TranslationResult]:
-        msg_map = {str(i): build_prompt_message_payload(entry) for i, entry in enumerate(batch)}
+    async def process_batch(batch_index: int, batch: List[TranslationQueueItem]) -> Dict[str, TranslationResult]:
+        msg_map = {
+            str(i): build_prompt_message_payload(item.entry)
+            for i, item in enumerate(batch)
+        }
         contents = build_translation_request_contents(
             msg_map,
             source_lang,
@@ -449,7 +533,10 @@ async def run_translation_batches(
                 f"  Warning [batch {batch_index + 1}/{batches}]: "
                 f"{len(missing_indices)} items missing from response. Retrying them..."
             )
-            retry_map = {str(idx): build_prompt_message_payload(batch[idx]) for idx in missing_indices}
+            retry_map = {
+                str(idx): build_prompt_message_payload(batch[idx].entry)
+                for idx in missing_indices
+            }
             retry_contents = build_translation_request_contents(
                 retry_map,
                 source_lang,
@@ -473,15 +560,22 @@ async def run_translation_batches(
                 print(f"  Retry failed [batch {batch_index + 1}/{batches}]: {exc}")
         return translations
 
-    def on_batch_completed(batch_index: int, batch: List[Any], translations: Dict[str, TranslationResult]) -> None:
+    def on_batch_completed(
+        batch_index: int,
+        batch: List[TranslationQueueItem],
+        translations: Dict[str, TranslationResult],
+    ) -> None:
         nonlocal translated_count, completed_batches
         batch_translated = 0
-        for i, entry in enumerate(batch):
+        touched_jobs: dict[str, TranslationFileJob] = {}
+        for i, item in enumerate(batch):
             result = translations.get(str(i))
+            entry = item.entry
             if result and apply_translation_to_entry(entry, result):
                 if "fuzzy" not in entry.flags:
                     entry.flags.append("fuzzy")
                 batch_translated += 1
+                touched_jobs[item.job.output_path] = item.job
 
         translated_count += batch_translated
         completed_batches += 1
@@ -491,8 +585,9 @@ async def run_translation_batches(
             f"completed batches: {completed_batches}/{batches} "
             f"(latest: {batch_index + 1}/{batches})"
         )
-        if save_callback:
-            save_callback()
+        for job in touched_jobs.values():
+            if job.save_callback:
+                job.save_callback()
 
     await run_parallel_batches(
         batches=all_batches,
@@ -504,6 +599,12 @@ async def run_translation_batches(
 
 
 def run_translation(config: TranslationRunConfig) -> None:
+    try:
+        file_kind = validate_translation_files(config.files)
+        file_jobs = load_translation_jobs(config.files)
+    except ValueError as exc:
+        sys.exit(f"ERROR: {exc}")
+
     runtime_context = build_task_runtime_context(
         provider_name=config.provider,
         target_lang=config.target_lang,
@@ -515,9 +616,8 @@ def run_translation(config: TranslationRunConfig) -> None:
     provider = runtime_context.provider
     client = runtime_context.client
     resource_context = runtime_context.resources
-    _, entries, save_callback, output_path = load_entries_for_translation(config.file)
 
-    work_items = select_work_items(entries, retranslate_all=config.retranslate_all)
+    work_items = build_translation_queue(file_jobs, retranslate_all=config.retranslate_all)
     total = len(work_items)
     if total == 0:
         print("No translatable messages found." if config.retranslate_all else "No untranslated or fuzzy messages found.")
@@ -538,6 +638,8 @@ def run_translation(config: TranslationRunConfig) -> None:
     )
 
     print_startup_configuration(
+        ("Input files", len(file_jobs)),
+        ("File kind", file_kind.value),
         ("Provider", provider.name),
         ("Model", config.model),
         ("Thinking level", config.thinking_level or "provider default"),
@@ -565,17 +667,22 @@ def run_translation(config: TranslationRunConfig) -> None:
                 target_lang=config.target_lang,
                 vocabulary_text=resource_context.vocabulary_text,
                 project_rules=resource_context.project_rules,
-                save_callback=save_callback,
             )
         )
     except RuntimeError as exc:
         sys.exit(str(exc))
 
-    if save_callback:
-        save_callback()
+    for job in file_jobs:
+        if job.save_callback:
+            job.save_callback()
 
     print("\nTranslation complete.")
-    print(f"Saved file: {output_path}")
+    if len(file_jobs) == 1:
+        print(f"Saved file: {file_jobs[0].output_path}")
+    else:
+        print(f"Saved files ({len(file_jobs)}):")
+        for job in file_jobs:
+            print(f"- {job.output_path}")
     print("All AI-generated translations are marked as fuzzy/unfinished for human review.")
 
 
