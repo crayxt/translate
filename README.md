@@ -12,6 +12,7 @@ Toolkit for translating, checking, revising, and extracting glossary terms from 
 - `process_gui.py` now exposes a read-only instruction preview so you can inspect the resolved system prompt and language rules for the active task.
 - Provider, API key, thinking level, Flex mode, and Gemini backend settings are now shared GUI controls across task tabs.
 - Shared runtime/bootstrap, CLI argument setup, and batch execution helpers were moved into `core/` to reduce duplication across task entrypoints.
+- The local extraction pipeline now lives in `core/term_extraction.py`, its JSON/PO handoff lives in `core/term_handoff.py`, and translation uses the shared matcher to attach per-message `relevant_vocabulary` hints from the approved glossary.
 
 # Setup
 Install dependencies:
@@ -83,6 +84,8 @@ Each task tab shares provider/model/API-key controls and shows the resolved inst
 - rules preview when the task uses language rules
 - target-language-sensitive prompt text where applicable
 
+The GUI also includes a dedicated `Local Extract` tab for source-side term discovery with automatic JSON+PO handoff generation, plus JSON-to-PO conversion without any model/API call.
+
 For Gemini, the shared controls also include:
 
 - backend: `studio` or `vertex`
@@ -136,6 +139,14 @@ data/
     fr_CA/
       vocab.txt
       rules.md
+  extract/
+    common/
+      abbreviations.txt
+      excluded_terms.txt
+    en/
+      stopwords.txt
+      low_value_words.txt
+      fixed_multiword_allowlist.txt
 ```
 
 Locale fallback is supported:
@@ -175,6 +186,37 @@ Startup output prints both:
 - `Vocabulary source` (`file:<path>` or `none`)
 - `Rules source` (`file:<path>`, `inline:--rules-str`, combined, or `none`)
 - `Thinking level` (`minimal`, `low`, `medium`, `high`, or provider default)
+
+## Translation-Time Vocabulary Matching
+
+The translation task now uses two vocabulary layers:
+
+- top-level `vocabulary`: the full approved glossary text, kept for compatibility
+- per-message `relevant_vocabulary`: only the glossary entries that match that message
+
+The per-message suggestions are derived locally from the rich glossary schema:
+
+```text
+term|translation|pos|context/example
+```
+
+Example message payload shape:
+
+```json
+{
+  "source": "Start playback",
+  "relevant_vocabulary": [
+    {
+      "source_term": "start",
+      "target_term": "бастау",
+      "part_of_speech": "verb",
+      "context_note": "Start playback"
+    }
+  ]
+}
+```
+
+This reduces glossary noise compared with dumping every known term into every batch.
 
 # Extract Glossary Terms
 
@@ -225,6 +267,38 @@ To get previous behavior (missing terms only, JSON output):
 ```
 python translate_cli.py extract-terms your_file.po --mode missing --out-format json --vocab data/locales/kk/vocab.txt
 ```
+
+## Local Term Discovery
+
+Local term discovery is now a first-class task with shared core modules.
+
+- shared extraction core: `core/term_extraction.py`
+- shared JSON/PO handoff: `core/term_handoff.py`
+- task entrypoint: `tasks/extract_terms_local.py`
+- unified CLI command: `extract-terms-local`
+
+Usage:
+
+```text
+python translate_cli.py extract-terms-local your_file.po
+python translate_cli.py extract-terms-local your_file.po --mode missing --max-length 1
+python translate_cli.py extract-terms-local your_file.po --also-po
+python translate_cli.py extract-terms-local your_file.prototype-missing-terms.json --to-po
+```
+
+GUI:
+
+- open `process_gui.py`
+- use the `Local Extract` tab for local discovery; normal extraction writes both `.json` and `.po`
+- enable `Convert local JSON to PO handoff` when converting an existing local-extraction JSON report into a PO glossary file
+
+The local extraction JSON contains:
+
+- `terms`
+- `borderline_terms`
+- `translation_candidates`
+
+The same shared extraction core is also used by `translate` to build per-message glossary suggestions.
 
 # Check Translated PO Files
 

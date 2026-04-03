@@ -62,6 +62,44 @@ class ProcessSmokeTests(unittest.TestCase):
         self.assertIn("prefer the source plural form as the basis for translation", prompt)
         self.assertIn("numeric placeholder", prompt.lower())
 
+    def test_build_scoped_vocabulary_entries_parses_rich_vocabulary_text(self):
+        entries = process.build_scoped_vocabulary_entries(
+            "start|бастау|verb|Start playback\nstart|басталу|noun|Playback start"
+        )
+
+        self.assertEqual(
+            [(item.source_term, item.target_term, item.part_of_speech) for item in entries],
+            [("start", "бастау", "verb"), ("start", "басталу", "noun")],
+        )
+
+    def test_build_translation_message_payload_includes_relevant_vocabulary(self):
+        entry = polib.POEntry(msgid="Start playback")
+        payload = process.build_translation_message_payload(
+            entry,
+            process.build_scoped_vocabulary_entries(
+                "start|бастау|verb|Start playback\nplayback|ойнату|noun|Media playback\nstop|тоқтату|verb|"
+            ),
+        )
+
+        self.assertEqual(payload["source"], "Start playback")
+        self.assertEqual(
+            payload["relevant_vocabulary"],
+            [
+                {
+                    "source_term": "playback",
+                    "target_term": "ойнату",
+                    "part_of_speech": "noun",
+                    "context_note": "Media playback",
+                },
+                {
+                    "source_term": "start",
+                    "target_term": "бастау",
+                    "part_of_speech": "verb",
+                    "context_note": "Start playback",
+                },
+            ],
+        )
+
     def test_build_thinking_config_maps_cli_value(self):
         config = process.build_thinking_config("high")
         self.assertEqual(config.thinking_level, genai_types.ThinkingLevel.HIGH)
@@ -507,6 +545,7 @@ class ProcessSmokeTests(unittest.TestCase):
                 target_lang="kk",
                 vocabulary_text=None,
                 project_rules=None,
+                scoped_vocabulary_entries=[],
             )
         )
 

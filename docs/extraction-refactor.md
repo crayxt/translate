@@ -1,0 +1,158 @@
+# Extraction Refactor
+
+## Goal
+
+Unify three things that had started to diverge:
+
+- local term discovery
+- translation-time glossary matching
+- extraction resource handling
+
+The refactor moves reusable extraction logic into `core/term_extraction.py`, moves JSON/PO
+handoff logic into `core/term_handoff.py`, and promotes the workflow into
+`tasks/extract_terms_local.py`.
+
+## What Lives Where
+
+### Shared core
+
+`core/term_extraction.py` now owns:
+
+- extraction resource loading from `data/extract/...`
+- UI text normalization
+- accelerator stripping
+- tokenization
+- stopword / low-value / excluded-term filtering
+- candidate counting for unigrams / bigrams / trigrams
+- vocabulary-aware canonicalization
+- evidence collection
+- scoring and classification into:
+  - `accepted`
+  - `borderline`
+  - `rejected`
+- scoped glossary matching for translation-time vocabulary hints
+
+Main public pieces include:
+
+- `SourceMessage`
+- `CandidateEvidence`
+- `ExtractionResult`
+- `extract_terms_locally(...)`
+- `build_scoped_vocabulary_entries(...)`
+- `build_relevant_vocabulary(...)`
+- `collect_source_messages(...)`
+
+`core/term_handoff.py` now owns:
+
+- building the prototype JSON payload
+- converting prototype JSON into PO
+- translation candidate export helpers
+- PO note and occurrence shaping
+
+### Local task
+
+`tasks/extract_terms_local.py` now owns:
+
+- loading entries from supported file formats
+- local extraction workflow
+- JSON save flow
+- one-shot JSON + PO handoff generation
+- JSON-to-PO conversion CLI mode
+- CLI argument handling
+- the dedicated GUI-backed local discovery workflow
+
+In the GUI-backed flow, normal local extraction writes both the JSON report and the derived PO handoff in one run.
+
+## Data Layout
+
+The refactor also separates locale resources from extraction resources:
+
+```text
+data/
+  locales/
+    kk/
+      vocab.txt
+      rules.md
+  extract/
+    common/
+      abbreviations.txt
+      excluded_terms.txt
+    en/
+      stopwords.txt
+      low_value_words.txt
+      fixed_multiword_allowlist.txt
+```
+
+This split matters because:
+
+- `data/locales/...` is target-language translation policy and approved terminology
+- `data/extract/...` is source-language term-mining behavior
+
+## Translation-Time Glossary Flow
+
+The translation task no longer relies only on a large top-level vocabulary blob.
+
+Current flow:
+
+1. Load the approved vocabulary from `data/locales/<target-lang>/vocab.txt` or a glossary PO.
+2. Parse it into rich entries:
+   - `source_term`
+   - `target_term`
+   - `part_of_speech`
+   - `context_note`
+3. Build scoped glossary matchers once per run.
+4. For each source message, find only the relevant glossary entries.
+5. Inject those into that message as `relevant_vocabulary`.
+
+Example message payload:
+
+```json
+{
+  "source": "Start playback",
+  "context": "Toolbar action",
+  "relevant_vocabulary": [
+    {
+      "source_term": "start",
+      "target_term": "бастау",
+      "part_of_speech": "verb",
+      "context_note": "Start playback"
+    },
+    {
+      "source_term": "playback",
+      "target_term": "ойнату",
+      "part_of_speech": "noun",
+      "context_note": "Media playback"
+    }
+  ]
+}
+```
+
+The full vocabulary text is still kept in the request for compatibility, but the design direction
+is now message-scoped suggestions, not global prompt dumping.
+
+## Local Discovery Flow
+
+The local discovery process now looks like this:
+
+1. Load source entries from PO / TS / RESX / STRINGS / TXT through `tasks/extract_terms_local.py`.
+2. Convert them into normalized `SourceMessage` objects.
+3. Run shared local extraction through `core.term_extraction.extract_terms_locally(...)`.
+4. Emit:
+   - accepted terms
+   - borderline terms
+   - rejected terms
+   - translation candidates
+5. Optionally write the matching PO handoff in the same run, or convert the resulting JSON into a translation-ready PO glossary file through `core.term_handoff.py`.
+
+## Why This Refactor Matters
+
+- One normalization and matching path now serves both local discovery and translation-time glossary injection.
+- Extraction resources are data-driven instead of hardcoded Python sets.
+- The local discovery workflow is now a proper task instead of a standalone prototype script.
+- The production translator can reuse shared extraction primitives without importing export or CLI logic.
+
+## Next Likely Steps
+
+- Reuse `core.term_extraction` inside `tasks/extract_terms.py` before model-based term extraction.
+- Tune phrase-denylist and allowlist resources under `data/extract/`.
+- Reduce dependence on the full top-level `vocabulary` field once message-scoped hints prove reliable enough.

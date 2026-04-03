@@ -287,6 +287,7 @@ install|орнату|verb|
 interface|интерфейс|noun|
 internal|ішкі|adjective|internal protocol or internal error
 internet|интернет|noun|internet connection
+invalid|жарамсыз|adjective|invalid address
 item|элемент|noun|menu item or file item
 job|тапсырма|noun|print job
 join|қосылу|verb|join domain or network
@@ -318,7 +319,7 @@ loop|цикл|noun|
 low|төмен|adjective|low quality or low level
 magnifier|үлкейткіш|noun|screen magnifier
 mail|пошта|noun|mail app or account
-manual|қолмен|adjective|manual mode or schedule
+manual|нұсқаулық|noun|manual of application
 manufacturer|өндіруші|noun|hardware manufacturer
 mapping|сәйкестендіру|noun|
 mask|маска|noun|
@@ -608,6 +609,7 @@ upload|жүктеп салу|verb|
 usage|пайдалану|noun|energy or data usage
 username|пайдаланушы аты|noun|
 user|пайдаланушы|noun|
+valid|жарамды|adjective|valid address
 value|мән|noun|
 vector|вектор|noun|
 version|нұсқа|noun|

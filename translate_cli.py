@@ -5,7 +5,7 @@ from __future__ import annotations
 import argparse
 import sys
 
-from tasks import check_translations, extract_terms, revise_translations, translate
+from tasks import check_translations, extract_terms, extract_terms_local, revise_translations, translate
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -23,6 +23,11 @@ def build_parser() -> argparse.ArgumentParser:
         subparsers.add_parser("extract-terms", help="Extract glossary terms")
     )
     extract_parser.set_defaults(handler=run_extract_terms)
+
+    extract_local_parser = extract_terms_local.configure_parser(
+        subparsers.add_parser("extract-terms-local", help="Run local term discovery and PO handoff conversion")
+    )
+    extract_local_parser.set_defaults(handler=run_extract_terms_local)
 
     check_parser = check_translations.configure_parser(
         subparsers.add_parser("check", help="Check translated files")
@@ -43,6 +48,10 @@ def run_translate(args: argparse.Namespace) -> None:
 
 def run_extract_terms(args: argparse.Namespace) -> None:
     extract_terms.run_from_args(args)
+
+
+def run_extract_terms_local(args: argparse.Namespace) -> None:
+    extract_terms_local.run_from_args(args)
 
 
 def run_check(args: argparse.Namespace) -> None:

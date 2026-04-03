@@ -27,6 +27,13 @@ class TranslateCliSmokeTests(unittest.TestCase):
         self.assertEqual(mocked_main.call_args.args[0].command, "extract-terms")
         self.assertEqual(mocked_main.call_args.args[0].file, "input.po")
 
+    def test_extract_local_subcommand_dispatches_to_extract_terms_local(self):
+        with patch("translate_cli.run_extract_terms_local") as mocked_main:
+            translate_cli.main(["extract-terms-local", "input.po"])
+        mocked_main.assert_called_once()
+        self.assertEqual(mocked_main.call_args.args[0].command, "extract-terms-local")
+        self.assertEqual(mocked_main.call_args.args[0].file, "input.po")
+
     def test_check_subcommand_dispatches_to_check_translations(self):
         with patch("translate_cli.run_check") as mocked_main:
             translate_cli.main(["check", "input.po", "--probe", "5"])

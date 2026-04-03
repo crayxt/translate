@@ -86,6 +86,49 @@ class RequestContentsSmokeTests(unittest.TestCase):
         self.assertEqual(payload["source_lang"], "en")
         self.assertEqual(payload["messages"]["0"]["source"], "Open file")
 
+    def test_translate_request_contents_can_include_message_scoped_vocabulary(self):
+        contents = translate.build_translation_request_contents(
+            messages={
+                "0": {
+                    "source": "Start playback",
+                    "relevant_vocabulary": [
+                        {
+                            "source_term": "start",
+                            "target_term": "бастау",
+                            "part_of_speech": "verb",
+                        }
+                    ],
+                }
+            },
+            source_lang="en",
+            target_lang="kk",
+            vocabulary="start|бастау|verb|Start playback",
+            translation_rules="Use imperative tone.",
+            provider=translate.DEFAULT_PROVIDER,
+        )
+
+        payload = contents[0].parts[1].function_response.response
+        self.assertEqual(
+            payload["messages"]["0"]["relevant_vocabulary"][0]["source_term"],
+            "start",
+        )
+
+    def test_translate_request_spec_explicitly_mentions_context_and_variant_selection(self):
+        spec = translate.build_translation_request_spec()
+
+        self.assertIn(
+            "Each message includes source text and may also include `context`, `note`, and `relevant_vocabulary`.",
+            spec.payload_lines,
+        )
+        self.assertIn(
+            "Use `message.context` and `message.note` to disambiguate meaning and select the correct approved terminology for that message.",
+            spec.output_lines,
+        )
+        self.assertIn(
+            "If multiple `message.relevant_vocabulary` entries share the same `source_term`, choose the variant whose `part_of_speech` and `context_note` best match `message.context` and `message.note`.",
+            spec.output_lines,
+        )
+
     def test_check_request_contents_use_structured_batch_payload(self):
         contents = check_translations.build_check_request_contents(
             messages={"0": {"source": "Open", "translation": "Ashu"}},

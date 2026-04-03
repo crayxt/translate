@@ -1,0 +1,18 @@
+# Non-terms, brands, projects, and proper names that should be excluded.
+any
+dummy
+firefox
+gnome
+gnu
+libreoffice
+linux
+mozilla
+other
+qgis
+sdl
+tdf
+the document foundation
+used
+vlc
+xfce
+xfce4

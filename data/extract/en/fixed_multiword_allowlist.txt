@@ -1,0 +1,15 @@
+# Stable multiword terms that the prototype may keep as phrases.
+access token
+command line
+dark mode
+file system
+light mode
+log in
+log out
+menu bar
+side panel
+sign in
+sign out
+status bar
+tool bar
+user interface

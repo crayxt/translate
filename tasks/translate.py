@@ -80,6 +80,11 @@ from core.runtime import (
 )
 from core.task_batches import build_fixed_batches, run_parallel_batches
 from core.task_runtime import build_task_runtime_context, print_startup_configuration
+from core.term_extraction import (
+    ScopedVocabularyEntry,
+    build_relevant_vocabulary,
+    build_scoped_vocabulary_entries,
+)
 
 build_prompt_message_payload = _build_prompt_message_payload
 
@@ -99,6 +104,8 @@ MUST:
 - If source text is ALL CAPS, keep translation ALL CAPS
 - Translate ONLY the message text, not metadata
 - When approved vocabulary or project rules are provided, follow them exactly
+- Use message context and notes to disambiguate meaning, UI role, and terminology whenever they are present
+- If multiple approved glossary entries could apply, choose the variant whose part of speech and context best match the message context and note
 
 FORMATTING:
 - If the source text contains \\n line-wrapping markers, preserve them in the translation and try to keep lines at roughly similar lengths
@@ -129,6 +136,17 @@ TRANSLATION_RESPONSE_SCHEMA: dict[str, Any] = {
     },
     "required": ["translations"],
 }
+
+
+def build_translation_message_payload(
+    entry: Any,
+    scoped_vocabulary_entries: List[ScopedVocabularyEntry],
+) -> Dict[str, Any]:
+    payload = build_prompt_message_payload(entry)
+    relevant_vocabulary = build_relevant_vocabulary(payload.get("source"), scoped_vocabulary_entries)
+    if relevant_vocabulary:
+        payload["relevant_vocabulary"] = relevant_vocabulary
+    return payload
 
 
 def build_translation_generation_config(
@@ -163,6 +181,8 @@ def build_translation_request_spec(force_non_empty: bool = False) -> TaskRequest
         ),
         payload_lines=(
             "The payload includes source language, target language, optional approved vocabulary/glossary, optional project translation rules/instructions, and a `messages` map.",
+            "Each message includes source text and may also include `context`, `note`, and `relevant_vocabulary`.",
+            "When present, `relevant_vocabulary` is a message-scoped list of approved term translations and may contain multiple variants for the same source term.",
         ),
         output_lines=(
             "Return only the corrected final JSON.",
@@ -172,6 +192,9 @@ def build_translation_request_spec(force_non_empty: bool = False) -> TaskRequest
             "If the target language effectively has one plural form but multiple slots are required, repeat the same wording in all required plural slots.",
             "For target languages with no plural difference, prefer the source plural form as the basis for translation.",
             "Run a silent vocabulary audit before finalizing each translation and prefer approved terminology when applicable.",
+            "When `message.relevant_vocabulary` is present, prefer those term translations for that message.",
+            "Use `message.context` and `message.note` to disambiguate meaning and select the correct approved terminology for that message.",
+            "If multiple `message.relevant_vocabulary` entries share the same `source_term`, choose the variant whose `part_of_speech` and `context_note` best match `message.context` and `message.note`.",
             "If project rules are present, follow them exactly; they are mandatory, not advisory.",
             "Preserve every numeric placeholder like `%d` or `%n` exactly.",
             *non_empty_block,
@@ -504,6 +527,7 @@ async def run_translation_batches(
     target_lang: str,
     vocabulary_text: str | None,
     project_rules: str | None,
+    scoped_vocabulary_entries: List[ScopedVocabularyEntry],
 ) -> int:
     batches = len(all_batches)
 
@@ -512,7 +536,7 @@ async def run_translation_batches(
 
     async def process_batch(batch_index: int, batch: List[TranslationQueueItem]) -> Dict[str, TranslationResult]:
         msg_map = {
-            str(i): build_prompt_message_payload(item.entry)
+            str(i): build_translation_message_payload(item.entry, scoped_vocabulary_entries)
             for i, item in enumerate(batch)
         }
         contents = build_translation_request_contents(
@@ -539,7 +563,7 @@ async def run_translation_batches(
                 f"{len(missing_indices)} items missing from response. Retrying them..."
             )
             retry_map = {
-                str(idx): build_prompt_message_payload(batch[idx].entry)
+                str(idx): build_translation_message_payload(batch[idx].entry, scoped_vocabulary_entries)
                 for idx in missing_indices
             }
             retry_contents = build_translation_request_contents(
@@ -643,6 +667,7 @@ def run_translation(config: TranslationRunConfig) -> None:
         provider=provider,
         flex_mode=config.flex_mode,
     )
+    scoped_vocabulary_entries = build_scoped_vocabulary_entries(resource_context.vocabulary_text)
 
     print_startup_configuration(
         ("Input files", len(file_jobs)),
@@ -656,6 +681,7 @@ def run_translation(config: TranslationRunConfig) -> None:
         ("Limits mode", limits_mode),
         ("Retranslate all", "yes" if config.retranslate_all else "no"),
         ("Vocabulary source", resource_context.vocabulary_source),
+        ("Scoped vocabulary entries", len(scoped_vocabulary_entries)),
         ("Rules source", resource_context.rules_source or "none"),
     )
     all_batches = build_batches(work_items, parallel_requests, batch_size)
@@ -675,6 +701,7 @@ def run_translation(config: TranslationRunConfig) -> None:
                 target_lang=config.target_lang,
                 vocabulary_text=resource_context.vocabulary_text,
                 project_rules=resource_context.project_rules,
+                scoped_vocabulary_entries=scoped_vocabulary_entries,
             )
         )
     except RuntimeError as exc:

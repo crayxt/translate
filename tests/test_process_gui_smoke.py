@@ -23,6 +23,12 @@ class ProcessGuiSmokeTests(unittest.TestCase):
         self.assertIn("software localization QA reviewer", preview)
         self.assertIn("real Kazakh Cyrillic alphabet", preview)
 
+    def test_build_system_prompt_preview_for_local_extract_explains_local_flow(self):
+        preview = process_gui.build_system_prompt_preview("extract_local", "kk")
+        self.assertIn("No model system prompt is used", preview)
+        self.assertIn("core/term_extraction.py", preview)
+        self.assertIn("core/term_handoff.py", preview)
+
     def test_detect_default_resource_paths_prefers_data_dir(self):
         data_dir = os.path.join(os.getcwd(), "_tmp_gui_data", "data", "locales", "fr")
         legacy_dir = os.path.join(os.getcwd(), "_tmp_gui_data")
@@ -480,6 +486,171 @@ class ProcessGuiSmokeTests(unittest.TestCase):
                     "25",
                     "--max-attempts",
                     "7",
+                ],
+            )
+        finally:
+            for path in (input_path, script_path):
+                if os.path.exists(path):
+                    os.remove(path)
+
+    def test_validate_local_extract_config_does_not_require_api_key(self):
+        input_path = os.path.join(os.getcwd(), "_tmp_gui_local_extract.po")
+        try:
+            with open(input_path, "w", encoding="utf-8") as handle:
+                handle.write('msgid "Open"\nmsgstr ""\n')
+
+            config = process_gui.LocalExtractGuiConfig(
+                input_file=input_path,
+                source_lang="en",
+                target_lang="kk",
+            )
+
+            errors = process_gui.validate_local_extract_gui_config(config)
+
+            self.assertEqual(errors, [])
+        finally:
+            if os.path.exists(input_path):
+                os.remove(input_path)
+
+    def test_build_local_extract_command_includes_local_flags(self):
+        input_path = os.path.join(os.getcwd(), "_tmp_gui_local_extract.po")
+        script_path = os.path.join(os.getcwd(), "_tmp_local_extract_script.py")
+        try:
+            with open(input_path, "w", encoding="utf-8") as handle:
+                handle.write('msgid "Open"\nmsgstr ""\n')
+            with open(script_path, "w", encoding="utf-8") as handle:
+                handle.write("print('stub')\n")
+
+            config = process_gui.LocalExtractGuiConfig(
+                input_file=input_path,
+                source_lang="en",
+                target_lang="fr",
+                vocab_path=input_path,
+                mode="all",
+                max_length="3",
+                out_path="terms.json",
+                include_rejected=True,
+            )
+
+            command = process_gui.build_local_extract_command(
+                config,
+                python_executable="python",
+                script_path=script_path,
+            )
+
+            self.assertEqual(
+                command,
+                [
+                    "python",
+                    "-u",
+                    os.path.abspath(script_path),
+                    "extract-terms-local",
+                    input_path,
+                    "--source-lang",
+                    "en",
+                    "--target-lang",
+                    "fr",
+                    "--mode",
+                    "all",
+                    "--max-length",
+                    "3",
+                    "--vocab",
+                    input_path,
+                    "--include-rejected",
+                    "--out",
+                    "terms.json",
+                ],
+            )
+        finally:
+            for path in (input_path, script_path):
+                if os.path.exists(path):
+                    os.remove(path)
+
+    def test_build_local_extract_command_supports_json_to_po_mode(self):
+        input_path = os.path.join(os.getcwd(), "_tmp_gui_local_extract.prototype-missing-terms.json")
+        script_path = os.path.join(os.getcwd(), "_tmp_local_extract_script.py")
+        try:
+            with open(input_path, "w", encoding="utf-8") as handle:
+                handle.write("{}\n")
+            with open(script_path, "w", encoding="utf-8") as handle:
+                handle.write("print('stub')\n")
+
+            config = process_gui.LocalExtractGuiConfig(
+                input_file=input_path,
+                to_po=True,
+                include_borderline=True,
+                out_path="terms.po",
+            )
+
+            command = process_gui.build_local_extract_command(
+                config,
+                python_executable="python",
+                script_path=script_path,
+            )
+
+            self.assertEqual(
+                command,
+                [
+                    "python",
+                    "-u",
+                    os.path.abspath(script_path),
+                    "extract-terms-local",
+                    input_path,
+                    "--to-po",
+                    "--include-borderline",
+                    "--out",
+                    "terms.po",
+                ],
+            )
+        finally:
+            for path in (input_path, script_path):
+                if os.path.exists(path):
+                    os.remove(path)
+
+    def test_build_local_extract_command_supports_one_shot_json_and_po_output(self):
+        input_path = os.path.join(os.getcwd(), "_tmp_gui_local_extract.po")
+        script_path = os.path.join(os.getcwd(), "_tmp_local_extract_script.py")
+        try:
+            with open(input_path, "w", encoding="utf-8") as handle:
+                handle.write('msgid "Access token"\nmsgstr ""\n')
+            with open(script_path, "w", encoding="utf-8") as handle:
+                handle.write("print('stub')\n")
+
+            config = process_gui.LocalExtractGuiConfig(
+                input_file=input_path,
+                source_lang="en",
+                target_lang="kk",
+                also_po=True,
+                include_borderline=True,
+                out_path="terms.json",
+            )
+
+            command = process_gui.build_local_extract_command(
+                config,
+                python_executable="python",
+                script_path=script_path,
+            )
+
+            self.assertEqual(
+                command,
+                [
+                    "python",
+                    "-u",
+                    os.path.abspath(script_path),
+                    "extract-terms-local",
+                    input_path,
+                    "--source-lang",
+                    "en",
+                    "--target-lang",
+                    "kk",
+                    "--mode",
+                    "missing",
+                    "--max-length",
+                    "1",
+                    "--also-po",
+                    "--include-borderline",
+                    "--out",
+                    "terms.json",
                 ],
             )
         finally:
