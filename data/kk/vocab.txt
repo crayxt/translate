@@ -14,8 +14,10 @@ array - массив
 arrow - бағдарша
 background - фон
 backup (noun) - сақтық көшірме
+bevel - бедер
 bold - жуан
 boolean - логикалық
+branch - тармақ
 browse - шолу
 browser - браузер
 brush - қылқалам
@@ -31,6 +33,7 @@ command - команда
 compression - сығу
 connector (line) - байланыстыратын сызық
 countdown - кері санау
+create - жасау
 critical - критикалық
 crop - қиып жіберу
 cursor - курсор
@@ -50,6 +53,7 @@ donate - демеушілік ету
 download - жүктеп алу
 dump - дамп
 edit - түзету
+emboss - барельеф
 enable - іске қосу
 enabled - іске қосылған
 encrypted - шифрленген
@@ -95,6 +99,7 @@ mouse - тышқан
 object - объект
 option - опция
 package - десте
+parse - талдау
 passphrase - кілттік фраза
 password - пароль
 paste - кірістіру
