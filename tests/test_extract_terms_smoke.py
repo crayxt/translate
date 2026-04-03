@@ -319,7 +319,7 @@ class ExtractTermsSmokeTests(unittest.TestCase):
             patch("tasks.extract_terms.get_translation_provider", return_value=_DummyProvider()),
             patch(
                 "tasks.extract_terms.resolve_resource_path",
-                return_value=os.path.join("data", "kk", "vocab.txt"),
+                return_value=os.path.join("data", "locales", "kk", "vocab.txt"),
             ) as resolve_mock,
             patch("tasks.extract_terms.read_optional_vocabulary_file", return_value=None),
             patch("tasks.extract_terms.detect_file_kind", return_value=process.FileKind.TXT),
@@ -343,7 +343,7 @@ class ExtractTermsSmokeTests(unittest.TestCase):
             patch("tasks.extract_terms.get_translation_provider", return_value=provider),
             patch(
                 "tasks.extract_terms.resolve_resource_path",
-                return_value=os.path.join("data", "kk", "vocab.txt"),
+                return_value=os.path.join("data", "locales", "kk", "vocab.txt"),
             ),
             patch("tasks.extract_terms.read_optional_vocabulary_file", return_value="save - saqtau"),
             patch("tasks.extract_terms.load_vocabulary_pairs", return_value=[("save", "saqtau")]) as load_pairs_mock,
@@ -355,7 +355,7 @@ class ExtractTermsSmokeTests(unittest.TestCase):
         ):
             extract_terms.main()
 
-        load_pairs_mock.assert_called_once_with(os.path.join("data", "kk", "vocab.txt"), "Vocabulary")
+        load_pairs_mock.assert_called_once_with(os.path.join("data", "locales", "kk", "vocab.txt"), "Vocabulary")
 
 
 if __name__ == "__main__":

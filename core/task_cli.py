@@ -83,7 +83,7 @@ def add_vocabulary_argument(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--vocab",
         default=None,
-        help="Optional vocabulary file (auto: data/<target-lang>/vocab.txt). Supports .txt and glossary .po",
+        help="Optional vocabulary file (auto: data/locales/<target-lang>/vocab.txt). Supports .txt and glossary .po",
     )
 
 

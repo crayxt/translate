@@ -751,7 +751,7 @@ def configure_parser(parser: argparse.ArgumentParser) -> argparse.ArgumentParser
     add_vocabulary_argument(parser)
     add_rules_arguments(
         parser,
-        rules_help="Optional translation rules file (auto: data/<target-lang>/rules.md)",
+        rules_help="Optional translation rules file (auto: data/locales/<target-lang>/rules.md)",
         rules_str_help="Optional inline translation rules",
     )
     parser.add_argument("--out", default=None, help="Output path (default: <input>.revised.<ext>)")

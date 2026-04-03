@@ -875,21 +875,21 @@ class ProcessSmokeTests(unittest.TestCase):
     def test_detect_default_text_resource_prefers_exact_match(self):
         with patch("tasks.translate.os.path.isfile") as mocked_exists:
             mocked_exists.side_effect = lambda path: path in {
-                os.path.join("data", "fr_CA", "rules.md"),
-                os.path.join("data", "fr", "rules.md"),
+                os.path.join("data", "locales", "fr_CA", "rules.md"),
+                os.path.join("data", "locales", "fr", "rules.md"),
             }
             resolved = process.detect_default_text_resource("rules", "md", "fr_CA")
 
-        self.assertEqual(resolved, os.path.join("data", "fr_CA", "rules.md"))
+        self.assertEqual(resolved, os.path.join("data", "locales", "fr_CA", "rules.md"))
 
     def test_detect_default_text_resource_falls_back_to_base_language(self):
         with patch("tasks.translate.os.path.isfile") as mocked_exists:
             mocked_exists.side_effect = lambda path: path in {
-                os.path.join("data", "fr", "rules.md")
+                os.path.join("data", "locales", "fr", "rules.md")
             }
             resolved = process.detect_default_text_resource("rules", "md", "fr_CA")
 
-        self.assertEqual(resolved, os.path.join("data", "fr", "rules.md"))
+        self.assertEqual(resolved, os.path.join("data", "locales", "fr", "rules.md"))
 
     def test_detect_default_text_resource_uses_legacy_fallback(self):
         with patch("tasks.translate.os.path.isfile") as mocked_exists:

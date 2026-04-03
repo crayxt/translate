@@ -259,6 +259,10 @@ def detect_default_text_resource(
         return os.path.join(*parts)
 
     for lang_code in build_language_code_candidates(target_lang):
+        candidate_path = build_candidate("data", "locales", lang_code, f"{prefix}.{extension}")
+        if os.path.isfile(candidate_path):
+            return candidate_path
+    for lang_code in build_language_code_candidates(target_lang):
         candidate_path = build_candidate("data", lang_code, f"{prefix}.{extension}")
         if os.path.isfile(candidate_path):
             return candidate_path

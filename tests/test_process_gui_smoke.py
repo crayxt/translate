@@ -24,7 +24,7 @@ class ProcessGuiSmokeTests(unittest.TestCase):
         self.assertIn("real Kazakh Cyrillic alphabet", preview)
 
     def test_detect_default_resource_paths_prefers_data_dir(self):
-        data_dir = os.path.join(os.getcwd(), "_tmp_gui_data", "data", "fr")
+        data_dir = os.path.join(os.getcwd(), "_tmp_gui_data", "data", "locales", "fr")
         legacy_dir = os.path.join(os.getcwd(), "_tmp_gui_data")
         os.makedirs(data_dir, exist_ok=True)
         vocab_path = os.path.join(data_dir, "vocab.txt")
@@ -32,7 +32,7 @@ class ProcessGuiSmokeTests(unittest.TestCase):
         legacy_vocab_path = os.path.join(legacy_dir, "vocab-fr.txt")
         try:
             with open(vocab_path, "w", encoding="utf-8") as handle:
-                handle.write("save - enregistrer\n")
+                handle.write("save|enregistrer|verb|\n")
             with open(rules_path, "w", encoding="utf-8") as handle:
                 handle.write("Use imperative tone.\n")
             with open(legacy_vocab_path, "w", encoding="utf-8") as handle:

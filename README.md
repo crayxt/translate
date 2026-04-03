@@ -119,28 +119,29 @@ Default processing behavior:
 
 By default, vocabulary and project rules are auto-detected from target language under `data/`:
 
-- `data/<target-lang>/vocab.txt`
-- `data/<target-lang>/rules.md`
+- `data/locales/<target-lang>/vocab.txt`
+- `data/locales/<target-lang>/rules.md`
 
 Recommended layout:
 
 ```
 data/
-  kk/
-    vocab.txt
-    rules.md
-  fr/
-    vocab.txt
-    rules.md
-  fr_CA/
-    vocab.txt
-    rules.md
+  locales/
+    kk/
+      vocab.txt
+      rules.md
+    fr/
+      vocab.txt
+      rules.md
+    fr_CA/
+      vocab.txt
+      rules.md
 ```
 
 Locale fallback is supported:
 
-- for `--target-lang fr_CA`, the script first tries `data/fr_CA/vocab.txt` / `data/fr_CA/rules.md`
-- if not found, it falls back to `data/fr/vocab.txt` / `data/fr/rules.md`
+- for `--target-lang fr_CA`, the script first tries `data/locales/fr_CA/vocab.txt` / `data/locales/fr_CA/rules.md`
+- if not found, it falls back to `data/locales/fr/vocab.txt` / `data/locales/fr/rules.md`
 
 Legacy flat naming is still accepted as a fallback:
 
@@ -205,7 +206,7 @@ python translate_cli.py translate your_file.po --vocab your_file.glossary.po
 When you run missing-term extraction with `--vocab` and `--out-format po`, the output PO is merged automatically:
 
 ```
-python translate_cli.py extract-terms your_file.po --mode missing --vocab data/kk/vocab.txt --out-format po
+python translate_cli.py extract-terms your_file.po --mode missing --vocab data/locales/kk/vocab.txt --out-format po
 ```
 
 That PO contains:
@@ -222,7 +223,7 @@ python translate_cli.py translate your_file.po --vocab your_file.missing-terms.p
 To get previous behavior (missing terms only, JSON output):
 
 ```
-python translate_cli.py extract-terms your_file.po --mode missing --out-format json --vocab data/kk/vocab.txt
+python translate_cli.py extract-terms your_file.po --mode missing --out-format json --vocab data/locales/kk/vocab.txt
 ```
 
 # Check Translated PO Files
@@ -256,8 +257,8 @@ which is useful for prompt testing and quick validation runs.
 
 Defaults follow the same resource lookup as the translation script:
 
-- `data/<target-lang>/vocab.txt`
-- `data/<target-lang>/rules.md`
+- `data/locales/<target-lang>/vocab.txt`
+- `data/locales/<target-lang>/rules.md`
 
 `--vocab` also accepts a glossary `.po` file, so you can point the checker at a reviewed glossary PO
 directly.
