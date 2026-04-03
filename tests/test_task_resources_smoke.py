@@ -10,8 +10,8 @@ class TaskResourcesSmokeTests(unittest.TestCase):
         rules_path = os.path.join(os.getcwd(), "_tmp_task_rules.md")
         try:
             with open(vocab_path, "w", encoding="utf-8") as handle:
-                handle.write("save - enregistrer\n")
-                handle.write("open - ouvrir\n")
+                handle.write("save|enregistrer|verb|\n")
+                handle.write("open|ouvrir|verb|\n")
             with open(rules_path, "w", encoding="utf-8") as handle:
                 handle.write("Keep labels short.\n")
 
@@ -43,7 +43,7 @@ class TaskResourcesSmokeTests(unittest.TestCase):
         vocab_path = os.path.join(os.getcwd(), "_tmp_task_vocab_only.txt")
         try:
             with open(vocab_path, "w", encoding="utf-8") as handle:
-                handle.write("save - enregistrer\n")
+                handle.write("save|enregistrer|verb|\n")
 
             context = load_task_resource_context(
                 target_lang="fr",

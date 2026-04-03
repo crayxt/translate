@@ -37,18 +37,59 @@ def _is_translated_vocabulary_entry(entry: Any) -> bool:
     return False
 
 
-def parse_vocabulary_line(line: str) -> Tuple[str, str] | None:
+def parse_vocabulary_fields(line: str) -> Tuple[str, str, str, str] | None:
     stripped = str(line or "").strip()
     if not stripped or stripped.startswith("#"):
         return None
-    separator = " - "
-    if separator not in stripped:
+
+    if "|" not in stripped:
         return None
-    source_term, target_term = stripped.split(separator, 1)
-    source_term = _normalize_vocabulary_cell(source_term)
-    target_term = _normalize_vocabulary_cell(target_term)
+
+    raw_parts = stripped.split("|", 3)
+    raw_parts += [""] * (4 - len(raw_parts))
+    source_term, target_term, part_of_speech, context_note = (
+        _normalize_vocabulary_cell(value) for value in raw_parts[:4]
+    )
     if not source_term or not target_term:
         return None
+    return source_term, target_term, part_of_speech, context_note
+
+
+def format_vocabulary_text_line(
+    source_term: str,
+    target_term: str,
+    part_of_speech: str = "",
+    context_note: str = "",
+) -> str:
+    return "|".join(
+        (
+            _normalize_vocabulary_cell(source_term),
+            _normalize_vocabulary_cell(target_term),
+            _normalize_vocabulary_cell(part_of_speech),
+            _normalize_vocabulary_cell(context_note),
+        )
+    )
+
+
+def build_vocabulary_identity_key(
+    source_term: str,
+    part_of_speech: str = "",
+    context_note: str = "",
+) -> str:
+    return "\u241f".join(
+        (
+            _normalize_vocabulary_cell(source_term).lower(),
+            _normalize_vocabulary_cell(part_of_speech).lower(),
+            _normalize_vocabulary_cell(context_note).lower(),
+        )
+    )
+
+
+def parse_vocabulary_line(line: str) -> Tuple[str, str] | None:
+    parsed = parse_vocabulary_fields(line)
+    if not parsed:
+        return None
+    source_term, target_term, _part_of_speech, _context_note = parsed
     return source_term, target_term
 
 
@@ -67,11 +108,11 @@ def load_vocabulary_pairs(
         pairs: List[Tuple[str, str]] = []
         seen_indices: Dict[str, int] = {}
         for raw_line in content.splitlines():
-            parsed = parse_vocabulary_line(raw_line)
+            parsed = parse_vocabulary_fields(raw_line)
             if not parsed:
                 continue
-            source_term, target_term = parsed
-            key = source_term.lower()
+            source_term, target_term, part_of_speech, context_note = parsed
+            key = build_vocabulary_identity_key(source_term, part_of_speech, context_note)
             if key in seen_indices:
                 pairs[seen_indices[key]] = (source_term, target_term)
                 continue
@@ -104,12 +145,69 @@ def read_optional_vocabulary_file(
     *,
     pofile_loader: Callable[..., Any] | None = None,
 ) -> str | None:
-    pairs = load_vocabulary_pairs(path, label, pofile_loader=pofile_loader)
-    if not pairs:
-        if path and path.lower().endswith(".po"):
-            print(f"Warning: {label} file '{path}' has no usable msgid/msgstr glossary pairs.")
+    if not path:
         return None
-    return "\n".join(f"{source_term} - {target_term}" for source_term, target_term in pairs)
+
+    if not path.lower().endswith(".po"):
+        content = read_optional_text_file(path, label)
+        if not content:
+            return None
+        normalized_lines: List[str] = []
+        seen_indices: Dict[str, int] = {}
+        for raw_line in content.splitlines():
+            parsed = parse_vocabulary_fields(raw_line)
+            if not parsed:
+                continue
+            source_term, target_term, part_of_speech, context_note = parsed
+            key = build_vocabulary_identity_key(source_term, part_of_speech, context_note)
+            normalized_line = format_vocabulary_text_line(
+                source_term,
+                target_term,
+                part_of_speech,
+                context_note,
+            )
+            if key in seen_indices:
+                normalized_lines[seen_indices[key]] = normalized_line
+                continue
+            seen_indices[key] = len(normalized_lines)
+            normalized_lines.append(normalized_line)
+        return "\n".join(normalized_lines) if normalized_lines else None
+
+    loader = pofile_loader or polib.pofile
+    try:
+        glossary = loader(path, wrapwidth=PO_WRAP_WIDTH)
+    except FileNotFoundError:
+        print(f"Warning: {label} file '{path}' not found.")
+        return None
+
+    normalized_lines: List[str] = []
+    seen_indices: Dict[str, int] = {}
+    for entry in glossary:
+        if not _is_translated_vocabulary_entry(entry):
+            continue
+        source_term = _normalize_vocabulary_cell(getattr(entry, "msgid", ""))
+        target_term = _normalize_vocabulary_cell(getattr(entry, "msgstr", ""))
+        part_of_speech = _normalize_vocabulary_cell(getattr(entry, "msgctxt", ""))
+        context_note = _normalize_vocabulary_cell(getattr(entry, "tcomment", ""))
+        if not source_term or not target_term:
+            continue
+        key = build_vocabulary_identity_key(source_term, part_of_speech, context_note)
+        normalized_line = format_vocabulary_text_line(
+            source_term,
+            target_term,
+            part_of_speech,
+            context_note,
+        )
+        if key in seen_indices:
+            normalized_lines[seen_indices[key]] = normalized_line
+            continue
+        seen_indices[key] = len(normalized_lines)
+        normalized_lines.append(normalized_line)
+
+    if not normalized_lines:
+        print(f"Warning: {label} file '{path}' has no usable msgid/msgstr glossary pairs.")
+        return None
+    return "\n".join(normalized_lines)
 
 
 def build_language_code_candidates(target_lang: str) -> List[str]:
@@ -218,9 +316,12 @@ def detect_rules_source(
 __all__ = [
     "build_language_code_candidates",
     "detect_default_text_resource",
+    "build_vocabulary_identity_key",
+    "format_vocabulary_text_line",
     "detect_rules_source",
     "load_vocabulary_pairs",
     "merge_project_rules",
+    "parse_vocabulary_fields",
     "parse_vocabulary_line",
     "read_optional_text_file",
     "read_optional_vocabulary_file",

@@ -101,27 +101,79 @@ class ProcessSmokeTests(unittest.TestCase):
 
             vocabulary = process.read_optional_vocabulary_file(vocab_path)
 
-            self.assertEqual(vocabulary, "addon - qosymsha\nsave as - qalaysha saqtau")
+            self.assertEqual(vocabulary, "addon|qosymsha||\nsave as|qalaysha saqtau||")
         finally:
             if os.path.exists(vocab_path):
                 os.remove(vocab_path)
 
     def test_parse_vocabulary_line_parses_source_target_pairs(self):
-        parsed = process.parse_vocabulary_line("save as - qalaysha saqtau")
+        parsed = process.parse_vocabulary_line("save as|qalaysha saqtau|verb phrase|")
         self.assertEqual(parsed, ("save as", "qalaysha saqtau"))
+
+    def test_parse_vocabulary_line_rejects_legacy_txt_schema(self):
+        parsed = process.parse_vocabulary_line("save as - qalaysha saqtau")
+        self.assertIsNone(parsed)
+
+    def test_parse_vocabulary_line_supports_rich_schema(self):
+        parsed = process.parse_vocabulary_line("start|бастау|verb|Start playback")
+        self.assertEqual(parsed, ("start", "бастау"))
 
     def test_load_vocabulary_pairs_from_txt_ignores_comments_and_last_duplicate_wins(self):
         vocab_path = os.path.join(os.getcwd(), "_tmp_vocab_pairs.txt")
         try:
             with open(vocab_path, "w", encoding="utf-8") as f:
                 f.write("# comment\n")
-                f.write("save - saqtau\n")
-                f.write("save - qoru\n")
-                f.write("open - ashu\n")
+                f.write("save|saqtau|verb|\n")
+                f.write("save|qoru|verb|\n")
+                f.write("open|ashu|verb|\n")
 
             pairs = process.load_vocabulary_pairs(vocab_path)
 
             self.assertEqual(pairs, [("save", "qoru"), ("open", "ashu")])
+        finally:
+            if os.path.exists(vocab_path):
+                os.remove(vocab_path)
+
+    def test_load_vocabulary_pairs_preserves_same_source_with_different_rich_context(self):
+        vocab_path = os.path.join(os.getcwd(), "_tmp_vocab_pairs_rich.txt")
+        try:
+            with open(vocab_path, "w", encoding="utf-8") as f:
+                f.write("start|бастау|verb|Start playback\n")
+                f.write("start|басталу|noun|Playback start\n")
+
+            pairs = process.load_vocabulary_pairs(vocab_path)
+
+            self.assertEqual(pairs, [("start", "бастау"), ("start", "басталу")])
+        finally:
+            if os.path.exists(vocab_path):
+                os.remove(vocab_path)
+
+    def test_read_optional_vocabulary_file_normalizes_rich_txt_schema(self):
+        vocab_path = os.path.join(os.getcwd(), "_tmp_vocab_rich.txt")
+        try:
+            with open(vocab_path, "w", encoding="utf-8") as f:
+                f.write("start|бастау|verb|Start playback\n")
+                f.write("start|басталу|noun|Playback start\n")
+
+            vocabulary = process.read_optional_vocabulary_file(vocab_path)
+
+            self.assertEqual(
+                vocabulary,
+                "start|бастау|verb|Start playback\nstart|басталу|noun|Playback start",
+            )
+        finally:
+            if os.path.exists(vocab_path):
+                os.remove(vocab_path)
+
+    def test_read_optional_vocabulary_file_returns_none_for_legacy_txt_schema(self):
+        vocab_path = os.path.join(os.getcwd(), "_tmp_vocab_legacy.txt")
+        try:
+            with open(vocab_path, "w", encoding="utf-8") as f:
+                f.write("save - saqtau\n")
+
+            vocabulary = process.read_optional_vocabulary_file(vocab_path)
+
+            self.assertIsNone(vocabulary)
         finally:
             if os.path.exists(vocab_path):
                 os.remove(vocab_path)
@@ -139,7 +191,23 @@ class ProcessSmokeTests(unittest.TestCase):
 
             vocabulary = process.read_optional_vocabulary_file(vocab_path)
 
-            self.assertEqual(vocabulary, "addon - qosymsha")
+            self.assertEqual(vocabulary, "addon|qosymsha||")
+        finally:
+            if os.path.exists(vocab_path):
+                os.remove(vocab_path)
+
+    def test_read_optional_vocabulary_file_includes_po_context_and_note_fields(self):
+        vocab_path = os.path.join(os.getcwd(), "_tmp_vocab_glossary_context.po")
+        try:
+            po = polib.POFile()
+            entry = polib.POEntry(msgid="start", msgstr="бастау", msgctxt="verb")
+            entry.tcomment = "Start playback"
+            po.append(entry)
+            po.save(vocab_path)
+
+            vocabulary = process.read_optional_vocabulary_file(vocab_path)
+
+            self.assertEqual(vocabulary, "start|бастау|verb|Start playback")
         finally:
             if os.path.exists(vocab_path):
                 os.remove(vocab_path)
