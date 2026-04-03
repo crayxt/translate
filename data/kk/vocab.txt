@@ -7,143 +7,344 @@ action - әрекет
 active - белсенді
 addon - қосымша
 address - адрес
+advanced - кеңейтілген
+algorithm - алгоритм
 alternate - балама
+any - кез келген
+application - қолданба
 apply - іске асыру
 archive - архив
 array - массив
 arrow - бағдарша
+attribute - атрибут
+audio - аудио
+auto - авто
+automatic - автоматты түрде
 background - фон
 backup (noun) - сақтық көшірме
+backward - артқа
+band - жолақ
+bandwidth - өткізу жолағы
 bevel - бедер
+bit - бит
+bitrate - битрейт
+black - қара
+block - блок
+blue - көк
 bold - жуан
+bookmark - бетбелгі
 boolean - логикалық
+bottom - төменгі
 branch - тармақ
+brightness - жарықтық
 browse - шолу
 browser - браузер
 brush - қылқалам
+buffer - буфер
 build - құрастыру
 button - батырма
+byte - байт
+caching - кэштеу
 cancel - бас тарту
-click - шерту
+capture - түсіру
+center - орта
+change - өзгерту
 channel - арна
+chapter - тарау
 checksum - бақылау сомасы
 child (process) - еншілес (процесс)
+click - шерту
+codec - кодек
+color - түс
 colored - түрлі-түсті
+column - баған
 command - команда
+component - компонент
 compression - сығу
+connection - қосылым
 connector (line) - байланыстыратын сызық
+continue - жалғастыру
+control - басқару
+coordinate - координата
 countdown - кері санау
 create - жасау
 critical - критикалық
 crop - қиып жіберу
 cursor - курсор
 curve - қисық (сызық)
-database - дерекқор
+custom - пайдаланушылық
+cycle (verb) - ауыстырып өту
 daemon - қызмет
+data - деректер
+database - дерекқор
+debug - жөндеу
+decode - декодтау
+decoder - декодер
 default - бастапқы | үнсіз келісім бойынша
+deinterlace - деинтерлейстеу
+delay - кідіріс
 delete - өшіру
+demuxer - демультиплексор
+description - сипаттама
 destroy - жою
 develop - әзірлеу
 developer - әзірлеуші
+device - құрылғы
 dialog - сұхбат терезесі
 directory - бума
 disable - сөндіру
 disabled - сөндірілген
+disc - диск
+distance - қашықтық
+document - құжат
 donate - демеушілік ету
+down - төмен
 download - жүктеп алу
+dummy - бос
 dump - дамп
+duration - ұзақтық
+edge - жиек
+edge - қабырға
 edit - түзету
+effect - эффект
 emboss - барельеф
 enable - іске қосу
 enabled - іске қосылған
+encoder - кодтаушы
+encoding - кодтау
 encrypted - шифрленген
 encryption - шифрлеу
 endnote - соңдық нұсқама
+enter (verb) - енгізу
+error - қате
+export - экспорттау
+expression - өрнек
 extension - кеңейту
+extent - қамту аймағы
+factor - коэффициент
 failed - сәтсіз аяқталды
+fast - жылдам
+feature - мүмкіндік
 field - өріс
-filter - сүзгі
+file - файл
+filename - файл атауы
 filter (verb) - сүзгілеу
+filter - сүзгі
 folder - бума
 font - қаріп
 footer - төменгі колонтитул
 footnote - нұсқама
+force (verb) - мәжбүрлеу
+form - форма
 format - пішім
+forward - алға
+frame - кадр
+frequency - жиілік
+fullscreen - толық экран
+function - функция
 fuzzy - дәлсіз
+gain - күшейту
+general - жалпы
+geometry - геометрия
 global - глобалды
+grid - тор
+group - топ
 header (in network requests) - тақырыптама
 header - жоғарғы колонтитул
+height - биіктігі
 help - көмек
+high - жоғары
 highlight - түспен ерекшелеу
 history - тарих
 horizontal - горизонталды
+host - хост
+hotkey - жедел перне
+however - алайда
 icon - таңбаша
 image (disk image) - бейне
 image - сурет
+increase - арттыру
 index (in database) - индекс
 index - нұсқағыш
 indexed - индекстелген
+input - кіріс
 insert - кірістіру
+install - орнату
+interface - интерфейс
 key (like in keyboard) - перне
 key (like key thing or key to open a lock) - кілт
 keyboard - пернетақта
 keyring - кілттер бауы
+label - жапсырма
+language - тіл
+layer - қабат
 layout - жайма
 legend - аңыз
+library - кітапхана
+line - сызық
+list - тізім
+local - жергілікті
 lock (verb) - құлыптау
+logo - логотип
+loop - цикл
 mapping - сәйкестендіру
+mask - маска
+matrix - матрица
+mean - орташа мән
+media - медиа
+medium - орташа
 menu - мәзір
+mesh - жүйесіз тор
+message - хабарлама
+metadata - метадеректер
+mode - режим
 modifier - модификатор
 monospace - ені біркелкі
+mosaic - мозаика
+motion - қозғалыс
 mouse - тышқан
+mute - дыбысты сөндіру
+muxer - мультиплексор
+name - ат
+network - желі
+node - түйін
+noise - шу
+normal - қалыпты
+number - сан
 object - объект
+offset - ығысу
+opacity - мөлдір еместік
+open - ашу
 option - опция
+output - шығыс
+overlay - қабаттастыру
 package - десте
+packetizer - пакеттеуші
+paragraph - абзац
+parameter - параметр
+parent - ата-ана
 parse - талдау
 passphrase - кілттік фраза
 password - пароль
 paste - кірістіру
+path - жол
 pause - аялдату
+picture - сурет
+pitch (audio) - дыбыс биіктігі
+play - ойнату
+playback - ойнату
+player - плеер
 playlist - ойнату тізімі
 plug-in - плагин
 plugin - плагин
+podcast - подкаст
+point - нүкте
 pointer - курсор
-privacy - жекелік
+polygon - полигон
+port - порт
+position - орын
 preferences - баптаулар
+preset - пресет
+privacy - жекелік
 process (verb) - өңдеу
+profile - профиль
+program - бағдарлама
+project - жоба
+protocol - хаттама
+quality - сапа
+random - кездейсоқ
 range - ауқым
+raster - растр
+ratio - арақатынас
+record (noun) - жазба
+record (verb) - жазу
 redo - қайталау
 regular expression - тұрақты өрнек
 remove - өшіру
 rename - атын өзгерту
+renderer - рендерер
+repeat - қайталау
+reset - бастапқы күйге келтіру
+resize - өлшемін өзгерту
+resolution - ажыратымдылық
+result - нәтиже
 root (user) - әкімші
 root - түбір
 save - сақтау
 save as - қалайша сақтау
+scale - масштабтау
+screen - экран
 screenshot - скриншот
+search - іздеу
+select (verb) - таңдау
+select - таңдау
 separate - бөлек
 separator - ажыратқыш
+service - қызмет
+session - сеанс
 shading - көлеңкелеу
 shell - қоршам
 shortcut - жарлық
+skip - аттап кету
 slide show - слайдшоу
 snapshot - снапшот
 software - бағдарламалық қамтама
+speed - жылдамдық
+standard - стандартты
+start (verb) - бастау
+stats - статистика
+stereo - стерео
+stop (verb) - тоқтату
 stopwatch - секунд өлшегіші
+stream - ағын
 stretch - созу
+string (data type) - жол
+style - стиль
+subpicture - ішкі сурет
+subtitle - субтитр
+surround - көлемді дыбыс
 symbol - таңба
+synchronization - синхрондау
+syntax - синтаксис
 tab (like browser tab) - бет
+table - кесте
 target - мақсат
-tool - сайман
+teletext - телемәтін
+text - мәтін
 theme - тема
+thread - ағын
+threshold - шек
+tile - тайл
+timeout - күту уақыты
+title (media) - атау
+tool - сайман
+track - трек
 tracker - трекер
+transparency - мөлдірлік
 trash - қоқыс шелегі
 troubleshooting - мәселелерді шешу
-upload - жүктеп салу
+tuner - тюнер
+type - түр
 undo - болдырмау
+uninstall - өшіру
 unit - юнит
+unknown - белгісіз
 unlock - құлпын ашу
+unmute - дыбысты іске қосу
 update - жаңарту
 upgrade - жаңғырту
+upload - жүктеп салу
+user - пайдаланушы
+username - пайдаланушы аты
+value - мән
+vector - вектор
+version - нұсқа
+vertex - төбе
 vertical - вертикалды
 video - видео
+volume - дыбыс деңгейі
+warning - ескерту
+white - ақ
+width - ені
+window - терезе
+zoom - масштаб
