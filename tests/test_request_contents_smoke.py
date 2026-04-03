@@ -102,7 +102,7 @@ class RequestContentsSmokeTests(unittest.TestCase):
 
     def test_extract_request_contents_use_structured_batch_payload(self):
         contents = extract_terms.build_term_request_contents(
-            messages={"0": "Open file"},
+            messages={"0": {"source": "Open file", "context": "Toolbar"}},
             source_lang="en",
             target_lang="kk",
             mode="missing",
@@ -114,7 +114,8 @@ class RequestContentsSmokeTests(unittest.TestCase):
         payload = contents[0].parts[1].function_response.response
         self.assertEqual(contents[0].parts[1].function_response.name, "term_extraction_batch")
         self.assertEqual(payload["mode"], "missing")
-        self.assertEqual(payload["messages"]["0"], "Open file")
+        self.assertEqual(payload["messages"]["0"]["source"], "Open file")
+        self.assertEqual(payload["messages"]["0"]["context"], "Toolbar")
 
     def test_revision_request_contents_use_structured_batch_payload(self):
         contents = revise_translations.build_revision_request_contents(

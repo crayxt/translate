@@ -11,6 +11,7 @@ from typing import Any, Dict, List, Literal, Tuple
 
 import polib
 
+from core.entries import get_entry_prompt_context_and_note
 from core.review_common import build_target_script_guidance as build_shared_target_script_guidance
 from core.formats import (
     FileKind,
@@ -49,6 +50,11 @@ You are a software localization terminology analyst.
 MUST:
 - Extract canonical product, domain, and UI terms rather than full-sentence translations
 - Prefer concise glossary-ready source terms and concise target-language equivalents
+- Prefer atomic reusable terms over message-specific phrases
+- If a phrase is only a loose modifier+noun or verb+object combination, split it into standalone terms when each part is reusable on its own
+- Example: prefer `audio` and `channel` over `audio channel`; prefer `save` and `file` over `save file`
+- Keep a multi-word source term only when it is a fixed concept whose meaning would change if split
+- Example: keep `access token`, `command line`, or `dark mode` as whole terms
 - Skip generic stop words, obvious function words, and low-value noise
 - Keep term casing and number canonical unless the source clearly requires otherwise
 - When vocabulary is provided, use it for consistency and do not invent conflicting alternatives
@@ -101,29 +107,54 @@ def should_include_text(text: str) -> bool:
     return any(ch.isalpha() for ch in stripped)
 
 
-def collect_source_messages(entries: List[Any]) -> List[str]:
-    results: List[str] = []
-    seen: set[str] = set()
+def build_term_message_payload(
+    source_text: str,
+    *,
+    context: str | None = None,
+    note: str | None = None,
+) -> Dict[str, str]:
+    payload: Dict[str, str] = {"source": source_text}
+    if context:
+        payload["context"] = context
+    if note:
+        payload["note"] = note
+    return payload
 
-    def add_message(text: str) -> None:
+
+def collect_source_messages(entries: List[Any]) -> List[Dict[str, str]]:
+    results: List[Dict[str, str]] = []
+    seen: set[Tuple[str, str, str]] = set()
+
+    def add_message(text: str, *, context: str | None, note: str | None) -> None:
         normalized = " ".join(text.split())
         if not should_include_text(normalized):
             return
-        key = normalized.lower()
+        key = (
+            normalized.lower(),
+            " ".join(str(context or "").split()).lower(),
+            " ".join(str(note or "").split()).lower(),
+        )
         if key in seen:
             return
         seen.add(key)
-        results.append(normalized)
+        results.append(
+            build_term_message_payload(
+                normalized,
+                context=context,
+                note=note,
+            )
+        )
 
     for entry in entries:
         if getattr(entry, "obsolete", False):
             continue
         if not getattr(entry, "include_in_term_extraction", True):
             continue
-        add_message(getattr(entry, "msgid", "") or "")
+        context, note = get_entry_prompt_context_and_note(entry)
+        add_message(getattr(entry, "msgid", "") or "", context=context, note=note)
         plural_text = getattr(entry, "msgid_plural", None)
         if plural_text:
-            add_message(plural_text)
+            add_message(plural_text, context=context, note=note)
 
     return results
 
@@ -135,6 +166,7 @@ def build_term_request_spec(mode: DiscoveryMode, max_terms_per_batch: int) -> Ta
             "Inspect source UI messages and extract a comprehensive project glossary.",
             "Focus on product, domain, and UI terms that should be standardized.",
             "Also extract generic IT terminology as we are updating the glossary.",
+            "Prefer atomic reusable terms over message-specific collocations.",
             "Exclude generic words and stop words.",
             "If vocabulary is provided, use it for consistency but do not limit extraction to only missing terms.",
         )
@@ -142,6 +174,7 @@ def build_term_request_spec(mode: DiscoveryMode, max_terms_per_batch: int) -> Ta
         task_lines = (
             "Inspect source UI messages and find terms that are missing from the provided project vocabulary.",
             "Focus on product, domain, and UI terms that should be standardized in a glossary.",
+            "Prefer atomic reusable terms over message-specific collocations.",
             "Exclude generic words, stop words, and terms already present in the vocabulary.",
         )
 
@@ -150,12 +183,16 @@ def build_term_request_spec(mode: DiscoveryMode, max_terms_per_batch: int) -> Ta
         task_lines=task_lines,
         payload_lines=(
             "The payload contains source language, target language, discovery mode, optional known vocabulary, per-batch term limit, and a `messages` map.",
+            "Each message item may include `source`, `context`, and `note`.",
             "Inspect only the provided source UI messages.",
         ),
         output_lines=(
             "Return only valid JSON, with no markdown or commentary.",
             "Return glossary-ready terms, not full-sentence translations.",
             "Keep `source_term` concise and canonical.",
+            "Default to the smallest standalone reusable term; prefer one-word entries when they preserve the meaning.",
+            "Do not return loose UI phrases like `audio channel` when `audio` and `channel` should be separate glossary entries.",
+            "Keep a multi-word term only for fixed concepts such as `access token`, `command line`, or `dark mode`.",
             "Keep source terms and suggested translations lowercase and singular where natural.",
             f"Provide at most {max_terms_per_batch} terms for this batch.",
             "If vocabulary is provided, use it for consistency and avoid conflicting alternatives.",
@@ -164,7 +201,7 @@ def build_term_request_spec(mode: DiscoveryMode, max_terms_per_batch: int) -> Ta
 
 
 def build_terms_prompt(
-    messages: Dict[str, str],
+    messages: Dict[str, Dict[str, Any]],
     source_lang: str,
     target_lang: str,
     mode: DiscoveryMode,
@@ -289,7 +326,7 @@ def build_term_system_instruction(target_lang: str) -> str:
 
 
 def build_term_request_payload(
-    messages: Dict[str, str],
+    messages: Dict[str, Dict[str, Any]],
     source_lang: str,
     target_lang: str,
     mode: DiscoveryMode,
@@ -308,7 +345,7 @@ def build_term_request_payload(
 
 
 def build_term_request_contents(
-    messages: Dict[str, str],
+    messages: Dict[str, Dict[str, Any]],
     source_lang: str,
     target_lang: str,
     mode: DiscoveryMode,
@@ -543,9 +580,9 @@ def run_from_args(args: argparse.Namespace) -> None:
         all_candidates: List[TermCandidate] = []
         completed = 0
 
-        def build_contents(_batch_index: int, batch: List[str]) -> Any:
+        def build_contents(_batch_index: int, batch: List[Dict[str, str]]) -> Any:
             return build_term_request_contents(
-                messages=build_indexed_batch_map(batch, lambda text: text),
+                messages=build_indexed_batch_map(batch, lambda item: item),
                 source_lang=args.source_lang,
                 target_lang=args.target_lang,
                 mode=args.mode,
@@ -556,7 +593,7 @@ def run_from_args(args: argparse.Namespace) -> None:
 
         def on_batch_completed(
             batch_index: int,
-            batch: List[str],
+            batch: List[Dict[str, str]],
             terms: List[TermCandidate],
         ) -> None:
             nonlocal completed
