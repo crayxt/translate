@@ -24,6 +24,12 @@ Approved glossary terms are mandatory; these rules only guide Kazakh wording aro
 - For yes/no questions, use `ма/ме/ба/бе/па/пе` naturally as separate particles after the predicate or focus word.
 - Do not add interrogative particles to wh-questions that already contain `кім`, `не`, `қайда`, `қашан`, `неге`, or `қалай`.
 - Prefer clear neutral phrasing for warnings, confirmations, and status messages.
+- For confirmation-style prompts about user actions, settings, permissions, replacement, deletion, hiding, restarting, exiting, and similar decisions, prefer a natural active question built around the action the user may take.
+- In such prompts, prefer patterns like `<object> <verb>-у керек пе?` or another equally natural active confirmation form when that fits the UI context.
+- Avoid passive or bureaucratic calques such as `өшірілсін бе?`, `алмастырылсын ба?`, `жасырылсын ба?`, `қайта іске қосылсын ба?`, `қосылсын ба?` when the UI is really asking the user whether to perform an action.
+- Prefer `«%1$s» альбомын өшіру керек пе?`, `«%1$s» ойнату тізімін алмастыру керек пе?`, `Қолданбаны қайта іске қосу керек пе?` over passive variants like `«%1$s» альбомы өшірілсін бе?`.
+- When an item name appears in a confirmation question, inflect that item naturally for the intended action, especially the accusative where appropriate.
+- For English prompts like `Are you sure you want to ...?`, prefer a concise natural Kazakh confirmation question centered on the action itself rather than a literal translation of `Are you sure`.
 
 ## Grammar and Morphology
 - Prefer natural Kazakh word order and avoid Russian-style preposition calques.
