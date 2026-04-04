@@ -1,9 +1,14 @@
 # Extra low-value English single words beyond the stop-word list.
 above
+after
 again
+already
+always
+another
 around
 available
 back
+before
 below
 both
 choose
@@ -18,6 +23,8 @@ enabled
 failed
 first
 following
+hence
+however
 invalid
 last
 later
@@ -26,11 +33,13 @@ left
 little
 new
 next
+never
 now
 old
 once
 only
 optional
+other
 over
 please
 press
@@ -41,12 +50,16 @@ same
 second
 selected
 tap
+therefore
 toggle
 top
 under
 up
 upper
 use
+used
 using
 wait
+when
+whence
 within

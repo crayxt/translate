@@ -1,39 +1,60 @@
 about|туралы|preposition|осы туралы if in help - about
 accelerate|үдету|verb|
+accept|қабылдау|verb|accept action or button
 accessed|қол жеткізілген|adjective|last accessed date
 accessibility|арнайы мүмкіндіктер|noun|accessibility settings
 access|қол жеткізу|verb|
 account|тіркелгі|noun|
+accuracy|дәлдік|noun|accuracy assessment
+acres|акр|noun|area unit
 action|әрекет|noun|
 activate|белсендіру|verb|activate command or button
 active|белсенді|adjective|
+adapter|адаптер|noun|
+added|қосылған|adjective|already added state
 addon|қосымша|noun|
 address|адрес|noun|
 add|қосу|verb|add bookmark or item
 administrator|әкімші|noun|administrator account
 advanced|кеңейтілген|adjective|
+aggregated|жиынды|adjective|aggregated result
+aggregate|жиынтық|noun|aggregate function or grouped result
 album|альбом|noun|audio metadata
 alert|дабыл|noun|alert sound
 algorithm|алгоритм|noun|
+alias|бүркеншік ат|noun|
 allowed|рұқсат етілген|adjective|allowed operation
+allow|рұқсат ету|verb|allow browsing or setting changes
+already|әлдеқашан|adverb|
 alternate|балама|adjective|
+altitude|абсолюттік биіктік|noun|altitude above sea level
+analysis|анализ|noun|spatial or raster analysis
+angle|бұрыш|noun|azimuth or rotation angle
+annotation|аңдатпа|noun|map or layout annotation
 any|кез келген|determiner|
 appearance|сыртқы көрініс|noun|appearance settings
 application|қолданба|noun|
 apply|іске асыру|verb|
 app|қолданба|noun|application window or default app
 archive|архив|noun|
+area|аудан|noun|feature area or area metric
 array|массив|noun|
 arrow|бағдарша|noun|
 artist|орындаушы|noun|audio metadata
+ascending|өсу ретімен|adverb|ascending sort order
+aspect|экспозиция|noun|terrain aspect or azimuth
+atlas|атлас|noun|layout atlas
 attach|тіркеу|verb|attach device
 attribute|атрибут|noun|
 audio|аудио|noun|
 authenticate|аутентификациялау|verb|network authentication
 authentication|аутентификация|noun|network or enterprise authentication
 authorization|авторизация|noun|authorization approved
+autoaccept|автоматты түрде қабылдау|noun|Autoaccept plugin or setting
+automatically|автоматты түрде|adverb|
 automatic|автоматты түрде|adjective|
 auto|авто|adjective|
+away|кетіп қалған|adjective|away presence status
 background|фон|noun|
 backup|сақтық көшірме|noun|
 backward|артқа|adverb|
@@ -41,6 +62,7 @@ balance|теңгерім|noun|audio balance
 bandwidth|өткізу жолағы|noun|
 band|жолақ|noun|
 banner|баннер|noun|notification banner
+basic|негізгі|adjective|basic group or fields
 batch|топтама|noun|batch rename operation
 battery|батарея|noun|battery device or state
 bevel|бедер|noun|
@@ -52,19 +74,25 @@ blue|көк|adjective|
 bold|жуан|adjective|
 bookmark|бетбелгі|noun|
 boolean|логикалық|adjective|
+border|шекара|noun|border or edge
 bottom|төменгі|adjective|
+boundary|шекара|noun|polygon or region boundary
+box|жақтау|noun|box or bounding box
 branch|тармақ|noun|
 brightness|жарықтық|noun|
 broken|сынған|adjective|broken link
 browser|браузер|noun|
 browse|шолу|verb|
 brush|қылқалам|noun|
+buddy|контакт|noun|IM buddy or contact
 buffer|буфер|noun|
+building|ғимарат|noun|building feature
 build|құрастыру|verb|
 button|батырма|noun|
 byte|байт|noun|
 cache|кэш|noun|application cache
 caching|кэштеу|noun|
+calculate|есептеу|verb|calculate values or metrics
 calendar|күнтізбе|noun|calendar app or source
 calibrate|калибрлеу|verb|calibrate device or profile
 camera|камера|noun|camera brand or model metadata
@@ -73,22 +101,41 @@ cancel|бас тарту|verb|
 captions|жазулар|noun|icon captions
 capture|түсіру|verb|
 carrier|оператор|noun|mobile carrier
+cartesian|декарттық|adjective|Cartesian coordinates
+categorical|санаттық|adjective|categorical values
+category|санат|noun|category field or value class
 center|орта|noun|
+centimeters|сантиметр|noun|metric length unit
 change|өзгерту|verb|
 channel|арна|noun|
 chapter|тарау|noun|
+character|таңба|noun|character or text symbol
 charging|қуатталуда|adjective|charging state
+chart|диаграмма|noun|chart or graph
+chat|чат|noun|chat or chat client
 checksum|бақылау сомасы|noun|
+check|тексеру|verb|check validity or status
 child|еншілес (процесс)|noun|process
+classification|классификация|noun|classification result or process
+classify|жіктеу|verb|classify values or features
+class|класс|noun|classification or point class
+cleaned|тазартылған|adjective|cleaned geometry or data
+clear|тазарту|verb|clear stored password or board
 clicking|шерту|noun|mouse clicking settings
 click|шерту|verb|
+client|клиент|noun|chat client application
 clipboard|алмасу буфері|noun|clipboard data
 close|жабу|verb|close window or dialog
+cloud|бұлт|noun|cloud or point cloud
 codec|кодек|noun|
+code|код|noun|expression or script code
+collect|жинау|verb|collect layers, styles, or values
 colored|түрлі-түсті|adjective|
 color|түс|noun|
 column|баған|noun|
 command|команда|noun|
+comma|үтір|noun|comma-separated values
+comment|түсініктеме|noun|table or field comment
 complete|аяқталды|adjective|completed state
 component|компонент|noun|
 compressed|сығылған|adjective|compressed file or archive
@@ -106,10 +153,15 @@ connection|қосылым|noun|
 connector|байланыстыратын сызық|noun|line
 connect|қосылу|verb|connect to network location
 contact|контакт|noun|contacts source
+contain|қамту|verb|group or field description
 content|мазмұн|noun|file contents
 context|контекст|noun|context menu or action context
 continue|жалғастыру|verb|
+contrast|контраст|noun|image contrast
 control|басқару|noun|
+conversation|әңгіме|noun|chat conversation or conversation window
+conversion|түрлендіру|noun|unit or raster conversion
+coordinate reference system|координаттық есептеу жүйесі|noun|CRS
 coordinate|координата|noun|
 copied|көшірілген|adjective|copied files
 copying|көшірілуде|adjective|progress status while copying
@@ -120,9 +172,12 @@ count|санау|verb|count items in folders
 created|жасалған|adjective|creation date
 create|жасау|verb|
 creating|жасалуда|adjective|progress status while creating
+creation|жасау|noun|layer or object creation
+credential|тіркелу мәліметтері|noun|credential provider or stored secret
 critical|критикалық|adjective|
 crop|қиып жіберу|verb|
 crosshair|айқыш сызық|noun|crosshair lines
+crs|CRS|noun|coordinate reference system abbreviation
 cursor|курсор|noun|
 curve|қисық (сызық)|noun|
 custom|пайдаланушылық|adjective|
@@ -130,14 +185,21 @@ cut|қиып алу|verb|clipboard action
 cycle|ауыстырып өту|verb|
 daemon|қызмет|noun|
 database|дерекқор|noun|
+dataset|деректер жиыны|noun|raster or vector dataset
+datasource|деректер көзі|noun|input data source
 data|деректер|noun|
+datetime|күн мен уақыт|noun|datetime, date, or time value
 date|күн|noun|date filter or file date
 day|күн|noun|time unit
 debug|жөндеу|verb|
+decimal|ондық|adjective|decimal degrees or decimal value
 decoder|декодер|noun|
 decode|декодтау|verb|
 default|бастапқы|adjective|general adjective
 default|үнсіз келісім бойынша|adjective|software setting or option
+defined|анықталған|adjective|defined CRS or value
+definition|сипаттама|noun|view or column definition
+degree|градус|noun|angle or geographic degree
 deinterlace|деинтерлейстеу|verb|
 delay|кідіріс|noun|
 deleted|өшірілген|adjective|deleted item
@@ -145,25 +207,35 @@ delete|өшіру|verb|
 deleting|өшірілуде|adjective|progress status while deleting
 demuxer|демультиплексор|noun|
 denied|рұқсат берілмеді|adjective|access denied
+density|тығыздық|noun|edge or feature density
+descending|кему ретімен|adverb|descending sort order
 description|сипаттама|noun|
 desktop|жұмыс үстелі|noun|GNOME desktop
 destination|мақсатты орын|noun|destination folder or file
 destroy|жою|verb|
 detailed|толық ақпарат|adjective|detailed type or detailed date format
 details|толық ақпарат|noun|details section or message
+detected|анықталған|adjective|automatically detected value
+detect|анықтау|verb|detect edges or polygons
 developer|әзірлеуші|noun|
 develop|әзірлеу|verb|
 device|құрылғы|noun|
 diagnostics|диагностика|noun|diagnostic tools
 dialog|сұхбат терезесі|noun|
+diffuse|диффузиялық|adjective|diffuse lighting or reflectance
+direction|бағыт|noun|flow or routing direction
+directly|тікелей|adverb|
 directory|бума|noun|
 disabled|сөндірілген|adjective|
 disable|сөндіру|verb|
 disconnected|ажыратылған|adjective|device or service disconnected
 disconnect|ажырату|verb|disconnect network location or device
+discrete|дискретті|adjective|discrete values or classes
 disc|диск|noun|
 displayed|көрсетілген|adjective|content displayed in views
 display|көрсету|verb|display file contents or timestamps
+dissolved|біріктірілген|adjective|dissolved features
+dissolve|біріктіру|verb|dissolve features
 distance|қашықтық|noun|
 document|құжат|noun|
 domain|домен|noun|network or login domain
@@ -180,11 +252,14 @@ dump|дамп|noun|
 duplicated|көшірмесі жасалған|adjective|duplicated file or item
 duplicate|көшірме жасау|verb|duplicate file or item
 duration|ұзақтық|noun|
+east|шығыс|noun|east direction
 edge|жиек|noun|border or side
 edge|қабырға|noun|graph or mesh
+edited|түзетілген|adjective|edited message marker
 edit|түзету|verb|
 effect|эффект|noun|
 eject|шығару|verb|eject removable device
+elevation|биіктік|noun|elevation raster, DEM, or elevation units
 email|эл. пошта|noun|send by email
 emboss|барельеф|verb|
 empty|бос|adjective|empty name or empty folder
@@ -197,37 +272,51 @@ encrypted|шифрленген|adjective|
 encryption|шифрлеу|noun|
 endnote|соңдық нұсқама|noun|
 endpoint|соңғы нүкте|noun|network endpoint
+end|соңы|noun|end point or range end
 enroll|тіркеу|verb|enroll fingerprint or device
 enterprise|корпоративтік|adjective|enterprise authentication
 enter|енгізу|verb|
-entry|өріс|noun|text entry in location toolbar
+entry|жазба|noun|text entry in location toolbar
+equal|тең|adjective|equal comparison or count
 error|қате|noun|
 everywhere|барлық жерде|adverb|search everywhere scope
 examples|мысалдар|noun|examples label in help text
 executable|орындалатын|adjective|executable file
 existing|бар|adjective|existing file or folder
+exponential|экспоненциалды|adjective|exponential function or model
+exponent|экспонента|noun|mathematical exponent
 export|экспорттау|verb|
 expression|өрнек|noun|
 extension|кеңейту|noun|
 extent|қамту аймағы|noun|
 extracted|тарқатылған|adjective|archive extracted
 extracting|тарқытылуда|adjective|progress status while extracting
+extraction|шығарып алу|noun|feature or data extraction
 extract|тарқату|verb|extract archive contents
 extra|қосымша|adjective|extra abilities or battery type
+face|бет|noun|mesh face
 factor|коэффициент|noun|
 failed|сәтсіз аяқталды|adjective|
 fast|жылдам|adjective|
 feature|мүмкіндік|noun|
+feet|фут|noun|imperial distance unit
 field|өріс|noun|
 filename|файл атауы|noun|
 filesystem|файлдық жүйе|noun|file system
 file|файл|noun|
+filled|толтырылған|adjective|filled elevation or filled option
+fill|толтыру|verb|fill cells, values, or parameters
+filtered|сүзгіден өткізілген|adjective|filtered values or layer
+filtering|сүзгілеу|noun|filtering operation
 filter|сүзгі|noun|
 filter|сүзгілеу|verb|
 find|табу|verb|find files and folders
 fingerprint|саусақ ізі|noun|fingerprint authentication
 firmware|микробағдарлама|noun|device firmware
+fixed|бекітілген|adjective|fixed size or fixed table
+flat|жазық|adjective|flat terrain or flatness
 flipped|аударылған|adjective|flipped orientation
+float|қалқымалы үтірлі сан|noun|float type or float raster values
 folder|бума|noun|
 font|қаріп|noun|
 footer|төменгі колонтитул|noun|
@@ -235,8 +324,10 @@ footnote|нұсқама|noun|
 force|мәжбүрлеу|verb|
 forget|ұмыту|verb|forget network
 format|пішім|noun|
+formula|формула|noun|calculation formula
 form|форма|noun|
 forward|алға|adverb|
+found|табылған|adjective|found or not found state
 frame|кадр|noun|
 free|бос|adjective|available free space
 frequency|жиілік|noun|
@@ -245,23 +336,30 @@ full|толық|adjective|full text search
 function|функция|noun|
 fuzzy|дәлсіз|adjective|
 gain|күшейту|noun|
+gdal|GDAL|noun|GDAL library or driver
 general|жалпы|adjective|
+generate|генерациялау|verb|generate output
+generic|жалпы|adjective|generic implementation or option
+geodetic|геодезиялық|adjective|geodetic coordinates or system
 geometry|геометрия|noun|
 global|глобалды|adjective|
 go|өту|verb|go to location or go back
 graphics|графика|noun|graphics hardware or profile
+grass|GRASS|noun|GRASS GIS name
 grid|тор|noun|
 group|топ|noun|
 hardware|аппараттық құрал|noun|device hardware
 header|жоғарғы колонтитул|noun|
 header|тақырыптама|noun|network requests
 hearing|есту|noun|hearing accessibility
+hectares|гектар|noun|area unit
 height|биіктігі|noun|
 help|көмек|noun|
 hibernate|гибернациялау|verb|hibernate power state
 hidden|жасырын|adjective|hidden files
 highlight|түспен ерекшелеу|verb|
 high|жоғары|adjective|
+histogram|гистограмма|noun|histogram equalization or temperature histogram
 history|тарих|noun|
 home|үй бумасы|noun|home directory or Home location
 horizontal|горизонталды|adjective|
@@ -272,38 +370,58 @@ hotspot|кіру нүктесі|noun|Wi-Fi hotspot
 hour|сағат|noun|time unit
 however|алайда|conjunction|
 icon|таңбаша|noun|
+identification|идентификация|noun|dataset or feature identification
+idle|іссіз|adjective|user idle status or idle time
+id|идентификатор|noun|feature or field id
 image|бейне|noun|disk image
 image|сурет|noun|
 import|импорттау|verb|import file or settings
+inches|дюйм|noun|imperial length unit
 increase|арттыру|verb|
 indexed|индекстелген|adjective|
 index|индекс|noun|database
 index|нұсқағыш|noun|
 information|ақпарат|noun|file or image information
+info|ақпарат|noun|info dialog or menu item
 initial|бастапқы|adjective|initial window size
 input|кіріс|noun|
 insert|кірістіру|verb|
 install|орнату|verb|
+integer|бүтін сан|noun|integer value or integer raster
+intensity|қарқындылық|noun|color or signal intensity
 interface|интерфейс|noun|
 internal|ішкі|adjective|internal protocol or internal error
 internet|интернет|noun|internet connection
+intersect|қиылысу|verb|intersect geometry or raster
+interval|аралық|noun|sampling or class interval
 invalid|жарамсыз|adjective|invalid address
 item|элемент|noun|menu item or file item
+iteration|итерация|noun|processing iteration
 job|тапсырма|noun|print job
+joined|қосылды|verb|participant or channel joined
 join|қосылу|verb|join domain or network
+kernel|ядро|noun|resampling or density kernel
 keyboard|пернетақта|noun|
 keyring|кілттер бауы|noun|
+keyword|кілтсөз|noun|SQL or code keyword
 key|кілт|noun|object or lock
 key|перне|noun|keyboard
+kilometers|километр|noun|metric distance unit
+labeling|таңбалау|noun|layer labeling options
 label|жапсырма|noun|
 landscape|жатық|adjective|display orientation
 language|тіл|noun|
 large|үлкен|adjective|file too large
+latitude|ендік|noun|geographic latitude
 launch|іске қосу|verb|launch file on click
 layer|қабат|noun|
 layout|жайма|noun|
 legend|аңыз|noun|
+length|ұзындық|noun|field length or path length
+level|деңгей|noun|debug or filter level
 library|кітапхана|noun|
+limit|шек|noun|upper or lower limit
+linestring|сызық|noun|LineString geometry type
 line|сызық|noun|
 link|сілтеме|noun|symbolic link or context-menu link
 list|тізім|noun|
@@ -316,17 +434,25 @@ lock|құлыптау|verb|
 login|кіру|noun|automatic login or next login
 logo|логотип|noun|
 loop|цикл|noun|
+lower|төменгі|adjective|lower bound or lower-left value
 low|төмен|adjective|low quality or low level
 magnifier|үлкейткіш|noun|screen magnifier
 mail|пошта|noun|mail app or account
+manager|басқарушы|noun|account or plugin manager
 manual|нұсқаулық|noun|manual of application
 manufacturer|өндіруші|noun|hardware manufacturer
 mapping|сәйкестендіру|noun|
+map|карта|noun|raster or vector map
+margin|шет өрісі|noun|layout or cell margin
+marker|маркер|noun|marker symbol
 mask|маска|noun|
 matching|сәйкестендіру|noun|matching items or text matching
 match|сәйкестік|noun|full text match
 matrix|матрица|noun|
+maximum|максимум|adjective|maximum allowed count
+max|макс.|abbreviation|maximum value shorthand
 mean|орташа мән|noun|
+measurement|өлшем|noun|distance or coordinate measurement
 media|медиа|noun|
 medium|орташа|adjective|
 memory|жады|noun|system memory
@@ -334,16 +460,27 @@ menu|мәзір|noun|
 merge|біріктіру|verb|merge folders
 mesh|жүйесіз тор|noun|
 message|хабарлама|noun|
+messaging|хабар алмасу|noun|instant messaging
 metadata|метадеректер|noun|
+method|әдіс|noun|calculation or interpolation method
 metric|метрикалық|adjective|measurement format
 microphone|микрофон|noun|audio input device
+mile|миля|noun|imperial distance unit
+millimeter|миллиметр|noun|metric length unit
+minimum|минимум|adjective|minimum allowed count
 minute|минут|noun|time unit
-mobile|ұялы|adjective|mobile broadband or telephony
+min|мин.|abbreviation|minimum value shorthand
+miscellaneous|әртүрлі|adjective|miscellaneous options
+missing|жоқ|adjective|missing value or file
+mm|мм|abbreviation|millimeter unit
+mobile|мобильді|adjective|mobile broadband or telephony
 model|модель|noun|camera model metadata
 modem|модем|noun|network modem
+modern|заманауи|adjective|
 mode|режим|noun|
 modified|өзгертілген|adjective|last modified date
 modifier|модификатор|noun|
+module|модуль|noun|GRASS or Python module
 monitor|монитор|noun|display monitor
 monospace|ені біркелкі|adjective|
 mosaic|мозаика|noun|
@@ -354,6 +491,7 @@ moved|жылжытылған|adjective|moved to Trash
 move|жылжыту|verb|
 moving|жылжытылуда|adjective|progress status while moving
 multi-disk|көпдискілі|adjective|multi-disk drive
+multidirectional|көпбағытты|adjective|multidirectional analysis
 multiple|бірнеше|adjective|multiple selection
 multitasking|көптапсырмалылық|noun|multitasking settings
 music|музыка|noun|music content type
@@ -361,15 +499,19 @@ mute|дыбысты сөндіру|verb|
 muxer|мультиплексор|noun|
 name|ат|noun|
 navigation|шарлау|noun|window or list navigation
+nearest|ең жақын|adjective|nearest neighbour or nearest cell
 netmask|желі маскасы|noun|network netmask
 network|желі|noun|
 never|ешқашан|adverb|setting value
+nodata|NoData|noun|raster no-data value
 node|түйін|noun|
 noise|шу|noun|
 normal|қалыпты|adjective|
 notification|хабарландыру|noun|system notification
+null|null|keyword|database null or raster null value
 number|сан|noun|
 object|объект|noun|
+observation|бақылау|noun|observation value or point
 offline|офлайн|adjective|offline state
 offset|ығысу|noun|
 on-screen|экрандық|adjective|on-screen keyboard
@@ -377,13 +519,18 @@ opacity|мөлдір еместік|noun|
 opening|ашылу|noun|opening a location, window, or tab
 open|ашу|verb|
 operation|операция|noun|file operation
+operator|оператор|noun|chat room role
 option|опция|noun|
 order|реті|noun|sort order
 orientation|бағдар|noun|screen orientation
 original|бастапқы|adjective|original name or location
+origin|бастау нүктесі|noun|coordinate origin or source point
 output|шығыс|noun|
+out|шығыс|noun|output or module suffix
 overamplification|шамадан тыс күшейту|noun|accessibility audio boost
+overlap|қабаттасу|noun|tile or extent overlap
 overlay|қабаттастыру|noun|
+overview|шолу|noun|pyramid overview or general overview
 overwrite|үстінен жазу|verb|overwrite existing file
 owner|иесі|noun|file owner
 package|десте|noun|
@@ -392,9 +539,11 @@ page|бет|noun|test page or settings page
 panel|панель|noun|settings panel
 paper|қағаз|noun|paper type or print paper
 paragraph|абзац|noun|
+parallel|параллель|adjective|parallel lines or processing
 parameter|параметр|noun|
 parent|ата-ана|noun|
 parse|талдау|verb|
+part|бөлік|noun|real, imaginary, or vector component
 passphrase|кілттік фраза|noun|
 password-protected|парольмен қорғалған|adjective|password-protected archive
 password|пароль|noun|
@@ -403,12 +552,16 @@ path|жол|noun|
 pause|аялдату|verb|
 peer|пир|noun|VPN peer
 pending|күтуде|adjective|pending state
+percentage|пайыз|noun|percentage value
 performance|өнімділік|noun|performance mode
 permanently|толығымен|adverb|delete permanently
 permission|рұқсат|noun|file access permission
 photo|фото|noun|photo content type
 picture|сурет|noun|
 pitch|дыбыс биіктігі|noun|audio
+pixel|пиксель|noun|raster pixel or pixel size
+placement|орналастыру|noun|label or object placement
+plane|жазықтық|noun|plane surface or raster plane
 playback|ойнату|noun|
 player|плеер|noun|
 playlist|ойнату тізімі|noun|
@@ -419,6 +572,7 @@ podcast|подкаст|noun|
 pointer|курсор|noun|
 point|нүкте|noun|
 polygon|полигон|noun|
+polyline|полисызық|noun|polyline geometry
 portrait|тік|adjective|display orientation
 port|порт|noun|
 position|орын|noun|
@@ -438,6 +592,7 @@ processor|процессор|noun|device processor
 process|өңдеу|verb|
 profile|профиль|noun|
 program|бағдарлама|noun|
+projection|проекция|noun|layer or output projection
 projector|проектор|noun|display projector
 project|жоба|noun|
 properties|қасиеттер|noun|file or media properties dialog
@@ -446,9 +601,14 @@ protocol|хаттама|noun|
 provider|провайдер|noun|service or network provider
 proxy|прокси|noun|network proxy
 quality|сапа|noun|
+quantile|квантиль|noun|quantile interval or value
+query|сұраным|noun|server or history query
 quit|шығу|verb|quit application
+radians|радиан|noun|angular units in radians
+radius|радиус|noun|search or visibility radius
 random|кездейсоқ|adjective|
 range|ауқым|noun|
+rasterized|растрланған|adjective|rasterized output
 raster|растр|noun|
 rate|жиілік|noun|frame rate or bit rate
 rating|рейтинг|noun|ISO speed rating or media rating
@@ -461,8 +621,13 @@ record|жазба|noun|
 record|жазу|verb|
 redo|қайталау|verb|
 reduced|азайтылған|adjective|reduced functionality or power
+red|қызыл|adjective|red channel or color
+refresh|жаңарту|verb|refresh layer or view
+region|аймақ|noun|current GRASS region or processing extent
 registered|тіркелген|adjective|registered shortcut or action
 regular expression|тұрақты өрнек|noun|
+relation|байланыс|noun|layer or table relation
+relative|салыстырмалы|adjective|relative value or humidity
 relevance|релеванттылық|noun|search relevance
 remote|қашықтағы|adjective|remote server or location
 remove|өшіру|verb|
@@ -470,9 +635,17 @@ renamed|атауы өзгертілген|adjective|renamed item
 rename|атын өзгерту|verb|
 renaming|атауы өзгертілуде|adjective|progress status while renaming
 renderer|рендерер|noun|
+rendering|рендеринг|noun|map or 3D rendering
 repeat|қайталау|verb|
 replace|алмастыру|verb|
+report|есеп|noun|report output or reporting algorithm
+representation|көрсетілім|noun|geometry or data representation
+reprojected|қайта проекцияланған|adjective|reprojected layer
 requested|сұралған|adjective|requested file or location
+request|сұрау|noun|authorization or server request
+require|талап ету|verb|require parameter or library
+resampling|қайта үлгілеу|noun|raster resampling
+rescaled|қайта масштабталған|adjective|rescaled values
 reset|бастапқы күйге келтіру|verb|
 resize|өлшемін өзгерту|verb|
 resolution|ажыратымдылық|noun|
@@ -481,15 +654,25 @@ restored|қалпына келтірілген|adjective|restored item
 restore|қалпына келтіру|verb|restore from Trash
 result|нәтиже|noun|
 resume|жалғастыру|verb|resume operation
+ring|сақина|noun|ring or circular buffer element
 roaming|роуминг|noun|data roaming
 root|түбір|noun|
 root|әкімші|noun|user
+rotation|айналдыру|noun|rotation angle or axis rotation
 route|маршрут|noun|network route
+row|жол|noun|table row or raster row
+rule|ереже|noun|recode or color rule
 run|орындау|verb|run software or script
+sampled|іріктелген|adjective|sampled values or points
+satellite|жер серігі|noun|satellite imagery or sensor
+saturation|қанықтық|noun|color saturation
 save as|қалайша сақтау|verb phrase|
+saved|сақталған|adjective|saved plugin or stored state
 save|сақтау|verb|
+scalar|скаляр|noun|scalar value or variable
 scale|масштабтау|verb|
 schedule|кесте|noun|manual or automatic schedule
+schema|схема|noun|database or XML schema
 screenshot|скриншот|noun|
 screen|экран|noun|
 scripts|скрипттер|noun|scripts menu or file-manager scripts
@@ -497,11 +680,15 @@ scrolling|айналдыру|noun|scrolling behavior
 scroll|айналдыру|verb|scroll direction or action
 searching|ізделуде|adjective|search in progress
 search|іздеу|verb|
+section|бөлім|noun|report or type section
 security|қауіпсіздік|noun|security settings
+seed|тұқым|noun|random seed or seed point
+segment|сегмент|noun|line or raster segment
 selection|таңдау|noun|file selection
 select|таңдау|verb|
 sending|жіберілуде|adjective|sending status
 send|жіберу|verb|send results or packets
+sensor|сенсор|noun|satellite or spacecraft sensor
 separate|бөлек|adjective|
 separator|ажыратқыш|noun|
 sequence|тізбек|noun|compose-key sequence
@@ -511,6 +698,8 @@ session|сеанс|noun|
 setting|баптау|noun|preference setting
 setup|орнату|noun|page setup or system setup
 shading|көлеңкелеу|noun|
+shadow|көлеңке|noun|shadow or cloud shadow
+shape|пішін|noun|shape index or geometry shape
 shared|ортақ|adjective|shared folder or settings
 sharing|ортақ пайдалану|noun|sharing settings
 shell|қоршам|noun|
@@ -519,25 +708,35 @@ shown|көрсетілетін|adjective|items or actions shown in UI
 show|көрсету|verb|
 sidebar|бүйірлік панель|noun|side pane
 simple|қарапайым|adjective|simple date format or simple UI
+single|бір|adjective|single band or part
 size|өлшем|noun|file size or image size
 skip|аттап кету|verb|
 slide show|слайдшоу|noun|
+slope|еңіс|noun|terrain slope or inclination
 slow|баяу|adjective|slow key or slow speed
+smoothing|тегістеу|noun|surface or geometry smoothing
+smooth|тегіс|adjective|smooth geometry or surface
+snapping|жабыстыру|noun|snapping options or threshold
 snapshot|снапшот|noun|
 software|бағдарламалық қамтама|noun|
 sort|сұрыптау|verb|
 sound|дыбыс|noun|sound settings or alert sounds
 source|дереккөз|noun|input source or data source
+south|оңтүстік|noun|south direction
 space|орын|noun|free disk space
+spatialite|SpatiaLite|noun|database format name
 special|арнайы|adjective|special characters or entry
 specified|көрсетілген|adjective|specified URI or owner
 speed|жылдамдық|noun|
+split|бөліп жіберу|verb|split layer or geometry
 spreadsheet|электрондық кесте|noun|spreadsheet file type
+spread|таралу|noun|spread or diffusion
 stable|тұрақты|adjective|stable identifier or state
 standard|стандартты|adjective|
 starred|таңдаулы|adjective|starred or favorite file status
 start|бастау|verb|
 star|таңдаулыға қосу|verb|mark file as favorite
+statistic|статистика|noun|summary statistic or statistical measure
 stats|статистика|noun|
 status|қалып-күй|noun|device or service status
 stereo|стерео|adjective|
@@ -545,15 +744,21 @@ stopped|тоқтатылған|adjective|stopped state
 stopwatch|секунд өлшегіші|noun|
 stop|тоқтату|verb|
 storage|сақтау қоймасы|noun|storage devices or settings
+store|сақтау|verb|store password or data
 stream|ағын|noun|
 stretch|созу|verb|
 string|жол|noun|data type
+stroke|контур|noun|stroke color or width
+structure|құрылым|noun|data or terrain structure
 style|стиль|noun|
 subfolder|ішкі бума|noun|search subfolders
 subpicture|ішкі сурет|noun|
 subtitle|субтитр|noun|
 subwoofer|сабвуфер|noun|audio output channel
+success|сәтті|noun|successful completion
 supported|қолдау көрсетілетін|adjective|supported file type or feature
+support|қолдау|noun|feature or protocol support
+surface|бет|noun|surface model or surface analysis
 surround|көлемді дыбыс|adjective|
 suspend|кідірту|verb|automatic suspend
 switch|ауыстырғыш|noun|toggle switch or input switch
@@ -568,57 +773,80 @@ tab|бет|noun|browser tab
 target|мақсат|noun|
 teletext|телемәтін|noun|
 template|үлгі|noun|create from template
+temporal|уақыттық|adjective|temporal interpolation or integration
+terrain|жер бедері|noun|terrain analysis or terrain model
 test|сынақ|noun|test profile or test page
 text|мәтін|noun|
 theme|тема|noun|
 thread|ағын|noun|
 threshold|шек|noun|
 thumbnail|нобай|noun|file thumbnail
+tileset|тайлдар жиыны|noun|tile set
 tile|тайл|noun|
 timeout|күту уақыты|noun|
 time|уақыт|noun|date and time display
 title|атау|noun|media
 today|бүгін|adverb|date label Today
+toolbox|саймандар жинағы|noun|processing toolbox
 tool|сайман|noun|
 total|жалпы саны|noun|total item count
 touchpad|тачпад|noun|touchpad device
 tracker|трекер|noun|
 track|трек|noun|
+transfer|тасымалдау|noun|file transfer
+transformation|трансформация|noun|2D/3D or tasselled cap transformation
+transformed|түрлендірілген|adjective|transformed geometry or layer
+transform|түрлендіру|verb|transform, FFT, or reprojection operation
 transparency|мөлдірлік|noun|
+transparent|мөлдір|adjective|transparent background or color
 trashed|қоқысқа тасталған|adjective|trashed item
 trash|қоқыс шелегі|noun|
 tree|ағаш|noun|tree view
+trim|қию|verb|trim geometry or text
 troubleshooting|мәселелерді шешу|noun|
+true|ақиқат|boolean|boolean true value
+truncated|қысқартылған|adjective|truncated value or text
 tuner|тюнер|noun|
 type|түр|noun|
 typing|теру|noun|typing preferences
 unavailable|қолжетімсіз|adjective|unavailable state
 undo|болдырмау|verb|
 uninstall|өшіру|verb|
+unique|бірегей|adjective|unique field or unique values
 unit|юнит|noun|
 unknown|белгісіз|adjective|
 unlock|құлпын ашу|verb|
 unlock|құлыптан шығару|verb|unlock
 unmount|тіркеуден шығару|verb|unmount drive or location
 unmute|дыбысты іске қосу|verb|
+unset|орнатылмаған|adjective|unset value or idle time
 unstarred|таңдаулы емес|adjective|not starred status
 unstar|таңдаулыдан шығару|verb|remove favorite mark
+updated|жаңартылған|adjective|updated column or result
 update|жаңарту|verb|
+upgradeable|жаңғыртуға болатын|adjective|upgradeable installation or component
 upgrade|жаңғырту|verb|
 upload|жүктеп салу|verb|
 usage|пайдалану|noun|energy or data usage
 username|пайдаланушы аты|noun|
 user|пайдаланушы|noun|
+utility|утилита|noun|protocol utility
 valid|жарамды|adjective|valid address
 value|мән|noun|
+variable|айнымалы|noun|expression or console variable
+vectorized|векторланған|adjective|vectorized output
 vector|вектор|noun|
 version|нұсқа|noun|
 vertex|төбе|noun|
 vertical|вертикалды|adjective|
+vertices|төбелер|noun|line or polygon vertices
 video|видео|noun|
 view|көрініс|noun|file manager view mode
+virtual|виртуалды|adjective|virtual layer or vector
 visible|көрінетін|adjective|visible columns
+voice|дауыс|noun|voice or voice/video feature
 volume|дыбыс деңгейі|noun|
+warm|жылы|adjective|warm color or tone
 warning|ескерту|noun|
 weak|әлсіз|adjective|weak signal or weak password
 web|веб|noun|web browser or account
@@ -630,5 +858,7 @@ wired|сымды|adjective|wired network
 wireless|сымсыз|adjective|wireless device or network
 workspace|жұмыс кеңістігі|noun|workspace setting
 write-only|тек жазуға арналған|adjective|write-only permission
+yards|ярд|noun|imperial length unit
 yesterday|кеше|adverb|date label Yesterday
+zero|нөл|noun|zero value
 zoom|масштаб|noun|

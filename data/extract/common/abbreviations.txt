@@ -4,8 +4,8 @@
 aac
 ai
 aiff
-apk
 api
+apk
 appimage
 avi
 bat
@@ -75,6 +75,7 @@ qt
 rar
 rpm
 rss
+sasl
 sdk
 sh
 smb
@@ -83,12 +84,14 @@ sql
 sqlite
 sqlite3
 ssh
+ssl
 svg
 tar
 tbz2
 tgz
 tif
 tiff
+tls
 toml
 ts
 tsv
