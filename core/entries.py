@@ -102,6 +102,11 @@ def normalize_model_escaped_text(source_text: str, candidate_text: str) -> str:
         if source_uses_actual and candidate_uses_literal:
             normalized = normalized.replace(escaped_seq, actual_char)
 
+        source_uses_literal = escaped_seq in source_text and actual_char not in source_text
+        candidate_uses_actual = actual_char in normalized and escaped_seq not in normalized
+        if source_uses_literal and candidate_uses_actual:
+            normalized = normalized.replace(actual_char, escaped_seq)
+
     source_uses_quote = '"' in source_text and '\\"' not in source_text
     candidate_uses_escaped_quote = '\\"' in normalized and '"' not in normalized
     if source_uses_quote and candidate_uses_escaped_quote:

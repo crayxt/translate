@@ -18,6 +18,7 @@ class FileKind(str, Enum):
     RESX = "resx"
     STRINGS = "strings"
     TXT = "txt"
+    ANDROID_XML = "xml"
 
 
 class EntryStatus(str, Enum):
@@ -82,7 +83,12 @@ def detect_file_kind(file_path: str) -> FileKind:
         return FileKind.STRINGS
     if lower_path.endswith(".txt"):
         return FileKind.TXT
-    raise ValueError("Unsupported file type. Use .po, .ts, .resx, .strings, or .txt")
+    if lower_path.endswith(".xml"):
+        from core.formats.android_xml import is_android_resources_xml
+
+        if is_android_resources_xml(file_path):
+            return FileKind.ANDROID_XML
+    raise ValueError("Unsupported file type. Use .po, .ts, .resx, .strings, .txt, or Android .xml")
 
 
 def build_output_path(file_path: str, file_kind: FileKind) -> str:

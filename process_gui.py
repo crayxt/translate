@@ -45,12 +45,13 @@ BATCH_PROGRESS_RE = re.compile(
     r"Progress:\s*completed batches\s+(?P<done>\d+)/(?P<total>\d+)"
 )
 TRANSLATABLE_FILETYPES = [
-    ("Translatable files", "*.po *.ts *.resx *.strings *.txt"),
+    ("Translatable files", "*.po *.ts *.resx *.strings *.txt *.xml"),
     ("PO files", "*.po"),
     ("Qt TS files", "*.ts"),
     ("RESX files", "*.resx"),
     ("Apple strings files", "*.strings"),
     ("Plain text files", "*.txt"),
+    ("Android XML files", "*.xml"),
     ("All files", "*.*"),
 ]
 VOCAB_FILETYPES = [
@@ -69,8 +70,9 @@ CHECK_FILETYPES = [
     ("All files", "*.*"),
 ]
 LOCAL_EXTRACT_FILETYPES = [
-    ("Supported local extract files", "*.po *.ts *.resx *.strings *.txt *.json"),
-    ("Translatable files", "*.po *.ts *.resx *.strings *.txt"),
+    ("Supported local extract files", "*.po *.ts *.resx *.strings *.txt *.xml *.json"),
+    ("Translatable files", "*.po *.ts *.resx *.strings *.txt *.xml"),
+    ("Android XML files", "*.xml"),
     ("JSON files", "*.json"),
     ("All files", "*.*"),
 ]
@@ -83,6 +85,7 @@ READONLY_STATES = frozenset({"disabled", "readonly"})
 class ProcessGuiConfig:
     input_file: str = ""
     input_files: tuple[str, ...] = ()
+    source_file: str = ""
     source_lang: str = DEFAULT_SOURCE_LANG
     target_lang: str = DEFAULT_TARGET_LANG
     provider: str = DEFAULT_PROVIDER
@@ -513,10 +516,24 @@ def validate_process_gui_config(
         api_key=config.api_key,
         environ=environ,
     )
-    try:
-        translate_task.validate_translation_files(input_files)
-    except ValueError as exc:
-        errors.append(str(exc))
+
+    cleaned_source_file = _clean(config.source_file)
+    if translation_requires_source_file(input_files):
+        if not cleaned_source_file:
+            errors.append("Source file is required for Android .xml translation runs.")
+        elif not os.path.isfile(cleaned_source_file):
+            errors.append(f"Source file does not exist: {cleaned_source_file}")
+    elif cleaned_source_file and not os.path.isfile(cleaned_source_file):
+        errors.append(f"Source file does not exist: {cleaned_source_file}")
+
+    if not any(message.startswith("Source file ") for message in errors):
+        try:
+            translate_task.validate_translation_files(
+                input_files,
+                source_file=cleaned_source_file or None,
+            )
+        except ValueError as exc:
+            errors.append(str(exc))
     return errors
 
 
@@ -653,9 +670,15 @@ def _detect_revision_file_kind(input_file: str) -> FileKind | None:
         return None
 
 
+def translation_requires_source_file(input_files: list[str] | tuple[str, ...]) -> bool:
+    if len(input_files) != 1:
+        return False
+    return _detect_revision_file_kind(input_files[0]) == FileKind.ANDROID_XML
+
+
 def revision_requires_source_file(input_file: str) -> bool:
     file_kind = _detect_revision_file_kind(input_file)
-    return file_kind in (FileKind.STRINGS, FileKind.RESX, FileKind.TXT)
+    return file_kind in (FileKind.ANDROID_XML, FileKind.STRINGS, FileKind.RESX, FileKind.TXT)
 
 
 def validate_revise_gui_config(
@@ -681,12 +704,12 @@ def validate_revise_gui_config(
 
     file_kind = _detect_revision_file_kind(config.input_file)
     if _clean(config.input_file) and file_kind is None:
-        errors.append("Input file must be a supported .po, .ts, .resx, .strings, or .txt file.")
+        errors.append("Input file must be a supported .po, .ts, .resx, .strings, .txt, or Android .xml file.")
 
     cleaned_source_file = _clean(config.source_file)
     if revision_requires_source_file(config.input_file):
         if not cleaned_source_file:
-            errors.append("Source file is required for .strings, .resx, and .txt revision runs.")
+            errors.append("Source file is required for Android .xml, .strings, .resx, and .txt revision runs.")
         elif not os.path.isfile(cleaned_source_file):
             errors.append(f"Source file does not exist: {cleaned_source_file}")
     elif cleaned_source_file and not os.path.isfile(cleaned_source_file):
@@ -817,6 +840,10 @@ def build_process_command(
     rules_str = _clean(config.rules_str)
     if rules_str:
         command.extend(["--rules-str", rules_str])
+
+    source_file = _clean(config.source_file)
+    if source_file:
+        command.extend(["--source-file", source_file])
 
     if config.retranslate_all:
         command.append("--retranslate-all")
@@ -1677,6 +1704,7 @@ class BaseToolTab(ttk.Frame):
 
 class ProcessToolTab(BaseToolTab):
     def __init__(self, app: "ProcessGuiApp", notebook: ttk.Notebook) -> None:
+        self.source_file_var = tk.StringVar()
         self.retranslate_all_var = tk.BooleanVar(value=False)
         self.selected_input_files: tuple[str, ...] = ()
         self._selected_input_files_display = ""
@@ -1712,18 +1740,38 @@ class ProcessToolTab(BaseToolTab):
         return (display_value,) if display_value else ()
 
     def _build_tool_specific_fields(self, parent: ttk.Frame, start_row: int) -> int:
+        self._add_entry_row(
+            parent,
+            row=start_row,
+            label="Source file",
+            variable=self.source_file_var,
+            browse_command=self._browse_source_file,
+        )
+        ttk.Label(
+            parent,
+            text="Required for Android .xml translation runs.",
+        ).grid(row=start_row + 1, column=0, columnspan=3, sticky="w", pady=(0, 8))
         ttk.Checkbutton(
             parent,
             text="Retranslate all entries",
             variable=self.retranslate_all_var,
-        ).grid(row=start_row, column=0, columnspan=3, sticky="w", pady=(4, 8))
-        return start_row + 1
+        ).grid(row=start_row + 2, column=0, columnspan=3, sticky="w", pady=(4, 8))
+        return start_row + 3
+
+    def _browse_source_file(self) -> None:
+        selected = filedialog.askopenfilename(
+            title="Select source file",
+            filetypes=TRANSLATABLE_FILETYPES,
+        )
+        if selected:
+            self.source_file_var.set(selected)
 
     def build_config(self) -> ProcessGuiConfig:
         input_files = self._resolve_selected_input_files()
         return ProcessGuiConfig(
             input_file=input_files[0] if len(input_files) == 1 else self.input_file_var.get(),
             input_files=input_files,
+            source_file=self.source_file_var.get(),
             source_lang=self.source_lang_var.get(),
             target_lang=self.target_lang_var.get(),
             provider=self.provider_var.get(),
@@ -2068,7 +2116,7 @@ class ReviseToolTab(BaseToolTab):
         )
         ttk.Label(
             parent,
-            text="Required for .strings, .resx, and .txt revision runs.",
+            text="Required for Android .xml, .strings, .resx, and .txt revision runs.",
         ).grid(row=start_row + 1, column=0, columnspan=3, sticky="w", pady=(0, 8))
 
         self._add_entry_row(

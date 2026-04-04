@@ -22,6 +22,7 @@ from core.formats import (
     build_entry_source_text,
     detect_file_kind,
     get_entry_prompt_context_and_note,
+    load_paired_android_xml,
     load_po,
     load_resx,
     load_strings,
@@ -73,6 +74,7 @@ STRICT MUST:
 - Preserve HTML/XML tags exactly and keep them well-formed
 - Preserve keyboard accelerators/hotkeys exactly (`_`, `&`)
 - Preserve leading/trailing spaces, escapes, entities, and meaningful punctuation
+- Preserve literal escape sequences such as `\\n` and `\\t` as literal backslash sequences when the source uses them
 - Preserve approved vocabulary and project rules when supplied
 - Never return an empty updated translation
 - Do not rewrite unrelated wording just because a different phrasing is possible
@@ -619,6 +621,26 @@ def load_review_bundle(
     if file_kind in (FileKind.PO, FileKind.TS):
         return build_single_file_bundle(translated_file, file_kind)
 
+    if file_kind == FileKind.ANDROID_XML:
+        if not source_file:
+            raise ValueError(
+                "--source-file is required for .xml revision runs because the translated file "
+                "does not retain the original source text."
+            )
+        entries, save_callback, generated_output_path, warnings = load_paired_android_xml(
+            source_file,
+            translated_file,
+        )
+        items = [build_review_item(entry) for entry in entries if has_reviewable_translation(entry)]
+        return ReviewBundle(
+            file_kind=file_kind,
+            entries=entries,
+            save_callback=save_callback,
+            generated_output_path=generated_output_path,
+            items=items,
+            warnings=warnings,
+        )
+
     if file_kind == FileKind.TXT:
         if not source_file:
             raise ValueError("--source-file is required for .txt revision runs.")
@@ -633,7 +655,7 @@ def load_review_bundle(
         return build_paired_bundle(source_file, translated_file, file_kind)
 
     raise ValueError(
-        "Unsupported file type. Use .po, .ts, .resx, .strings, or .txt"
+        "Unsupported file type. Use .po, .ts, .resx, .strings, .txt, or Android .xml"
     )
 
 
@@ -725,7 +747,10 @@ def configure_parser(parser: argparse.ArgumentParser) -> argparse.ArgumentParser
         "Review existing translations against a natural-language instruction and "
         "update only the entries that need a change."
     )
-    parser.add_argument("file", help="Current translated .po, .ts, .resx, .strings, or .txt file")
+    parser.add_argument(
+        "file",
+        help="Current translated .po, .ts, .resx, .strings, .txt, or Android .xml file",
+    )
     parser.add_argument(
         "--instruction",
         required=True,
@@ -734,7 +759,7 @@ def configure_parser(parser: argparse.ArgumentParser) -> argparse.ArgumentParser
     parser.add_argument(
         "--source-file",
         default=None,
-        help="Required for .resx, .strings, and .txt revision runs; optional otherwise.",
+        help="Required for Android .xml, .resx, .strings, and .txt revision runs; optional otherwise.",
     )
     add_language_arguments(parser)
     add_provider_arguments(

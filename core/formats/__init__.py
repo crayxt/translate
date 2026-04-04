@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from core.entries import apply_translation_to_entry, build_entry_source_text, get_entry_prompt_context_and_note, plural_key_sort_key
+from core.formats.android_xml import load_android_xml, load_paired_android_xml
 from core.formats.base import (
     EntryStatus,
     FileKind,
@@ -28,7 +29,9 @@ __all__ = [
     "build_output_path",
     "detect_file_kind",
     "get_entry_prompt_context_and_note",
+    "load_android_xml",
     "load_po",
+    "load_paired_android_xml",
     "load_resx",
     "load_strings",
     "load_ts",

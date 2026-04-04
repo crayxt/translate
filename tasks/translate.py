@@ -38,6 +38,8 @@ from core.formats import (
     UnifiedEntry,
     build_output_path,
     detect_file_kind,
+    load_android_xml,
+    load_paired_android_xml,
     load_resx,
     load_strings,
     load_ts,
@@ -109,6 +111,7 @@ MUST:
 
 FORMATTING:
 - If the source text contains \\n line-wrapping markers, preserve them in the translation and try to keep lines at roughly similar lengths
+- If the source text contains literal escape sequences such as \\n or \\t, keep them as literal backslash sequences and do not turn them into real line breaks or tabs
 - Avoid unnatural CamelCase in the target language unless source uses intentional branded casing
 
 PLURALS:
@@ -323,6 +326,7 @@ def _build_unified_entry(
 @dataclass(frozen=True)
 class TranslationRunConfig:
     files: List[str]
+    source_file: str | None
     source_lang: str
     target_lang: str
     provider: str
@@ -354,12 +358,17 @@ class TranslationQueueItem:
 
 def configure_parser(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
     parser.description = (
-        "Pre-process and translate PO, TS, RESX, STRINGS, or TXT files using a provider adapter"
+        "Pre-process and translate PO, TS, RESX, STRINGS, TXT, or Android XML files using a provider adapter"
     )
     parser.add_argument(
         "files",
         nargs="+",
-        help="Input .po, .ts, .resx, .strings, or .txt file(s)",
+        help="Input .po, .ts, .resx, .strings, .txt, or Android .xml file(s)",
+    )
+    parser.add_argument(
+        "--source-file",
+        default=None,
+        help="Required for Android .xml translation runs; use the English source XML that matches the target XML.",
     )
     add_language_arguments(parser)
     add_provider_arguments(
@@ -389,6 +398,7 @@ def build_parser() -> argparse.ArgumentParser:
 def config_from_args(args: argparse.Namespace) -> TranslationRunConfig:
     return TranslationRunConfig(
         files=list(args.files),
+        source_file=args.source_file,
         source_lang=args.source_lang,
         target_lang=args.target_lang,
         provider=args.provider,
@@ -404,28 +414,36 @@ def config_from_args(args: argparse.Namespace) -> TranslationRunConfig:
     )
 
 
-def load_entries_for_translation(file_path: str):
+def load_entries_for_translation(file_path: str, source_file: str | None = None):
     try:
         file_kind = detect_file_kind(file_path)
     except ValueError as exc:
         sys.exit(f"ERROR: {exc}")
 
+    if file_kind == FileKind.ANDROID_XML:
+        if not source_file:
+            raise ValueError(
+                "--source-file is required for .xml translation runs because the translated file "
+                "does not retain the original source text."
+            )
+        entries, save_callback, output_path, warnings = load_paired_android_xml(source_file, file_path)
+        return file_kind, entries, save_callback, output_path, warnings
     if file_kind == FileKind.TS:
-        return file_kind, *load_ts(file_path)
+        return file_kind, *load_ts(file_path), []
     if file_kind == FileKind.RESX:
-        return file_kind, *load_resx(file_path)
+        return file_kind, *load_resx(file_path), []
     if file_kind == FileKind.STRINGS:
-        return file_kind, *load_strings(file_path)
+        return file_kind, *load_strings(file_path), []
     if file_kind == FileKind.TXT:
-        return file_kind, *load_txt(file_path)
-    return file_kind, *load_po(file_path)
+        return file_kind, *load_txt(file_path), []
+    return file_kind, *load_po(file_path), []
 
 
 def _normalize_path(path: str) -> str:
     return os.path.normcase(os.path.abspath(path))
 
 
-def validate_translation_files(file_paths: List[str]) -> FileKind:
+def validate_translation_files(file_paths: List[str], source_file: str | None = None) -> FileKind:
     expected_kind: FileKind | None = None
     seen_inputs: set[str] = set()
     seen_outputs: dict[str, str] = {}
@@ -453,13 +471,35 @@ def validate_translation_files(file_paths: List[str]) -> FileKind:
 
     if expected_kind is None:
         raise ValueError("At least one input file is required.")
+
+    if expected_kind == FileKind.ANDROID_XML:
+        if len(file_paths) != 1:
+            raise ValueError("Android .xml translation currently supports one target file at a time.")
+        if not source_file:
+            raise ValueError(
+                "--source-file is required for .xml translation runs because the translated file "
+                "does not retain the original source text."
+            )
+        source_kind = detect_file_kind(source_file)
+        if source_kind != expected_kind:
+            raise ValueError(
+                f"--source-file type mismatch: expected .{expected_kind.value}, got .{source_kind.value}"
+            )
+    elif source_file:
+        raise ValueError("--source-file is currently supported only for Android .xml translation runs.")
+
     return expected_kind
 
 
-def load_translation_jobs(file_paths: List[str]) -> List[TranslationFileJob]:
+def load_translation_jobs(file_paths: List[str], source_file: str | None = None) -> List[TranslationFileJob]:
     jobs: List[TranslationFileJob] = []
     for file_path in file_paths:
-        file_kind, entries, save_callback, output_path = load_entries_for_translation(file_path)
+        file_kind, entries, save_callback, output_path, warnings = load_entries_for_translation(
+            file_path,
+            source_file=source_file,
+        )
+        for warning in warnings:
+            print(f"Warning: {warning}")
         jobs.append(
             TranslationFileJob(
                 file_path=file_path,
@@ -629,8 +669,8 @@ async def run_translation_batches(
 
 def run_translation(config: TranslationRunConfig) -> None:
     try:
-        file_kind = validate_translation_files(config.files)
-        file_jobs = load_translation_jobs(config.files)
+        file_kind = validate_translation_files(config.files, source_file=config.source_file)
+        file_jobs = load_translation_jobs(config.files, source_file=config.source_file)
     except ValueError as exc:
         sys.exit(f"ERROR: {exc}")
 
@@ -683,6 +723,7 @@ def run_translation(config: TranslationRunConfig) -> None:
         ("Vocabulary source", resource_context.vocabulary_source),
         ("Scoped vocabulary entries", len(scoped_vocabulary_entries)),
         ("Rules source", resource_context.rules_source or "none"),
+        ("Source file", config.source_file or "embedded in input file"),
     )
     all_batches = build_batches(work_items, parallel_requests, batch_size)
     print(f"Total batches: {len(all_batches)}")

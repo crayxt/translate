@@ -17,6 +17,7 @@ from core.formats import (
     FileKind,
     PO_WRAP_WIDTH,
     detect_file_kind,
+    load_android_xml,
     load_po,
     load_resx,
     load_strings,
@@ -429,6 +430,9 @@ def save_terms_as_po(
 
 
 def load_entries_for_file(file_path: str, file_kind: FileKind) -> List[Any]:
+    if file_kind == FileKind.ANDROID_XML:
+        entries, _, _ = load_android_xml(file_path)
+        return entries
     if file_kind == FileKind.TS:
         entries, _, _ = load_ts(file_path)
         return entries
@@ -467,10 +471,10 @@ def normalize_limits(
 
 def configure_parser(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
     parser.description = (
-        "Extract glossary term candidates from PO/TS/RESX/STRINGS/TXT files using the configured provider "
+        "Extract glossary term candidates from PO/TS/RESX/STRINGS/TXT/Android XML files using the configured provider "
         "and save as PO or JSON"
     )
-    parser.add_argument("file", help="Input .po, .ts, .resx, .strings, or .txt file")
+    parser.add_argument("file", help="Input .po, .ts, .resx, .strings, .txt, or Android .xml file")
     add_language_arguments(parser)
     add_provider_arguments(
         parser,

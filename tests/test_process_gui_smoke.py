@@ -748,7 +748,7 @@ class ProcessGuiSmokeTests(unittest.TestCase):
             errors = process_gui.validate_revise_gui_config(config, environ={})
 
             self.assertIn(
-                "Source file is required for .strings, .resx, and .txt revision runs.",
+                "Source file is required for Android .xml, .strings, .resx, and .txt revision runs.",
                 errors,
             )
         finally:
