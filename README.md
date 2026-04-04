@@ -1,8 +1,12 @@
 # Translation Toolkit
-Toolkit for translating, checking, revising, and extracting glossary terms from PO/TS/RESX/STRINGS/TXT localization files using Gemini, OpenAI, or Anthropic APIs.
+Toolkit for translating, checking, revising, and extracting glossary terms from PO/TS/RESX/STRINGS/TXT/Android XML localization files using Gemini, OpenAI, or Anthropic APIs.
 
 # Recent Updates
 
+- Added Android `<resources>` XML support for translation, revision, and term extraction. Translation and revision use a paired-source workflow (`--source-file`) for Android target exports that retain only resource IDs.
+- Android XML support handles both `<string>` and `<plurals>`, pairs entries by resource name, and preserves inline XML such as `<xliff:g>` placeholders.
+- Literal escape normalization now works in both directions, so formats that use literal control escapes (for example Android XML `\n`) keep them as literal escapes instead of being rewritten as real line breaks or doubled escapes.
+- The bundled Kazakh rules now explicitly prefer natural active confirmation questions over passive calques for yes/no prompts such as delete, replace, hide, restart, enable, and similar UI actions.
 - Translation, check, revise, and extract now use real provider-level system instructions instead of embedding faux "system" text inside the normal request prompt.
 - Gemini requests now send structured batch payloads and use structured response schemas. Legacy text-prompt rendering is still kept as a provider fallback path.
 - Added native OpenAI provider support, including structured JSON output support and Flex mode.
@@ -49,6 +53,7 @@ python translate_cli.py translate your_file.ts
 python translate_cli.py translate your_file.resx
 python translate_cli.py translate your_file.strings
 python translate_cli.py translate your_file.txt
+python translate_cli.py translate target.xml --source-file source.xml
 ```
 
 Provider examples:
@@ -72,6 +77,12 @@ Multi-file translation is supported when all input files use the same format:
 python translate_cli.py translate a.po b.po c.po
 ```
 
+Android XML uses a paired-source workflow because translated exports often retain only resource IDs:
+
+```
+python translate_cli.py translate translated.xml --source-file source.xml
+```
+
 The Tk desktop UI is also available:
 
 ```
@@ -86,6 +97,8 @@ Each task tab shares provider/model/API-key controls and shows the resolved inst
 
 The GUI also includes a dedicated `Local Extract` tab for source-side term discovery with automatic JSON+PO handoff generation, plus JSON-to-PO conversion without any model/API call.
 
+For Android XML translation runs, the `Translate` tab also exposes a `Source file` field for the matching English XML.
+
 For Gemini, the shared controls also include:
 
 - backend: `studio` or `vertex`
@@ -93,7 +106,7 @@ For Gemini, the shared controls also include:
 
 Current constraint: Gemini Vertex API-key mode supports `global` only.
 
-Output files are written as `*.ai-translated.po`, `*.ai-translated.ts`, `*.ai-translated.resx`, `*.ai-translated.strings`, or `*.ai-translated.txt`.
+Output files are written as `*.ai-translated.po`, `*.ai-translated.ts`, `*.ai-translated.resx`, `*.ai-translated.strings`, `*.ai-translated.txt`, or `*.ai-translated.xml`.
 
 Set target language (default is `kk`):
 
@@ -114,6 +127,10 @@ Force re-translation of all translatable messages:
 ```
 python translate_cli.py translate your_file.po --retranslate-all
 ```
+
+Current translation constraint:
+
+- Android `.xml` translation currently supports one target file at a time and requires `--source-file`
 
 Default processing behavior:
 
@@ -224,6 +241,7 @@ Run a terminology discovery pass that builds a translated glossary (`msgid=term`
 
 ```
 python translate_cli.py extract-terms your_file.po
+python translate_cli.py extract-terms source.xml
 ```
 
 Optional controls:
@@ -281,6 +299,7 @@ Usage:
 
 ```text
 python translate_cli.py extract-terms-local your_file.po
+python translate_cli.py extract-terms-local source.xml
 python translate_cli.py extract-terms-local your_file.po --mode missing --max-length 1
 python translate_cli.py extract-terms-local your_file.po --also-po
 python translate_cli.py extract-terms-local your_file.prototype-missing-terms.json --to-po
@@ -350,10 +369,11 @@ python translate_cli.py revise your_file.po --instruction "Change the translatio
 python translate_cli.py revise your_file.ts --instruction "Use a shorter translation for Close"
 ```
 
-For formats where the translated file no longer retains the original source text (`.strings`, `.resx`, `.txt`),
+For formats where the translated file no longer retains the original source text (`.xml`, `.strings`, `.resx`, `.txt`),
 pass both the translated file and the original source file:
 
 ```
+python translate_cli.py revise translated.ai-translated.xml --source-file original.xml --instruction "Use natural active confirmation questions and preserve literal \\n escapes"
 python translate_cli.py revise translated.ai-translated.strings --source-file original.strings --instruction "Change the translation of viewer to browser only where needed"
 python translate_cli.py revise translated.ai-translated.resx --source-file original.resx --instruction "Replace toolbar with command bar when the source says toolbar"
 python translate_cli.py revise translated.txt --source-file source.txt --instruction "Use formal tone for the word Exit"
@@ -361,7 +381,6 @@ python translate_cli.py revise translated.txt --source-file source.txt --instruc
 
 Behavior:
 
-- default output path: `<input>.revised.<ext>`
 - default output path: `<input>-revised.<ext>`
 - original file is left untouched unless `--in-place` is used
 - `--dry-run` previews the review without writing a file
@@ -372,6 +391,7 @@ Useful controls:
 ```
 python translate_cli.py revise your_file.po --instruction "Replace preferences with settings" --dry-run --probe 50
 python translate_cli.py revise your_file.po --instruction "Use the term archive instead of package" --out revised.po
+python translate_cli.py revise translated.ai-translated.xml --source-file original.xml --instruction "Rewrite passive yes/no prompts as natural active Kazakh questions"
 python translate_cli.py revise translated.ai-translated.strings --source-file original.strings --instruction "Shorten app names where possible" --batch-size 80 --parallel-requests 4
 ```
 
@@ -395,9 +415,21 @@ For `.txt` files:
 - blank/whitespace-only lines are preserved and skipped
 - translated output preserves original line order and line breaks
 
+## Android `.xml` behavior
+
+For Android `<resources>` XML files:
+
+- supported resource types: `<string>` and `<plurals>`
+- translation and revision pair source and target entries by resource name
+- `<plurals>` are paired by resource name and item quantity
+- translated Android XML usually requires `--source-file` because the target export may keep only resource IDs
+- term extraction can run directly on a source/English Android XML file
+- inline XML such as `<xliff:g>` is preserved
+- literal escapes such as `\n`, `\t`, and similar control sequences are preserved in the source style rather than rewritten as real control characters
+
 ## Internal Unified Entry Model
 
-The translation pipeline now normalizes all formats (`.po`, `.ts`, `.resx`, `.strings`, `.txt`) into a shared internal entry model with common fields (message, context, note, status, flags, plural data, and string type), then syncs updates back to each native file format on save.
+The translation pipeline now normalizes all formats (`.po`, `.ts`, `.resx`, `.strings`, `.txt`, `.xml`) into a shared internal entry model with common fields (message, context, note, status, flags, plural data, and string type), then syncs updates back to each native file format on save.
 
 Status values are normalized as:
 
