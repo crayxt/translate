@@ -334,6 +334,7 @@ class ExtractTermsSmokeTests(unittest.TestCase):
             prefix="vocab",
             extension="txt",
             target_lang="kk",
+            allow_directory=True,
         )
 
     def test_main_missing_po_output_loads_vocabulary_pairs_for_merged_po(self):

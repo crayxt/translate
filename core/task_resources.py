@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass, field
 from typing import Callable, List, Tuple
 
@@ -49,13 +50,15 @@ def load_task_resource_context(
             prefix="vocab",
             extension="txt",
             target_lang=target_lang,
+            allow_directory=True,
         )
         context.vocabulary_text = read_optional_vocabulary_file_fn(
             context.vocabulary_path,
             "Vocabulary",
         )
         if context.vocabulary_text and context.vocabulary_path:
-            context.vocabulary_source = f"file:{context.vocabulary_path}"
+            source_prefix = "dir" if os.path.isdir(context.vocabulary_path) else "file"
+            context.vocabulary_source = f"{source_prefix}:{context.vocabulary_path}"
         if load_vocab_pairs_flag and context.vocabulary_path:
             context.vocabulary_pairs = load_vocabulary_pairs_fn(
                 context.vocabulary_path,

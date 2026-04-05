@@ -288,8 +288,19 @@ def build_language_code_candidates(target_lang: str) -> List[str]:
     return _core_build_language_code_candidates(target_lang)
 
 
-def detect_default_text_resource(prefix: str, extension: str, target_lang: str) -> str | None:
-    return _core_detect_default_text_resource(prefix, extension, target_lang)
+def detect_default_text_resource(
+    prefix: str,
+    extension: str,
+    target_lang: str,
+    *,
+    allow_directory: bool = False,
+) -> str | None:
+    return _core_detect_default_text_resource(
+        prefix,
+        extension,
+        target_lang,
+        allow_directory=allow_directory,
+    )
 
 
 def resolve_resource_path(
@@ -297,8 +308,16 @@ def resolve_resource_path(
     prefix: str,
     extension: str,
     target_lang: str,
+    *,
+    allow_directory: bool = False,
 ) -> str | None:
-    return _core_resolve_resource_path(explicit_path, prefix, extension, target_lang)
+    return _core_resolve_resource_path(
+        explicit_path,
+        prefix,
+        extension,
+        target_lang,
+        allow_directory=allow_directory,
+    )
 
 
 def _entry_status_from_legacy(entry: Any) -> EntryStatus:

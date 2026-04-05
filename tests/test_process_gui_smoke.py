@@ -58,6 +58,35 @@ class ProcessGuiSmokeTests(unittest.TestCase):
             if os.path.isdir(data_dir):
                 os.removedirs(data_dir)
 
+    def test_detect_default_resource_paths_supports_vocab_directory(self):
+        data_dir = os.path.join(os.getcwd(), "_tmp_gui_data_dir", "data", "locales", "fr")
+        legacy_dir = os.path.join(os.getcwd(), "_tmp_gui_data_dir")
+        vocab_dir = os.path.join(data_dir, "vocab")
+        vocab_file = os.path.join(vocab_dir, "colors.txt")
+        rules_path = os.path.join(data_dir, "rules.md")
+        try:
+            os.makedirs(vocab_dir, exist_ok=True)
+            with open(vocab_file, "w", encoding="utf-8") as handle:
+                handle.write("blue|bleu|adjective|\n")
+            with open(rules_path, "w", encoding="utf-8") as handle:
+                handle.write("Use imperative tone.\n")
+
+            detected_vocab, detected_rules = process_gui.detect_default_resource_paths(
+                "fr",
+                base_dir=legacy_dir,
+            )
+
+            self.assertEqual(detected_vocab, vocab_dir)
+            self.assertEqual(detected_rules, rules_path)
+        finally:
+            for path in (vocab_file, rules_path):
+                if os.path.exists(path):
+                    os.remove(path)
+            if os.path.isdir(vocab_dir):
+                os.rmdir(vocab_dir)
+            if os.path.isdir(data_dir):
+                os.removedirs(data_dir)
+
     def test_choose_resource_field_value_preserves_manual_path(self):
         value, auto_value = process_gui.choose_resource_field_value(
             current_value="C:\\manual\\vocab.txt",
@@ -148,11 +177,40 @@ class ProcessGuiSmokeTests(unittest.TestCase):
 
             self.assertIn("Batch size must be a whole number.", errors)
             self.assertIn("Parallel requests must be greater than 0.", errors)
-            self.assertIn("Vocabulary file does not exist: missing-vocab.txt", errors)
+            self.assertIn("Vocabulary file or directory does not exist: missing-vocab.txt", errors)
             self.assertIn("Rules file does not exist: missing-rules.md", errors)
         finally:
             if os.path.exists(input_path):
                 os.remove(input_path)
+
+    def test_validate_config_accepts_vocabulary_directory(self):
+        input_path = os.path.join(os.getcwd(), "_tmp_gui_vocab_dir.po")
+        vocab_dir = os.path.join(os.getcwd(), "_tmp_gui_vocab_dir")
+        vocab_file = os.path.join(vocab_dir, "colors.txt")
+        try:
+            with open(input_path, "w", encoding="utf-8") as handle:
+                handle.write('msgid "Open"\nmsgstr ""\n')
+            os.makedirs(vocab_dir, exist_ok=True)
+            with open(vocab_file, "w", encoding="utf-8") as handle:
+                handle.write("blue|bleu|adjective|\n")
+
+            config = process_gui.ProcessGuiConfig(
+                input_file=input_path,
+                vocab_path=vocab_dir,
+                api_key="test-key",
+            )
+
+            errors = process_gui.validate_process_gui_config(config, environ={})
+
+            self.assertFalse(
+                any("Vocabulary file or directory does not exist" in item for item in errors)
+            )
+        finally:
+            for path in (input_path, vocab_file):
+                if os.path.exists(path):
+                    os.remove(path)
+            if os.path.isdir(vocab_dir):
+                os.rmdir(vocab_dir)
 
     def test_validate_process_config_rejects_mixed_file_types(self):
         input_po = os.path.join(os.getcwd(), "_tmp_gui_input.po")

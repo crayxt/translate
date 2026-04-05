@@ -7,6 +7,8 @@ import polib
 
 from core.formats import PO_WRAP_WIDTH
 
+VOCABULARY_FILE_EXTENSIONS = (".txt", ".po")
+
 
 def read_optional_text_file(path: str | None, label: str) -> str | None:
     if not path:
@@ -93,32 +95,55 @@ def parse_vocabulary_line(line: str) -> Tuple[str, str] | None:
     return source_term, target_term
 
 
-def load_vocabulary_pairs(
+def _resolve_vocabulary_source_paths(
     path: str | None,
-    label: str = "Vocabulary",
-    *,
-    pofile_loader: Callable[..., Any] | None = None,
-) -> List[Tuple[str, str]]:
+    label: str,
+) -> List[str]:
     if not path:
         return []
+
+    if os.path.isdir(path):
+        source_paths = [
+            os.path.join(path, name)
+            for name in sorted(os.listdir(path), key=str.lower)
+            if os.path.isfile(os.path.join(path, name))
+            and os.path.splitext(name)[1].lower() in VOCABULARY_FILE_EXTENSIONS
+        ]
+        if not source_paths:
+            print(
+                f"Warning: {label} directory '{path}' has no supported glossary files "
+                "(.txt or .po)."
+            )
+        return source_paths
+
+    if not os.path.exists(path):
+        print(f"Warning: {label} file or directory '{path}' not found.")
+        return []
+
+    if not os.path.isfile(path):
+        print(f"Warning: {label} path '{path}' is not a file or directory.")
+        return []
+
+    return [path]
+
+
+def _load_vocabulary_records_from_path(
+    path: str,
+    label: str,
+    *,
+    pofile_loader: Callable[..., Any] | None = None,
+) -> List[Tuple[str, str, str, str]]:
     if not path.lower().endswith(".po"):
         content = read_optional_text_file(path, label)
         if not content:
             return []
-        pairs: List[Tuple[str, str]] = []
-        seen_indices: Dict[str, int] = {}
+        records: List[Tuple[str, str, str, str]] = []
         for raw_line in content.splitlines():
             parsed = parse_vocabulary_fields(raw_line)
             if not parsed:
                 continue
-            source_term, target_term, part_of_speech, context_note = parsed
-            key = build_vocabulary_identity_key(source_term, part_of_speech, context_note)
-            if key in seen_indices:
-                pairs[seen_indices[key]] = (source_term, target_term)
-                continue
-            seen_indices[key] = len(pairs)
-            pairs.append((source_term, target_term))
-        return pairs
+            records.append(parsed)
+        return records
 
     loader = pofile_loader or polib.pofile
     try:
@@ -127,61 +152,7 @@ def load_vocabulary_pairs(
         print(f"Warning: {label} file '{path}' not found.")
         return []
 
-    pairs: List[Tuple[str, str]] = []
-    for entry in glossary:
-        if not _is_translated_vocabulary_entry(entry):
-            continue
-        source_term = _normalize_vocabulary_cell(getattr(entry, "msgid", ""))
-        target_term = _normalize_vocabulary_cell(getattr(entry, "msgstr", ""))
-        if not source_term or not target_term:
-            continue
-        pairs.append((source_term, target_term))
-    return pairs
-
-
-def read_optional_vocabulary_file(
-    path: str | None,
-    label: str = "Vocabulary",
-    *,
-    pofile_loader: Callable[..., Any] | None = None,
-) -> str | None:
-    if not path:
-        return None
-
-    if not path.lower().endswith(".po"):
-        content = read_optional_text_file(path, label)
-        if not content:
-            return None
-        normalized_lines: List[str] = []
-        seen_indices: Dict[str, int] = {}
-        for raw_line in content.splitlines():
-            parsed = parse_vocabulary_fields(raw_line)
-            if not parsed:
-                continue
-            source_term, target_term, part_of_speech, context_note = parsed
-            key = build_vocabulary_identity_key(source_term, part_of_speech, context_note)
-            normalized_line = format_vocabulary_text_line(
-                source_term,
-                target_term,
-                part_of_speech,
-                context_note,
-            )
-            if key in seen_indices:
-                normalized_lines[seen_indices[key]] = normalized_line
-                continue
-            seen_indices[key] = len(normalized_lines)
-            normalized_lines.append(normalized_line)
-        return "\n".join(normalized_lines) if normalized_lines else None
-
-    loader = pofile_loader or polib.pofile
-    try:
-        glossary = loader(path, wrapwidth=PO_WRAP_WIDTH)
-    except FileNotFoundError:
-        print(f"Warning: {label} file '{path}' not found.")
-        return None
-
-    normalized_lines: List[str] = []
-    seen_indices: Dict[str, int] = {}
+    records: List[Tuple[str, str, str, str]] = []
     for entry in glossary:
         if not _is_translated_vocabulary_entry(entry):
             continue
@@ -191,22 +162,76 @@ def read_optional_vocabulary_file(
         context_note = _normalize_vocabulary_cell(getattr(entry, "tcomment", ""))
         if not source_term or not target_term:
             continue
-        key = build_vocabulary_identity_key(source_term, part_of_speech, context_note)
-        normalized_line = format_vocabulary_text_line(
+        records.append((source_term, target_term, part_of_speech, context_note))
+
+    if not records:
+        print(f"Warning: {label} file '{path}' has no usable msgid/msgstr glossary pairs.")
+    return records
+
+
+def _load_vocabulary_records(
+    path: str | None,
+    label: str = "Vocabulary",
+    *,
+    pofile_loader: Callable[..., Any] | None = None,
+) -> List[Tuple[str, str, str, str]]:
+    records: List[Tuple[str, str, str, str]] = []
+    seen_indices: Dict[str, int] = {}
+    for source_path in _resolve_vocabulary_source_paths(path, label):
+        for source_term, target_term, part_of_speech, context_note in _load_vocabulary_records_from_path(
+            source_path,
+            label,
+            pofile_loader=pofile_loader,
+        ):
+            key = build_vocabulary_identity_key(source_term, part_of_speech, context_note)
+            record = (source_term, target_term, part_of_speech, context_note)
+            if key in seen_indices:
+                records[seen_indices[key]] = record
+                continue
+            seen_indices[key] = len(records)
+            records.append(record)
+    return records
+
+
+def load_vocabulary_pairs(
+    path: str | None,
+    label: str = "Vocabulary",
+    *,
+    pofile_loader: Callable[..., Any] | None = None,
+) -> List[Tuple[str, str]]:
+    return [
+        (source_term, target_term)
+        for source_term, target_term, _part_of_speech, _context_note in _load_vocabulary_records(
+            path,
+            label,
+            pofile_loader=pofile_loader,
+        )
+    ]
+
+
+def read_optional_vocabulary_file(
+    path: str | None,
+    label: str = "Vocabulary",
+    *,
+    pofile_loader: Callable[..., Any] | None = None,
+) -> str | None:
+    records = _load_vocabulary_records(
+        path,
+        label,
+        pofile_loader=pofile_loader,
+    )
+    if not records:
+        return None
+
+    normalized_lines = [
+        format_vocabulary_text_line(
             source_term,
             target_term,
             part_of_speech,
             context_note,
         )
-        if key in seen_indices:
-            normalized_lines[seen_indices[key]] = normalized_line
-            continue
-        seen_indices[key] = len(normalized_lines)
-        normalized_lines.append(normalized_line)
-
-    if not normalized_lines:
-        print(f"Warning: {label} file '{path}' has no usable msgid/msgstr glossary pairs.")
-        return None
+        for source_term, target_term, part_of_speech, context_note in records
+    ]
     return "\n".join(normalized_lines)
 
 
@@ -250,6 +275,7 @@ def detect_default_text_resource(
     target_lang: str,
     *,
     base_dir: str | None = None,
+    allow_directory: bool = False,
 ) -> str | None:
     resource_root = os.path.abspath(base_dir) if base_dir else None
 
@@ -262,10 +288,18 @@ def detect_default_text_resource(
         candidate_path = build_candidate("data", "locales", lang_code, f"{prefix}.{extension}")
         if os.path.isfile(candidate_path):
             return candidate_path
+        if allow_directory:
+            candidate_dir = build_candidate("data", "locales", lang_code, prefix)
+            if os.path.isdir(candidate_dir):
+                return candidate_dir
     for lang_code in build_language_code_candidates(target_lang):
         candidate_path = build_candidate("data", lang_code, f"{prefix}.{extension}")
         if os.path.isfile(candidate_path):
             return candidate_path
+        if allow_directory:
+            candidate_dir = build_candidate("data", lang_code, prefix)
+            if os.path.isdir(candidate_dir):
+                return candidate_dir
     for lang_code in build_language_code_candidates(target_lang):
         legacy_path = build_candidate(f"{prefix}-{lang_code}.{extension}")
         if os.path.isfile(legacy_path):
@@ -280,6 +314,7 @@ def resolve_resource_path(
     target_lang: str,
     *,
     base_dir: str | None = None,
+    allow_directory: bool = False,
 ) -> str | None:
     if explicit_path:
         return explicit_path
@@ -288,6 +323,7 @@ def resolve_resource_path(
         extension,
         target_lang,
         base_dir=base_dir,
+        allow_directory=allow_directory,
     )
 
 

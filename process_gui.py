@@ -205,6 +205,11 @@ def widget_is_editable(widget_class: str, state: str) -> bool:
     return widget_supports_clipboard(widget_class) and str(state or "") not in READONLY_STATES
 
 
+def path_exists_as_file_or_dir(path: str) -> bool:
+    cleaned_path = _clean(path)
+    return bool(cleaned_path) and (os.path.isfile(cleaned_path) or os.path.isdir(cleaned_path))
+
+
 def _validate_optional_positive_int(value: str, flag_name: str) -> str | None:
     cleaned = _clean(value)
     if not cleaned:
@@ -274,6 +279,7 @@ def detect_default_resource_path(
             extension,
             target_lang,
             base_dir=build_resource_root(base_dir),
+            allow_directory=prefix == "vocab",
         )
         or ""
     )
@@ -469,8 +475,8 @@ def _validate_base_config(
         except ValueError as exc:
             errors.append(str(exc))
 
-    if cleaned_vocab and not os.path.isfile(cleaned_vocab):
-        errors.append(f"Vocabulary file does not exist: {cleaned_vocab}")
+    if cleaned_vocab and not path_exists_as_file_or_dir(cleaned_vocab):
+        errors.append(f"Vocabulary file or directory does not exist: {cleaned_vocab}")
 
     if cleaned_rules and not os.path.isfile(cleaned_rules):
         errors.append(f"Rules file does not exist: {cleaned_rules}")
@@ -615,8 +621,8 @@ def validate_local_extract_gui_config(config: LocalExtractGuiConfig) -> list[str
         else:
             if max_length_value not in (1, 2, 3):
                 errors.append("Max length must be 1, 2, or 3.")
-        if cleaned_vocab and not os.path.isfile(cleaned_vocab):
-            errors.append(f"Vocabulary file does not exist: {cleaned_vocab}")
+        if cleaned_vocab and not path_exists_as_file_or_dir(cleaned_vocab):
+            errors.append(f"Vocabulary file or directory does not exist: {cleaned_vocab}")
         if cleaned_out and not cleaned_out.lower().endswith(".json"):
             errors.append("Local extraction output path should end with .json.")
     else:

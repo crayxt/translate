@@ -181,6 +181,7 @@ def run_from_args(args: argparse.Namespace) -> None:
         prefix="vocab",
         extension="txt",
         target_lang=args.target_lang,
+        allow_directory=True,
     )
     vocabulary_pairs = load_vocabulary_pairs(vocabulary_path, "Vocabulary")
     if not messages:

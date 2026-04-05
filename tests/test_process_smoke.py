@@ -144,6 +144,36 @@ class ProcessSmokeTests(unittest.TestCase):
             if os.path.exists(vocab_path):
                 os.remove(vocab_path)
 
+    def test_read_optional_vocabulary_file_supports_directory_bundle(self):
+        vocab_dir = os.path.join(os.getcwd(), "_tmp_vocab_bundle")
+        txt_path = os.path.join(vocab_dir, "10-common.txt")
+        po_path = os.path.join(vocab_dir, "30-overrides.po")
+        ignored_path = os.path.join(vocab_dir, "notes.md")
+        try:
+            os.makedirs(vocab_dir, exist_ok=True)
+            with open(txt_path, "w", encoding="utf-8") as handle:
+                handle.write("save|saqtau|verb|\n")
+                handle.write("open|ashu|verb|\n")
+            with open(ignored_path, "w", encoding="utf-8") as handle:
+                handle.write("not a glossary file\n")
+            po = polib.POFile()
+            po.append(polib.POEntry(msgid="save", msgstr="qoru", msgctxt="verb"))
+            po.append(polib.POEntry(msgid="blue", msgstr="kok", msgctxt="adjective"))
+            po.save(po_path)
+
+            vocabulary = process.read_optional_vocabulary_file(vocab_dir)
+
+            self.assertEqual(
+                vocabulary,
+                "save|qoru|verb|\nopen|ashu|verb|\nblue|kok|adjective|",
+            )
+        finally:
+            for path in (txt_path, po_path, ignored_path):
+                if os.path.exists(path):
+                    os.remove(path)
+            if os.path.isdir(vocab_dir):
+                os.rmdir(vocab_dir)
+
     def test_parse_vocabulary_line_parses_source_target_pairs(self):
         parsed = process.parse_vocabulary_line("save as|qalaysha saqtau|verb phrase|")
         self.assertEqual(parsed, ("save as", "qalaysha saqtau"))
@@ -185,6 +215,32 @@ class ProcessSmokeTests(unittest.TestCase):
         finally:
             if os.path.exists(vocab_path):
                 os.remove(vocab_path)
+
+    def test_load_vocabulary_pairs_from_directory_bundle_last_duplicate_wins(self):
+        vocab_dir = os.path.join(os.getcwd(), "_tmp_vocab_pairs_bundle")
+        first_path = os.path.join(vocab_dir, "10-common.txt")
+        second_path = os.path.join(vocab_dir, "20-colors.txt")
+        try:
+            os.makedirs(vocab_dir, exist_ok=True)
+            with open(first_path, "w", encoding="utf-8") as handle:
+                handle.write("save|saqtau|verb|\n")
+                handle.write("open|ashu|verb|\n")
+            with open(second_path, "w", encoding="utf-8") as handle:
+                handle.write("save|qoru|verb|\n")
+                handle.write("blue|kok|adjective|\n")
+
+            pairs = process.load_vocabulary_pairs(vocab_dir)
+
+            self.assertEqual(
+                pairs,
+                [("save", "qoru"), ("open", "ashu"), ("blue", "kok")],
+            )
+        finally:
+            for path in (first_path, second_path):
+                if os.path.exists(path):
+                    os.remove(path)
+            if os.path.isdir(vocab_dir):
+                os.rmdir(vocab_dir)
 
     def test_read_optional_vocabulary_file_normalizes_rich_txt_schema(self):
         vocab_path = os.path.join(os.getcwd(), "_tmp_vocab_rich.txt")
@@ -936,6 +992,22 @@ class ProcessSmokeTests(unittest.TestCase):
             resolved = process.detect_default_text_resource("rules", "md", "fr_CA")
 
         self.assertEqual(resolved, "rules-fr.md")
+
+    def test_detect_default_text_resource_supports_vocab_directory(self):
+        vocab_dir = os.path.join("data", "locales", "fr", "vocab")
+        with (
+            patch("tasks.translate.os.path.isfile", return_value=False),
+            patch("tasks.translate.os.path.isdir") as mocked_isdir,
+        ):
+            mocked_isdir.side_effect = lambda path: path == vocab_dir
+            resolved = process.detect_default_text_resource(
+                "vocab",
+                "txt",
+                "fr_CA",
+                allow_directory=True,
+            )
+
+        self.assertEqual(resolved, vocab_dir)
 
     def test_resolve_resource_path_prefers_explicit_path(self):
         with patch("tasks.translate.detect_default_text_resource") as mocked_detect:

@@ -59,6 +59,36 @@ class TaskResourcesSmokeTests(unittest.TestCase):
             if os.path.exists(vocab_path):
                 os.remove(vocab_path)
 
+    def test_load_task_resource_context_supports_vocabulary_directory(self):
+        vocab_dir = os.path.join(os.getcwd(), "_tmp_task_vocab_dir")
+        common_path = os.path.join(vocab_dir, "10-common.txt")
+        colors_path = os.path.join(vocab_dir, "20-colors.txt")
+        try:
+            os.makedirs(vocab_dir, exist_ok=True)
+            with open(common_path, "w", encoding="utf-8") as handle:
+                handle.write("save|enregistrer|verb|\n")
+            with open(colors_path, "w", encoding="utf-8") as handle:
+                handle.write("blue|bleu|adjective|\n")
+
+            context = load_task_resource_context(
+                target_lang="fr",
+                explicit_vocab_path=vocab_dir,
+                include_rules=False,
+                load_vocab_pairs_flag=True,
+            )
+
+            self.assertEqual(context.vocabulary_source, f"dir:{vocab_dir}")
+            self.assertEqual(
+                context.vocabulary_pairs,
+                [("save", "enregistrer"), ("blue", "bleu")],
+            )
+        finally:
+            for path in (common_path, colors_path):
+                if os.path.exists(path):
+                    os.remove(path)
+            if os.path.isdir(vocab_dir):
+                os.rmdir(vocab_dir)
+
 
 if __name__ == "__main__":
     unittest.main()

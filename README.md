@@ -139,7 +139,7 @@ Default processing behavior:
 
 By default, vocabulary and project rules are auto-detected from target language under `data/`:
 
-- `data/locales/<target-lang>/vocab.txt`
+- `data/locales/<target-lang>/vocab.txt` or `data/locales/<target-lang>/vocab/`
 - `data/locales/<target-lang>/rules.md`
 
 Recommended layout:
@@ -148,7 +148,9 @@ Recommended layout:
 data/
   locales/
     kk/
-      vocab.txt
+      vocab/
+        common.txt
+        colors.txt
       rules.md
     fr/
       vocab.txt
@@ -168,8 +170,8 @@ data/
 
 Locale fallback is supported:
 
-- for `--target-lang fr_CA`, the script first tries `data/locales/fr_CA/vocab.txt` / `data/locales/fr_CA/rules.md`
-- if not found, it falls back to `data/locales/fr/vocab.txt` / `data/locales/fr/rules.md`
+- for `--target-lang fr_CA`, the script first tries `data/locales/fr_CA/vocab.txt` or `data/locales/fr_CA/vocab/`, plus `data/locales/fr_CA/rules.md`
+- if not found, it falls back to `data/locales/fr/vocab.txt` or `data/locales/fr/vocab/`, plus `data/locales/fr/rules.md`
 
 Legacy flat naming is still accepted as a fallback:
 
@@ -180,11 +182,14 @@ Override them per run:
 
 ```
 python translate_cli.py translate your_file.po --vocab custom-vocab.txt --rules custom-rules.md
+python translate_cli.py translate your_file.po --vocab custom-vocab --rules custom-rules.md
 ```
 
-`--vocab` also accepts a glossary `.po` file. Only entries that are actually translated
-(so untranslated, fuzzy, and obsolete entries are ignored) are converted to vocabulary pairs
-and injected into the translation prompt:
+`--vocab` accepts a glossary `.txt` file, a glossary `.po` file, or a directory that contains
+multiple glossary `.txt` / `.po` files. Directory bundles are merged in filename order, and later
+files override earlier duplicate entries with the same source term + POS + context key. Only entries
+that are actually translated (so untranslated, fuzzy, and obsolete entries are ignored) are converted
+to vocabulary pairs and injected into the translation prompt:
 
 ```
 python translate_cli.py translate your_file.po --vocab approved-glossary.po
@@ -200,7 +205,7 @@ python translate_cli.py translate your_file.po --rules-str "Use polite formal to
 
 Startup output prints both:
 
-- `Vocabulary source` (`file:<path>` or `none`)
+- `Vocabulary source` (`file:<path>`, `dir:<path>`, or `none`)
 - `Rules source` (`file:<path>`, `inline:--rules-str`, combined, or `none`)
 - `Thinking level` (`minimal`, `low`, `medium`, `high`, or provider default)
 
@@ -266,7 +271,7 @@ python translate_cli.py translate your_file.po --vocab your_file.glossary.po
 When you run missing-term extraction with `--vocab` and `--out-format po`, the output PO is merged automatically:
 
 ```
-python translate_cli.py extract-terms your_file.po --mode missing --vocab data/locales/kk/vocab.txt --out-format po
+python translate_cli.py extract-terms your_file.po --mode missing --vocab data/locales/kk/vocab --out-format po
 ```
 
 That PO contains:
@@ -283,7 +288,7 @@ python translate_cli.py translate your_file.po --vocab your_file.missing-terms.p
 To get previous behavior (missing terms only, JSON output):
 
 ```
-python translate_cli.py extract-terms your_file.po --mode missing --out-format json --vocab data/locales/kk/vocab.txt
+python translate_cli.py extract-terms your_file.po --mode missing --out-format json --vocab data/locales/kk/vocab
 ```
 
 ## Local Term Discovery
@@ -350,7 +355,7 @@ which is useful for prompt testing and quick validation runs.
 
 Defaults follow the same resource lookup as the translation script:
 
-- `data/locales/<target-lang>/vocab.txt`
+- `data/locales/<target-lang>/vocab.txt` or `data/locales/<target-lang>/vocab/`
 - `data/locales/<target-lang>/rules.md`
 
 `--vocab` also accepts a glossary `.po` file, so you can point the checker at a reviewed glossary PO
@@ -458,7 +463,7 @@ Language rules and vocabulary stay outside the system prompt:
 
 - system prompt handles non-negotiable behavior
 - `rules.md` handles language- or project-specific style policy
-- `vocab.txt` or glossary `.po` handles approved terminology
+- `vocab.txt`, a `vocab/` bundle, or glossary `.po` handles approved terminology
 
 # Notes
 
