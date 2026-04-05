@@ -15,7 +15,9 @@ EXTRACT_DATA_ROOT = REPO_ROOT / "data" / "extract"
 # Unicode-aware tokenization so extraction works on non-English sources too.
 # Keep underscores inside one token so mnemonic-marked or identifier-like strings
 # do not get split into false sub-terms such as `fra_me` -> `me`.
-TOKEN_RE = re.compile(r"[^\W]+(?:[-'][^\W]+)*", re.UNICODE)
+# Preserve a leading `%` or `-` so placeholder-like tokens (`%PRODUCTNAME`) and
+# option-like tokens (`-help`, `--verbose`) can be rejected before extraction.
+TOKEN_RE = re.compile(r"[%\-]?[^\W]+(?:[-'][^\W]+)*", re.UNICODE)
 ACCELERATOR_AMPERSAND_PREFIX_RE = re.compile(r"(^|[\s([{<])&(?=\w)", re.UNICODE)
 ACCELERATOR_AMPERSAND_INLINE_RE = re.compile(r"(?<=\w)&(?=[a-z])", re.UNICODE)
 ACCELERATOR_UNDERSCORE_PREFIX_RE = re.compile(r"(^|[\s([{<])_(?=\w)", re.UNICODE)
@@ -199,6 +201,13 @@ def is_placeholder_like(term: str) -> bool:
     return False
 
 
+def has_disallowed_term_prefix(term: str) -> bool:
+    """Reject tokens that look like CLI options, macros, or number-led labels."""
+    if not term:
+        return False
+    return term.startswith("%") or term.startswith("-") or term[0].isdigit()
+
+
 def is_excluded_source_term(term: str) -> bool:
     """Filter out known brands, projects, protocols, and abbreviations."""
     normalized = normalize_candidate_key(term)
@@ -210,6 +219,8 @@ def is_excluded_source_term(term: str) -> bool:
 def is_valid_single_token(token: str) -> bool:
     """Validate a single token as a possible term candidate."""
     if not token:
+        return False
+    if has_disallowed_term_prefix(token):
         return False
     if is_excluded_source_term(token):
         return False

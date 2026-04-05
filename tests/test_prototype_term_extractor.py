@@ -60,6 +60,53 @@ class PrototypeTermExtractorTests(unittest.TestCase):
 
         self.assertNotIn("me", all_terms)
 
+    def test_percent_prefixed_placeholder_is_not_extracted_as_term(self):
+        result = extraction.extract_terms_locally(
+            [extraction.SourceMessage(source="%PRODUCTNAME", context="Branding")],
+            mode="all",
+            vocabulary_pairs=[],
+        )
+
+        all_terms = {
+            item.source_term
+            for bucket in (result.accepted_terms, result.borderline_terms, result.rejected_terms)
+            for item in bucket
+        }
+
+        self.assertEqual(all_terms, set())
+
+    def test_dash_prefixed_option_is_not_extracted_as_term(self):
+        result = extraction.extract_terms_locally(
+            [extraction.SourceMessage(source="Use --verbose mode", context="CLI help")],
+            mode="all",
+            vocabulary_pairs=[],
+            max_length=2,
+        )
+
+        all_terms = {
+            item.source_term
+            for bucket in (result.accepted_terms, result.borderline_terms, result.rejected_terms)
+            for item in bucket
+        }
+
+        self.assertNotIn("-verbose", all_terms)
+        self.assertNotIn("use mode", all_terms)
+
+    def test_digit_led_label_is_not_extracted_as_term(self):
+        result = extraction.extract_terms_locally(
+            [extraction.SourceMessage(source="3D", context="Graphics")],
+            mode="all",
+            vocabulary_pairs=[],
+        )
+
+        all_terms = {
+            item.source_term
+            for bucket in (result.accepted_terms, result.borderline_terms, result.rejected_terms)
+            for item in bucket
+        }
+
+        self.assertEqual(all_terms, set())
+
     def test_single_occurrence_loose_phrase_is_rejected_and_atomic_terms_go_borderline(self):
         result = extraction.extract_terms_locally(
             [extraction.SourceMessage(source="Choose audio channel", context="Audio settings")],

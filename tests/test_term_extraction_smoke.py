@@ -16,6 +16,19 @@ class TermExtractionSmokeTests(unittest.TestCase):
             ["default", "frame", "delay"],
         )
 
+    def test_tokenize_source_text_preserves_leading_percent_and_dash_markers(self):
+        self.assertEqual(
+            term_extraction.tokenize_source_text("%PRODUCTNAME --help -output 3D"),
+            ["%productname", "-help", "-output", "3d"],
+        )
+
+    def test_extract_message_candidate_counts_does_not_bridge_across_skipped_marker_tokens(self):
+        counts = term_extraction.extract_message_candidate_counts("Version 3D model", max_length=2)
+
+        self.assertIn("version", counts)
+        self.assertIn("model", counts)
+        self.assertNotIn("version model", counts)
+
     def test_build_relevant_vocabulary_matches_rich_entries(self):
         entries = term_extraction.build_scoped_vocabulary_entries(
             "start|бастау|verb|Start playback\nplayback|ойнату|noun|Media playback"
