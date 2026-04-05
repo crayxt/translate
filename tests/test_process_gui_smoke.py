@@ -1,8 +1,28 @@
 import os
 import unittest
 from datetime import datetime
+from unittest.mock import patch
 
 import process_gui
+
+
+class _FakeVar:
+    def __init__(self, value=None):
+        self.value = value
+
+    def get(self):
+        return self.value
+
+    def set(self, value):
+        self.value = value
+
+
+class _FakeWidget:
+    def __init__(self):
+        self.config = {}
+
+    def configure(self, **kwargs):
+        self.config.update(kwargs)
 
 
 class ProcessGuiSmokeTests(unittest.TestCase):
@@ -12,6 +32,18 @@ class ProcessGuiSmokeTests(unittest.TestCase):
         )
 
         self.assertEqual(summary, r"C:\tmp\one.po (+2 more)")
+
+    def test_get_local_extract_file_dialog_config_uses_source_files_in_extract_mode(self):
+        title, filetypes = process_gui.get_local_extract_file_dialog_config(False)
+
+        self.assertEqual(title, "Select source file for local extraction")
+        self.assertEqual(filetypes, process_gui.LOCAL_EXTRACT_SOURCE_FILETYPES)
+
+    def test_get_local_extract_file_dialog_config_uses_json_files_in_to_po_mode(self):
+        title, filetypes = process_gui.get_local_extract_file_dialog_config(True)
+
+        self.assertEqual(title, "Select local extraction JSON file")
+        self.assertEqual(filetypes, process_gui.JSON_FILETYPES)
 
     def test_build_system_prompt_preview_for_translate_uses_translation_system_prompt(self):
         preview = process_gui.build_system_prompt_preview("process", "kk")
@@ -587,6 +619,58 @@ class ProcessGuiSmokeTests(unittest.TestCase):
         finally:
             if os.path.isdir(input_dir):
                 os.rmdir(input_dir)
+
+    def test_local_extract_browse_file_uses_json_dialog_in_to_po_mode(self):
+        tab = object.__new__(process_gui.LocalExtractToolTab)
+        tab.to_po_var = _FakeVar(True)
+        tab.input_file_var = _FakeVar("")
+
+        with patch(
+            "process_gui.filedialog.askopenfilename",
+            return_value=r"C:\tmp\terms.json",
+        ) as askopenfilename:
+            tab._browse_local_extract_file()
+
+        askopenfilename.assert_called_once_with(
+            title="Select local extraction JSON file",
+            filetypes=process_gui.JSON_FILETYPES,
+        )
+        self.assertEqual(tab.input_file_var.get(), r"C:\tmp\terms.json")
+
+    def test_local_extract_browse_folder_does_not_fallback_to_file_dialog(self):
+        tab = object.__new__(process_gui.LocalExtractToolTab)
+        tab.to_po_var = _FakeVar(False)
+        tab.input_file_var = _FakeVar("")
+
+        with (
+            patch("process_gui.filedialog.askdirectory", return_value="") as askdirectory,
+            patch("process_gui.filedialog.askopenfilename") as askopenfilename,
+        ):
+            tab._browse_local_extract_folder()
+
+        askdirectory.assert_called_once_with(
+            title="Select source folder for local extraction",
+            mustexist=True,
+        )
+        askopenfilename.assert_not_called()
+        self.assertEqual(tab.input_file_var.get(), "")
+
+    def test_refresh_local_mode_controls_updates_input_buttons_for_json_mode(self):
+        tab = object.__new__(process_gui.LocalExtractToolTab)
+        tab.to_po_var = _FakeVar(True)
+        tab.mode_combo = _FakeWidget()
+        tab.max_length_combo = _FakeWidget()
+        tab.include_rejected_button = _FakeWidget()
+        tab.include_borderline_button = _FakeWidget()
+        tab.input_file_button = _FakeWidget()
+        tab.input_folder_button = _FakeWidget()
+        tab.include_rejected_var = _FakeVar(True)
+
+        tab._refresh_local_mode_controls()
+
+        self.assertEqual(tab.input_file_button.config["text"], "JSON file")
+        self.assertEqual(tab.input_folder_button.config["state"], "disabled")
+        self.assertEqual(tab.include_rejected_var.get(), False)
 
     def test_validate_local_extract_config_rejects_directory_in_json_to_po_mode(self):
         input_dir = os.path.join(os.getcwd(), "_tmp_gui_local_extract_json_dir")

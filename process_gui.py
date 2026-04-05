@@ -76,6 +76,16 @@ LOCAL_EXTRACT_FILETYPES = [
     ("JSON files", "*.json"),
     ("All files", "*.*"),
 ]
+LOCAL_EXTRACT_SOURCE_FILETYPES = [
+    ("Supported local extract files", "*.po *.ts *.resx *.strings *.txt *.xml"),
+    ("Translatable files", "*.po *.ts *.resx *.strings *.txt *.xml"),
+    ("Android XML files", "*.xml"),
+    ("All files", "*.*"),
+]
+JSON_FILETYPES = [
+    ("JSON files", "*.json"),
+    ("All files", "*.*"),
+]
 LOG_DIR_NAME = "logs"
 CLIPBOARD_WIDGET_CLASSES = frozenset({"Entry", "TEntry", "Text", "Combobox", "TCombobox"})
 READONLY_STATES = frozenset({"disabled", "readonly"})
@@ -376,6 +386,12 @@ def summarize_input_files(file_paths: list[str] | tuple[str, ...]) -> str:
     if len(cleaned_paths) == 1:
         return cleaned_paths[0]
     return f"{cleaned_paths[0]} (+{len(cleaned_paths) - 1} more)"
+
+
+def get_local_extract_file_dialog_config(to_po_mode: bool) -> tuple[str, list[tuple[str, str]]]:
+    if to_po_mode:
+        return "Select local extraction JSON file", JSON_FILETYPES
+    return "Select source file for local extraction", LOCAL_EXTRACT_SOURCE_FILETYPES
 
 
 def resolve_process_input_files(config: ProcessGuiConfig) -> list[str]:
@@ -1244,14 +1260,7 @@ class BaseToolTab(ttk.Frame):
         ttk.Label(form, text=self.title).grid(row=0, column=0, columnspan=3, sticky="w")
 
         row = 1
-        self._add_entry_row(
-            form,
-            row=row,
-            label=self.input_label,
-            variable=self.input_file_var,
-            browse_command=self._browse_input_file,
-        )
-        row += 1
+        row += self._build_input_row(form, row)
         self._add_entry_row(form, row=row, label="Source lang", variable=self.source_lang_var)
         row += 1
         self._add_entry_row(form, row=row, label="Target lang", variable=self.target_lang_var)
@@ -1435,6 +1444,16 @@ class BaseToolTab(ttk.Frame):
 
     def _build_tool_specific_fields(self, parent: ttk.Frame, start_row: int) -> int:
         return start_row
+
+    def _build_input_row(self, parent: ttk.Frame, row: int) -> int:
+        self._add_entry_row(
+            parent,
+            row=row,
+            label=self.input_label,
+            variable=self.input_file_var,
+            browse_command=self._browse_input_file,
+        )
+        return 1
 
     def _add_entry_row(
         self,
@@ -1906,6 +1925,8 @@ class LocalExtractToolTab(BaseToolTab):
         self.max_length_combo: ttk.Combobox | None = None
         self.include_rejected_button: ttk.Checkbutton | None = None
         self.include_borderline_button: ttk.Checkbutton | None = None
+        self.input_file_button: ttk.Button | None = None
+        self.input_folder_button: ttk.Button | None = None
         super().__init__(
             app,
             notebook,
@@ -1921,6 +1942,30 @@ class LocalExtractToolTab(BaseToolTab):
         )
         self.to_po_var.trace_add("write", self._on_to_po_changed)
         self._refresh_local_mode_controls()
+
+    def _build_input_row(self, parent: ttk.Frame, row: int) -> int:
+        ttk.Label(parent, text=self.input_label).grid(row=row, column=0, sticky="w", pady=4)
+        ttk.Entry(parent, textvariable=self.input_file_var).grid(
+            row=row,
+            column=1,
+            sticky="ew",
+            pady=4,
+        )
+        button_frame = ttk.Frame(parent)
+        button_frame.grid(row=row, column=2, sticky="nw", padx=(8, 0), pady=4)
+        self.input_file_button = ttk.Button(
+            button_frame,
+            text="Source file",
+            command=self._browse_local_extract_file,
+        )
+        self.input_file_button.grid(row=0, column=0, sticky="ew")
+        self.input_folder_button = ttk.Button(
+            button_frame,
+            text="Source folder",
+            command=self._browse_local_extract_folder,
+        )
+        self.input_folder_button.grid(row=1, column=0, sticky="ew", pady=(4, 0))
+        return 1
 
     def _build_tool_specific_fields(self, parent: ttk.Frame, start_row: int) -> int:
         ttk.Checkbutton(
@@ -1980,6 +2025,10 @@ class LocalExtractToolTab(BaseToolTab):
         po_enabled = True
         if self.include_borderline_button is not None:
             self.include_borderline_button.configure(state="normal" if po_enabled else "disabled")
+        if self.input_file_button is not None:
+            self.input_file_button.configure(text="JSON file" if to_po_mode else "Source file")
+        if self.input_folder_button is not None:
+            self.input_folder_button.configure(state="disabled" if to_po_mode else "normal")
         if to_po_mode:
             self.include_rejected_var.set(False)
 
@@ -1995,21 +2044,24 @@ class LocalExtractToolTab(BaseToolTab):
             self.out_path_var.set(selected)
 
     def _browse_input_file(self) -> None:
+        self._browse_local_extract_file()
+
+    def _browse_local_extract_file(self) -> None:
+        title, filetypes = get_local_extract_file_dialog_config(self.to_po_var.get())
+        selected = filedialog.askopenfilename(
+            title=title,
+            filetypes=filetypes,
+        )
+        if selected:
+            self.input_file_var.set(selected)
+
+    def _browse_local_extract_folder(self) -> None:
         if self.to_po_var.get():
-            selected = filedialog.askopenfilename(
-                title="Select local extraction JSON file",
-                filetypes=LOCAL_EXTRACT_FILETYPES,
-            )
-        else:
-            selected = filedialog.askdirectory(
-                title="Select source file directory for local extraction",
-                mustexist=True,
-            )
-            if not selected:
-                selected = filedialog.askopenfilename(
-                    title="Select source file for local extraction",
-                    filetypes=LOCAL_EXTRACT_FILETYPES,
-                )
+            return
+        selected = filedialog.askdirectory(
+            title="Select source folder for local extraction",
+            mustexist=True,
+        )
         if selected:
             self.input_file_var.set(selected)
 
