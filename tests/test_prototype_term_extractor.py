@@ -107,6 +107,33 @@ class PrototypeTermExtractorTests(unittest.TestCase):
 
         self.assertEqual(all_terms, set())
 
+    def test_xml_attribute_and_url_words_are_not_extracted(self):
+        result = extraction.extract_terms_locally(
+            [
+                extraction.SourceMessage(
+                    source='Open <image src="https://example.com/icon.png" alt="Preview"> Gallery',
+                    context="Help",
+                )
+            ],
+            mode="all",
+            vocabulary_pairs=[],
+            max_length=2,
+        )
+
+        all_terms = {
+            item.source_term
+            for bucket in (result.accepted_terms, result.borderline_terms, result.rejected_terms)
+            for item in bucket
+        }
+
+        self.assertIn("gallery", all_terms)
+        self.assertNotIn("src", all_terms)
+        self.assertNotIn("image", all_terms)
+        self.assertNotIn("example", all_terms)
+        self.assertNotIn("com", all_terms)
+        self.assertNotIn("preview", all_terms)
+        self.assertNotIn("open gallery", all_terms)
+
     def test_single_occurrence_loose_phrase_is_rejected_and_atomic_terms_go_borderline(self):
         result = extraction.extract_terms_locally(
             [extraction.SourceMessage(source="Choose audio channel", context="Audio settings")],

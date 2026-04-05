@@ -22,12 +22,30 @@ class TermExtractionSmokeTests(unittest.TestCase):
             ["%productname", "-help", "-output", "3d"],
         )
 
+    def test_tokenize_source_text_strips_xml_markup_and_url_words(self):
+        self.assertEqual(
+            term_extraction.tokenize_source_text(
+                'Open <image src="https://example.com/icon.png" alt="Preview"> gallery'
+            ),
+            ["open", "-urlnoise", "gallery"],
+        )
+
     def test_extract_message_candidate_counts_does_not_bridge_across_skipped_marker_tokens(self):
         counts = term_extraction.extract_message_candidate_counts("Version 3D model", max_length=2)
 
         self.assertIn("version", counts)
         self.assertIn("model", counts)
         self.assertNotIn("version model", counts)
+
+    def test_extract_message_candidate_counts_does_not_bridge_across_url_noise(self):
+        counts = term_extraction.extract_message_candidate_counts(
+            "Open https://example.com dialog",
+            max_length=2,
+        )
+
+        self.assertIn("open", counts)
+        self.assertIn("dialog", counts)
+        self.assertNotIn("open dialog", counts)
 
     def test_build_relevant_vocabulary_matches_rich_entries(self):
         entries = term_extraction.build_scoped_vocabulary_entries(

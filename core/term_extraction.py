@@ -22,6 +22,22 @@ ACCELERATOR_AMPERSAND_PREFIX_RE = re.compile(r"(^|[\s([{<])&(?=\w)", re.UNICODE)
 ACCELERATOR_AMPERSAND_INLINE_RE = re.compile(r"(?<=\w)&(?=[a-z])", re.UNICODE)
 ACCELERATOR_UNDERSCORE_PREFIX_RE = re.compile(r"(^|[\s([{<])_(?=\w)", re.UNICODE)
 ACCELERATOR_UNDERSCORE_INLINE_RE = re.compile(r"(?<=\w)_(?=\w)", re.UNICODE)
+XML_COMMENT_RE = re.compile(r"<!--.*?-->", re.DOTALL)
+XML_ATTR_TAG_RE = re.compile(
+    r"<[A-Za-z][^>]*\b[A-Za-z_:][A-Za-z0-9_.:-]*\s*=\s*(?:\"[^\"]*\"|'[^']*'|[^\s>]+)[^>]*>",
+    re.UNICODE,
+)
+XML_TAG_RE = re.compile(r"</?[A-Za-z][^>]*>", re.UNICODE)
+ATTRIBUTE_ASSIGNMENT_RE = re.compile(
+    r"\b[A-Za-z_:][A-Za-z0-9_.:-]*\s*=\s*(?:\"[^\"]*\"|'[^']*'|[^\s>]+)",
+    re.UNICODE,
+)
+URL_RE = re.compile(
+    r"\b(?:[A-Za-z][A-Za-z0-9+.-]*:(?:\/\/)?|www\.)[^\s<>()\"']+",
+    re.IGNORECASE | re.UNICODE,
+)
+URL_NOISE_SENTINEL = " -urlnoise "
+URL_NOISE_SEQUENCE_RE = re.compile(r"(?:\s*-urlnoise\s*)+", re.IGNORECASE)
 
 
 def normalize_space(text: str | None) -> str:
@@ -166,9 +182,23 @@ def strip_ui_accelerators(text: str | None) -> str:
     return normalized
 
 
+def strip_markup_and_url_noise(text: str | None) -> str:
+    """Remove XML/HTML tags and replace URL-like payloads with a safe sentinel."""
+    normalized = normalize_space(text)
+    if not normalized:
+        return ""
+    normalized = XML_COMMENT_RE.sub(" ", normalized)
+    normalized = XML_ATTR_TAG_RE.sub(URL_NOISE_SENTINEL, normalized)
+    normalized = ATTRIBUTE_ASSIGNMENT_RE.sub(URL_NOISE_SENTINEL, normalized)
+    normalized = URL_RE.sub(URL_NOISE_SENTINEL, normalized)
+    normalized = XML_TAG_RE.sub(" ", normalized)
+    normalized = URL_NOISE_SEQUENCE_RE.sub(URL_NOISE_SENTINEL, normalized)
+    return normalize_space(normalized)
+
+
 def normalize_ui_source_text(text: str | None) -> str:
     """Normalize UI text for extraction and strip excluded multiword source terms."""
-    normalized = strip_ui_accelerators(text)
+    normalized = strip_ui_accelerators(strip_markup_and_url_noise(text))
     for pattern in EXCLUDED_MULTIWORD_SOURCE_PATTERNS:
         normalized = pattern.sub(" ", normalized)
     return normalize_space(normalized)
