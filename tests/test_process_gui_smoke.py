@@ -512,6 +512,41 @@ class ProcessGuiSmokeTests(unittest.TestCase):
             if os.path.exists(input_path):
                 os.remove(input_path)
 
+    def test_validate_local_extract_config_accepts_directory_input(self):
+        input_dir = os.path.join(os.getcwd(), "_tmp_gui_local_extract_dir")
+        try:
+            os.makedirs(input_dir, exist_ok=True)
+
+            config = process_gui.LocalExtractGuiConfig(
+                input_file=input_dir,
+                source_lang="en",
+                target_lang="kk",
+            )
+
+            errors = process_gui.validate_local_extract_gui_config(config)
+
+            self.assertEqual(errors, [])
+        finally:
+            if os.path.isdir(input_dir):
+                os.rmdir(input_dir)
+
+    def test_validate_local_extract_config_rejects_directory_in_json_to_po_mode(self):
+        input_dir = os.path.join(os.getcwd(), "_tmp_gui_local_extract_json_dir")
+        try:
+            os.makedirs(input_dir, exist_ok=True)
+
+            config = process_gui.LocalExtractGuiConfig(
+                input_file=input_dir,
+                to_po=True,
+            )
+
+            errors = process_gui.validate_local_extract_gui_config(config)
+
+            self.assertIn(f"Input file does not exist: {input_dir}", errors)
+        finally:
+            if os.path.isdir(input_dir):
+                os.rmdir(input_dir)
+
     def test_build_local_extract_command_includes_local_flags(self):
         input_path = os.path.join(os.getcwd(), "_tmp_gui_local_extract.po")
         script_path = os.path.join(os.getcwd(), "_tmp_local_extract_script.py")

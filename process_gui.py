@@ -305,7 +305,8 @@ def build_system_prompt_preview(tool_key: str, target_lang: str) -> str:
             "- core/term_handoff.py for JSON report shaping and JSON-to-PO conversion\n"
             "- data/extract/... resource files for stopwords, low-value words, allowlists, and excluded terms\n"
             "- the approved vocabulary to filter already-known terms in missing mode\n\n"
-            "The task can also convert a local extraction JSON report into a translation-ready PO glossary handoff."
+            "The task can scan one source file or a whole source directory tree.\n"
+            "It can also convert a local extraction JSON report into a translation-ready PO glossary handoff."
         )
     if normalized_tool == "check":
         return check_task.build_check_system_instruction(resolved_target_lang)
@@ -592,8 +593,11 @@ def validate_local_extract_gui_config(config: LocalExtractGuiConfig) -> list[str
 
     if not cleaned_input:
         errors.append("Input file is required.")
-    elif not os.path.isfile(cleaned_input):
-        errors.append(f"Input file does not exist: {cleaned_input}")
+    elif config.to_po:
+        if not os.path.isfile(cleaned_input):
+            errors.append(f"Input file does not exist: {cleaned_input}")
+    elif not os.path.isfile(cleaned_input) and not os.path.isdir(cleaned_input):
+        errors.append(f"Input file or directory does not exist: {cleaned_input}")
 
     if not config.to_po:
         if not cleaned_source:
@@ -1905,7 +1909,7 @@ class LocalExtractToolTab(BaseToolTab):
             input_filetypes=LOCAL_EXTRACT_FILETYPES,
             supports_vocab=True,
             supports_rules=False,
-            input_label="Input file / JSON",
+            input_label="Input file / folder / JSON",
             supports_provider_controls=False,
             preview_label="Task info",
         )
@@ -1983,6 +1987,25 @@ class LocalExtractToolTab(BaseToolTab):
         )
         if selected:
             self.out_path_var.set(selected)
+
+    def _browse_input_file(self) -> None:
+        if self.to_po_var.get():
+            selected = filedialog.askopenfilename(
+                title="Select local extraction JSON file",
+                filetypes=LOCAL_EXTRACT_FILETYPES,
+            )
+        else:
+            selected = filedialog.askdirectory(
+                title="Select source file directory for local extraction",
+                mustexist=True,
+            )
+            if not selected:
+                selected = filedialog.askopenfilename(
+                    title="Select source file for local extraction",
+                    filetypes=LOCAL_EXTRACT_FILETYPES,
+                )
+        if selected:
+            self.input_file_var.set(selected)
 
     def build_config(self) -> LocalExtractGuiConfig:
         return LocalExtractGuiConfig(

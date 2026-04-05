@@ -4,13 +4,14 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
-from typing import Any, List
+from typing import Any, List, Tuple
 
 from core.formats import FileKind, detect_file_kind, load_android_xml, load_po, load_resx, load_strings, load_ts, load_txt
 from core.resources import load_vocabulary_pairs, resolve_resource_path
 from core.task_cli import add_language_arguments, add_vocabulary_argument, build_task_parser, run_task_main
-from core.term_extraction import collect_source_messages, extract_terms_locally
+from core.term_extraction import SourceMessage, collect_source_messages, extract_terms_locally
 from core.term_handoff import build_json_payload, build_output_path, convert_json_to_po
 
 
@@ -35,12 +36,63 @@ def load_entries_for_file(file_path: str, file_kind: FileKind) -> List[Any]:
     return entries
 
 
+def collect_messages_for_file(file_path: str, file_kind: FileKind) -> List[SourceMessage]:
+    """Load one file and return its normalized source messages for extraction."""
+    entries = load_entries_for_file(file_path, file_kind)
+    return collect_source_messages(entries)
+
+
+def discover_supported_source_files(root_path: str) -> List[Tuple[str, FileKind]]:
+    """Recursively find supported localization source files under a directory."""
+    discovered: List[Tuple[str, FileKind]] = []
+    for current_root, dir_names, file_names in os.walk(root_path):
+        dir_names.sort()
+        file_names.sort()
+        for file_name in file_names:
+            file_path = os.path.join(current_root, file_name)
+            try:
+                file_kind = detect_file_kind(file_path)
+            except ValueError:
+                continue
+            discovered.append((file_path, file_kind))
+    return discovered
+
+
+def load_messages_for_input(input_path: str) -> Tuple[List[SourceMessage], List[str]]:
+    """Load extraction messages from one file or from every supported file in a directory tree."""
+    if os.path.isdir(input_path):
+        supported_files = discover_supported_source_files(input_path)
+        if not supported_files:
+            raise ValueError(f"No supported source files found under directory: {input_path}")
+    else:
+        supported_files = [(input_path, detect_file_kind(input_path))]
+
+    messages: List[SourceMessage] = []
+    seen: set[Tuple[str, str, str]] = set()
+    scanned_files: List[str] = []
+
+    for file_path, file_kind in supported_files:
+        file_messages = collect_messages_for_file(file_path, file_kind)
+        scanned_files.append(file_path)
+        for item in file_messages:
+            key = (str(item.source or ""), str(item.context or ""), str(item.note or ""))
+            if key in seen:
+                continue
+            seen.add(key)
+            messages.append(item)
+
+    return messages, scanned_files
+
+
 def configure_parser(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
     """Configure the CLI for local term discovery and JSON-to-PO conversion."""
     parser.description = (
         "Run local glossary-term discovery or convert local extraction JSON into a PO handoff file."
     )
-    parser.add_argument("file", help="Input source .po/.ts/.resx/.strings/.txt/Android .xml file or local extraction JSON file")
+    parser.add_argument(
+        "file",
+        help="Input source file, source directory tree, or local extraction JSON file",
+    )
     add_language_arguments(parser)
     add_vocabulary_argument(parser)
     parser.add_argument(
@@ -104,6 +156,8 @@ def run_from_args(args: argparse.Namespace) -> None:
         sys.exit("ERROR: JSON to PO output path should end with .po.")
 
     if args.to_po:
+        if os.path.isdir(args.file):
+            sys.exit("ERROR: JSON to PO mode requires a JSON file, not a directory.")
         try:
             out_path = convert_json_to_po(
                 args.file,
@@ -118,7 +172,7 @@ def run_from_args(args: argparse.Namespace) -> None:
         return
 
     try:
-        file_kind = detect_file_kind(args.file)
+        messages, scanned_files = load_messages_for_input(args.file)
     except ValueError as exc:
         sys.exit(f"ERROR: {exc}")
 
@@ -129,9 +183,6 @@ def run_from_args(args: argparse.Namespace) -> None:
         target_lang=args.target_lang,
     )
     vocabulary_pairs = load_vocabulary_pairs(vocabulary_path, "Vocabulary")
-
-    entries = load_entries_for_file(args.file, file_kind)
-    messages = collect_source_messages(entries)
     if not messages:
         print("No source messages found for local terminology extraction.")
         return
@@ -161,6 +212,8 @@ def run_from_args(args: argparse.Namespace) -> None:
 
     print("Local term extraction complete.")
     print(f"Saved file: {out_path}")
+    if len(scanned_files) > 1:
+        print(f"Source files scanned: {len(scanned_files)}")
     if args.also_po:
         try:
             po_out_path = convert_json_to_po(
