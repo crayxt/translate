@@ -13,9 +13,13 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 EXTRACT_DATA_ROOT = REPO_ROOT / "data" / "extract"
 
 # Unicode-aware tokenization so extraction works on non-English sources too.
-TOKEN_RE = re.compile(r"[^\W_]+(?:[-'][^\W_]+)*", re.UNICODE)
+# Keep underscores inside one token so mnemonic-marked or identifier-like strings
+# do not get split into false sub-terms such as `fra_me` -> `me`.
+TOKEN_RE = re.compile(r"[^\W]+(?:[-'][^\W]+)*", re.UNICODE)
 ACCELERATOR_AMPERSAND_PREFIX_RE = re.compile(r"(^|[\s([{<])&(?=\w)", re.UNICODE)
 ACCELERATOR_AMPERSAND_INLINE_RE = re.compile(r"(?<=\w)&(?=[a-z])", re.UNICODE)
+ACCELERATOR_UNDERSCORE_PREFIX_RE = re.compile(r"(^|[\s([{<])_(?=\w)", re.UNICODE)
+ACCELERATOR_UNDERSCORE_INLINE_RE = re.compile(r"(?<=\w)_(?=\w)", re.UNICODE)
 
 
 def normalize_space(text: str | None) -> str:
@@ -143,14 +147,21 @@ def validate_max_length(max_length: int) -> int:
 def strip_ui_accelerators(text: str | None) -> str:
     """Remove common UI accelerator markers while preserving literal &&."""
     normalized = normalize_space(text)
-    if "&" not in normalized:
-        return normalized
+    if "&" in normalized:
+        amp_sentinel = "\u0000AMP\u0000"
+        normalized = normalized.replace("&&", amp_sentinel)
+        normalized = ACCELERATOR_AMPERSAND_PREFIX_RE.sub(r"\1", normalized)
+        normalized = ACCELERATOR_AMPERSAND_INLINE_RE.sub("", normalized)
+        normalized = normalized.replace(amp_sentinel, "&")
 
-    sentinel = "\u0000AMP\u0000"
-    normalized = normalized.replace("&&", sentinel)
-    normalized = ACCELERATOR_AMPERSAND_PREFIX_RE.sub(r"\1", normalized)
-    normalized = ACCELERATOR_AMPERSAND_INLINE_RE.sub("", normalized)
-    return normalized.replace(sentinel, "&")
+    if "_" in normalized:
+        underscore_sentinel = "\u0000UNDERSCORE\u0000"
+        normalized = normalized.replace("__", underscore_sentinel)
+        normalized = ACCELERATOR_UNDERSCORE_PREFIX_RE.sub(r"\1", normalized)
+        normalized = ACCELERATOR_UNDERSCORE_INLINE_RE.sub("", normalized)
+        normalized = normalized.replace(underscore_sentinel, "_")
+
+    return normalized
 
 
 def normalize_ui_source_text(text: str | None) -> str:
@@ -183,7 +194,7 @@ def is_placeholder_like(term: str) -> bool:
         return True
     if "%" in term or "{" in term or "}" in term or "<" in term or ">" in term:
         return True
-    if "&" in term:
+    if "&" in term or "_" in term:
         return True
     return False
 

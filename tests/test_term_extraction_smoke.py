@@ -10,6 +10,12 @@ class TermExtractionSmokeTests(unittest.TestCase):
             ["wallpaper"],
         )
 
+    def test_tokenize_source_text_strips_underscore_accelerators(self):
+        self.assertEqual(
+            term_extraction.tokenize_source_text("Default fra_me delay"),
+            ["default", "frame", "delay"],
+        )
+
     def test_build_relevant_vocabulary_matches_rich_entries(self):
         entries = term_extraction.build_scoped_vocabulary_entries(
             "start|бастау|verb|Start playback\nplayback|ойнату|noun|Media playback"

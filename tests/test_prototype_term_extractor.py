@@ -45,6 +45,21 @@ class PrototypeTermExtractorTests(unittest.TestCase):
         self.assertNotIn("paper", accepted)
         self.assertNotIn("paper", rejected)
 
+    def test_underscore_accelerator_form_does_not_extract_false_subterm(self):
+        result = extraction.extract_terms_locally(
+            [extraction.SourceMessage(source="Default fra_me delay", context="Rendering")],
+            mode="all",
+            vocabulary_pairs=[],
+        )
+
+        all_terms = {
+            item.source_term
+            for bucket in (result.accepted_terms, result.borderline_terms, result.rejected_terms)
+            for item in bucket
+        }
+
+        self.assertNotIn("me", all_terms)
+
     def test_single_occurrence_loose_phrase_is_rejected_and_atomic_terms_go_borderline(self):
         result = extraction.extract_terms_locally(
             [extraction.SourceMessage(source="Choose audio channel", context="Audio settings")],
