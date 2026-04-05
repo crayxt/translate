@@ -16,9 +16,11 @@ gaim
 gajim
 geopackage
 ghostbsd
+gimp
 gnome
 gnu
 google
+ibm
 icq
 instagram
 ios
@@ -40,6 +42,7 @@ netbsd
 openbsd
 other
 pidgin
+postgis
 postgresql
 python
 qgis

@@ -19,6 +19,8 @@ cannot
 could
 ctrl
 def
+did
+didn't
 do
 does
 doesn't
@@ -35,6 +37,7 @@ forty
 four
 from
 ghi
+got
 has
 have
 he
@@ -51,6 +54,7 @@ is
 it
 its
 jkl
+let
 many
 may
 might
@@ -103,12 +107,15 @@ want
 was
 we
 were
+where
 which
 will
 with
 without
 would
 wxyz
+yes
+yet
 you
 you're
 you've

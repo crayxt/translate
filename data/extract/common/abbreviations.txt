@@ -14,6 +14,8 @@ bmp
 bz2
 cfg
 cli
+cmyk
+css
 csv
 dbus
 deb
@@ -27,14 +29,17 @@ flac
 flatpak
 ftp
 gif
+gio
 gl
 go
 gps
 gpx
 gtk
+gui
 gz
 heic
 heif
+hsv
 html
 http
 https
@@ -48,6 +53,7 @@ js
 json
 jsonl
 jsx
+lch
 m4a
 md
 mkv
@@ -64,6 +70,7 @@ ogg
 opus
 pdf
 php
+pid
 png
 ppt
 pptx
@@ -73,8 +80,10 @@ py
 qml
 qt
 rar
+rgb
 rpm
 rss
+rtf
 sasl
 sdk
 sh
@@ -83,6 +92,7 @@ smtp
 sql
 sqlite
 sqlite3
+srgb
 ssh
 ssl
 svg
@@ -96,6 +106,7 @@ toml
 ts
 tsv
 tsx
+tty
 txt
 udp
 uri
@@ -110,6 +121,7 @@ xhtml
 xls
 xlsx
 xml
+xsl
 xz
 yaml
 yml
