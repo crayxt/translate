@@ -62,6 +62,11 @@ from core.task_batches import (
     run_model_batches,
 )
 from core.task_runtime import build_task_runtime_context, print_startup_configuration
+from core.task_issues import (
+    TaskIssue,
+    build_task_issue_schema,
+    normalize_task_issue,
+)
 
 
 DEFAULT_REVISION_BATCH_SIZE = 120
@@ -84,6 +89,24 @@ REVISION_SYSTEM_INSTRUCTION = join_instruction_sections(
     SHARED_GLOSSARY_SENSE_RULES,
 )
 
+REVISION_ISSUE_CODES: tuple[str, ...] = (
+    "revise.instruction_ambiguous",
+    "revise.source_unclear",
+    "revise.glossary_variant_choice",
+    "revise.placeholder_attention",
+    "revise.length_or_ui_fit_risk",
+    "revise.other",
+)
+
+REVISION_ISSUE_CODE_GUIDANCE: Dict[str, str] = {
+    "revise.instruction_ambiguous": "the instruction is ambiguous for this item",
+    "revise.source_unclear": "the source meaning is unclear or underspecified",
+    "revise.glossary_variant_choice": "multiple approved glossary variants existed and one was chosen",
+    "revise.placeholder_attention": "placeholders or protected tokens required extra care",
+    "revise.length_or_ui_fit_risk": "the revised text may be risky for UI fit or length",
+    "revise.other": "there is another review-worthy concern that does not fit a more specific code",
+}
+
 
 REVISION_RESPONSE_SCHEMA: dict[str, Any] = {
     "type": "object",
@@ -101,12 +124,21 @@ REVISION_RESPONSE_SCHEMA: dict[str, Any] = {
                         "items": {"type": "string"},
                     },
                     "reason": {"type": "string"},
+                    "issues": {
+                        "type": "array",
+                        "items": build_task_issue_schema(
+                            REVISION_ISSUE_CODES,
+                            allowed_severities=("warning", "info"),
+                        ),
+                    },
                 },
                 "required": ["id", "action"],
+                "additionalProperties": False,
             },
         },
     },
     "required": ["revisions"],
+    "additionalProperties": False,
 }
 
 
@@ -116,6 +148,7 @@ class RevisionResult:
     text: str = ""
     plural_texts: List[str] = field(default_factory=list)
     reason: str = ""
+    issues: List[TaskIssue] = field(default_factory=list)
 
 
 @dataclass(slots=True)
@@ -224,11 +257,27 @@ def _normalize_revision_payload(payload: Any) -> Dict[str, RevisionResult]:
                     continue
                 plural_texts.append(value if isinstance(value, str) else str(value))
 
+        issues: List[TaskIssue] = []
+        issues_raw = item.get("issues")
+        if isinstance(issues_raw, list):
+            for value in issues_raw:
+                issue = normalize_task_issue(
+                    value,
+                    allowed_codes=REVISION_ISSUE_CODES,
+                    default_code="revise.other",
+                    allowed_severities=("warning", "info"),
+                    default_severity="warning",
+                    default_origin="model",
+                )
+                if issue is not None:
+                    issues.append(issue)
+
         results[str(msg_id)] = RevisionResult(
             action=str(action).strip().lower(),
             text=text,
             plural_texts=plural_texts,
             reason=reason,
+            issues=issues,
         )
 
     return results
@@ -312,6 +361,14 @@ def build_revision_request_spec() -> TaskRequestSpec:
             "For plural items, if action is `update`, provide exactly `item.plural_forms` plural_texts.",
             "If the target language effectively uses one plural wording, repeat it in all required plural slots.",
             "Keep `reason` short and concrete.",
+            "Use `issues` only when an item has a real ambiguity or another review-worthy concern.",
+            "Each issue must be an object with `code`, `message`, and `severity`.",
+            f"Allowed issue codes: {', '.join(REVISION_ISSUE_CODES)}.",
+            *tuple(
+                f"Use `{code}` when {description}."
+                for code, description in REVISION_ISSUE_CODE_GUIDANCE.items()
+            ),
+            "Use severity `warning` for real revision risk and `info` for notable but non-blocking decisions.",
         ),
     )
 
@@ -743,6 +800,21 @@ def print_change_samples(changes: List[Tuple[ReviewItem, RevisionResult]], limit
             else result.text
         ).replace("\n", "\\n")
         print(f"  - {label}: {before} -> {after}")
+        if result.issues:
+            for issue in result.issues[:3]:
+                print(f"      [{issue.code}] {issue.message}")
+
+
+def print_issue_samples(issues: List[Tuple[ReviewItem, RevisionResult]], limit: int = 10) -> None:
+    if not issues:
+        return
+
+    print("Sample revision issues:")
+    for item, result in issues[:limit]:
+        label = item.pair_key or item.context or item.source_text
+        print(f"  - {label}")
+        for issue in result.issues[:3]:
+            print(f"      [{issue.code}] {issue.message}")
 
 
 def configure_parser(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
@@ -866,9 +938,10 @@ def run_from_args(args: argparse.Namespace) -> None:
     total_batches = len(all_batches)
     print(f"Total batches: {total_batches}")
 
-    async def run_revision() -> Tuple[int, List[Tuple[ReviewItem, RevisionResult]]]:
+    async def run_revision() -> Tuple[int, List[Tuple[ReviewItem, RevisionResult]], List[Tuple[ReviewItem, RevisionResult]]]:
         changed_total = 0
         changed_items: List[Tuple[ReviewItem, RevisionResult]] = []
+        issue_items: List[Tuple[ReviewItem, RevisionResult]] = []
         completed_batches = 0
 
         def build_contents(_batch_index: int, batch: List[ReviewItem]) -> Any:
@@ -913,6 +986,8 @@ def run_from_args(args: argparse.Namespace) -> None:
                 result = revisions.get(str(index))
                 if result is None:
                     continue
+                if result.issues:
+                    issue_items.append((item, result))
                 if apply_revision_to_item(item, result):
                     batch_changed += 1
                     changed_items.append((item, result))
@@ -951,22 +1026,29 @@ def run_from_args(args: argparse.Namespace) -> None:
             ),
         )
 
-        return changed_total, changed_items
+        return changed_total, changed_items, issue_items
 
     try:
-        changed_count, changed_items = asyncio.run(run_revision())
+        changed_count, changed_items, issue_items = asyncio.run(run_revision())
     except RuntimeError as exc:
         sys.exit(str(exc))
 
     print("")
     print(f"Reviewed entries: {len(review_items)}")
     print(f"Changed entries: {changed_count}")
+    print(f"Entries with revision issues: {len(issue_items)}")
 
     if not changed_count:
-        print("No changes were needed.")
+        if issue_items:
+            print("No changes were needed, but some entries reported revision issues.")
+            print_issue_samples(issue_items)
+        else:
+            print("No changes were needed.")
         return
 
     print_change_samples(changed_items)
+    if issue_items:
+        print_issue_samples(issue_items)
 
     if args.dry_run:
         print("Dry run complete. No file was written.")

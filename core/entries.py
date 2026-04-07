@@ -4,16 +4,29 @@ import json
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Tuple
 
+from core.task_issues import TaskIssue, normalize_task_issue
+
 MAX_PROMPT_CONTEXT_CHARS = 180
 MAX_PROMPT_NOTE_CHARS = 300
 MAX_PROMPT_OCCURRENCES = 3
+
+TRANSLATION_WARNING_CODES: Tuple[str, ...] = (
+    "translate.ambiguous_term",
+    "translate.unclear_source_meaning",
+    "translate.glossary_variant_choice",
+    "translate.possible_untranslated_token",
+    "translate.placeholder_attention",
+    "translate.length_or_ui_fit_risk",
+)
+DEFAULT_TRANSLATION_WARNING_CODE = "translate.unclear_source_meaning"
+TranslationWarning = TaskIssue
 
 
 @dataclass
 class TranslationResult:
     text: str = ""
     plural_texts: List[str] = field(default_factory=list)
-    warnings: List[str] = field(default_factory=list)
+    warnings: List[TaskIssue] = field(default_factory=list)
 
 
 def json_load_maybe(text: str) -> Any:
@@ -56,14 +69,12 @@ def _normalize_translation_payload(payload: Any) -> Dict[str, TranslationResult]
                             continue
                         plural_texts.append(value if isinstance(value, str) else str(value))
                 warnings_raw = item.get("warnings")
-                warnings: List[str] = []
+                warnings: List[TaskIssue] = []
                 if isinstance(warnings_raw, list):
                     for value in warnings_raw:
-                        if value is None:
-                            continue
-                        warning_text = value if isinstance(value, str) else str(value)
-                        if warning_text.strip():
-                            warnings.append(warning_text)
+                        normalized_warning = normalize_translation_warning(value)
+                        if normalized_warning is not None:
+                            warnings.append(normalized_warning)
                 results[str(msg_id)] = TranslationResult(
                     text=text,
                     plural_texts=plural_texts,
@@ -77,18 +88,25 @@ def _normalize_translation_payload(payload: Any) -> Dict[str, TranslationResult]
                 text = value.get("text")
                 if isinstance(text, str):
                     warnings_raw = value.get("warnings")
-                    warnings: List[str] = []
+                    warnings: List[TaskIssue] = []
                     if isinstance(warnings_raw, list):
                         for warning_value in warnings_raw:
-                            if warning_value is None:
-                                continue
-                            warning_text = (
-                                warning_value if isinstance(warning_value, str) else str(warning_value)
-                            )
-                            if warning_text.strip():
-                                warnings.append(warning_text)
+                            normalized_warning = normalize_translation_warning(warning_value)
+                            if normalized_warning is not None:
+                                warnings.append(normalized_warning)
                     results[str(key)] = TranslationResult(text=text, warnings=warnings)
     return results
+
+
+def normalize_translation_warning(value: Any) -> TaskIssue | None:
+    return normalize_task_issue(
+        value,
+        allowed_codes=TRANSLATION_WARNING_CODES,
+        default_code=DEFAULT_TRANSLATION_WARNING_CODE,
+        allowed_severities=("warning", "info"),
+        default_severity="warning",
+        default_origin="model",
+    )
 
 
 def parse_response(response_payload: Any) -> Dict[str, TranslationResult]:

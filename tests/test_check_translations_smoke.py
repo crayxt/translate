@@ -87,7 +87,7 @@ class CheckTranslationsSmokeTests(unittest.TestCase):
                     "id": "0",
                     "issues": [
                         {
-                            "category": "meaning",
+                            "code": "check.meaning",
                             "severity": "error",
                             "message": "Meaning changed.",
                         }
@@ -100,7 +100,27 @@ class CheckTranslationsSmokeTests(unittest.TestCase):
 
         self.assertIn("0", parsed)
         self.assertEqual(parsed["0"][0].origin, "model")
-        self.assertEqual(parsed["0"][0].category, "meaning")
+        self.assertEqual(parsed["0"][0].code, "check.meaning")
+
+    def test_parse_check_response_normalizes_legacy_category_to_code(self):
+        payload = {
+            "results": [
+                {
+                    "id": "0",
+                    "issues": [
+                        {
+                            "category": "meaning",
+                            "severity": "error",
+                            "message": "Meaning changed.",
+                        }
+                    ],
+                }
+            ]
+        }
+
+        parsed = check_translations.parse_check_response(_DummyResponse(parsed=payload))
+
+        self.assertEqual(parsed["0"][0].code, "check.meaning")
 
     def test_select_review_entries_skips_untranslated_and_obsolete(self):
         entries = [
@@ -179,7 +199,7 @@ class CheckTranslationsSmokeTests(unittest.TestCase):
                                 "id": "0",
                                 "issues": [
                                     {
-                                        "category": "meaning",
+                                        "code": "check.meaning",
                                         "severity": "warning",
                                         "message": "Translation may omit part of the source meaning.",
                                     }
@@ -214,8 +234,8 @@ class CheckTranslationsSmokeTests(unittest.TestCase):
             self.assertEqual(payload["issue_count"], 1)
             self.assertEqual(len(payload["results"]), 1)
             self.assertEqual(payload["results"][0]["verdict"], "issues")
-            categories = [issue["category"] for issue in payload["results"][0]["issues"]]
-            self.assertIn("meaning", categories)
+            codes = [issue["code"] for issue in payload["results"][0]["issues"]]
+            self.assertIn("check.meaning", codes)
             self.assertTrue(all(issue["origin"] == "model" for issue in payload["results"][0]["issues"]))
         finally:
             if os.path.exists(out_path):

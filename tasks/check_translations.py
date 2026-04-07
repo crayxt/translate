@@ -5,7 +5,7 @@ import asyncio
 import json
 import os
 import sys
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Tuple
 
@@ -49,6 +49,13 @@ from core.system_instructions import (
 )
 from core.task_batches import build_fixed_batches, build_indexed_batch_map, run_model_batches
 from core.task_runtime import build_task_runtime_context, print_startup_configuration
+from core.task_issues import (
+    TaskIssue,
+    build_task_issue_schema,
+    dedupe_task_issues,
+    normalize_task_issue,
+    serialize_task_issue,
+)
 
 
 DEFAULT_CHECK_BATCH_SIZE = 150
@@ -68,6 +75,52 @@ CHECK_SYSTEM_INSTRUCTION = join_instruction_sections(
     SHARED_GLOSSARY_SENSE_RULES,
 )
 
+CHECK_ISSUE_CODES: tuple[str, ...] = (
+    "check.meaning",
+    "check.grammar",
+    "check.tone",
+    "check.terminology",
+    "check.placeholder",
+    "check.tag",
+    "check.accelerator",
+    "check.plural",
+    "check.fluency",
+    "check.script",
+    "check.other",
+)
+
+CHECK_ISSUE_CODE_GUIDANCE: Dict[str, str] = {
+    "check.meaning": "the translation changes, adds, or omits source meaning",
+    "check.grammar": "the translation is grammatically broken or clearly malformed",
+    "check.tone": "the translation uses the wrong tone or register for the UI text",
+    "check.terminology": "the translation violates approved terminology or glossary sense",
+    "check.placeholder": "placeholders, variables, or protected tokens are broken",
+    "check.tag": "markup or tag structure is broken or altered",
+    "check.accelerator": "keyboard accelerators or mnemonic markers are broken",
+    "check.plural": "plural handling is incorrect or incomplete",
+    "check.fluency": "the translation is unnatural or hard to understand",
+    "check.script": "the translation or suggested fix uses the wrong script/alphabet",
+    "check.other": "the issue does not fit a more specific code",
+}
+
+CHECK_LEGACY_CATEGORY_TO_CODE: Dict[str, str] = {
+    "meaning": "check.meaning",
+    "grammar": "check.grammar",
+    "tone": "check.tone",
+    "terminology": "check.terminology",
+    "placeholder": "check.placeholder",
+    "placeholders": "check.placeholder",
+    "tag": "check.tag",
+    "tags": "check.tag",
+    "accelerator": "check.accelerator",
+    "accelerators": "check.accelerator",
+    "plural": "check.plural",
+    "plurals": "check.plural",
+    "fluency": "check.fluency",
+    "script": "check.script",
+    "other": "check.other",
+}
+
 
 CHECK_RESPONSE_SCHEMA: dict[str, Any] = {
     "type": "object",
@@ -80,37 +133,23 @@ CHECK_RESPONSE_SCHEMA: dict[str, Any] = {
                     "id": {"type": "string"},
                     "issues": {
                         "type": "array",
-                        "items": {
-                            "type": "object",
-                            "properties": {
-                                "category": {"type": "string"},
-                                "severity": {"type": "string"},
-                                "message": {"type": "string"},
-                                "source_fragment": {"type": "string"},
-                                "translation_fragment": {"type": "string"},
-                                "suggested_translation": {"type": "string"},
-                            },
-                            "required": ["category", "severity", "message"],
-                        },
+                        "items": build_task_issue_schema(
+                            CHECK_ISSUE_CODES,
+                            allowed_severities=("error", "warning"),
+                            include_fragments=True,
+                        ),
                     },
                 },
                 "required": ["id", "issues"],
+                "additionalProperties": False,
             },
         },
     },
     "required": ["results"],
+    "additionalProperties": False,
 }
 
-
-@dataclass
-class CheckIssue:
-    origin: str
-    category: str
-    severity: str
-    message: str
-    source_fragment: str = ""
-    translation_fragment: str = ""
-    suggested_translation: str = ""
+CheckIssue = TaskIssue
 
 
 def build_check_generation_config(
@@ -243,6 +282,12 @@ def build_check_request_spec() -> TaskRequestSpec:
             "Return only valid JSON, with no markdown or commentary.",
             "Keep each result `id` exactly the same as the input key.",
             "Return an empty `issues` list when the translation is acceptable.",
+            "Each issue must be an object with `code`, `message`, and `severity`.",
+            f"Allowed issue codes: {', '.join(CHECK_ISSUE_CODES)}.",
+            *tuple(
+                f"Use `{code}` when {description}."
+                for code, description in CHECK_ISSUE_CODE_GUIDANCE.items()
+            ),
             "Use severity `error` for broken placeholders, tags, accelerators, terminology violations, or incorrect meaning.",
             "Use severity `warning` for likely but less certain QA issues.",
             "`suggested_translation` is optional and should be included only when you can provide a clear fix.",
@@ -358,56 +403,34 @@ def parse_check_response(response_payload: Any) -> Dict[str, List[CheckIssue]]:
 
         issues: List[CheckIssue] = []
         for raw_issue in raw_issues:
-            if not isinstance(raw_issue, dict):
-                continue
-            category = str(raw_issue.get("category", "")).strip() or "other"
-            severity = str(raw_issue.get("severity", "")).strip().lower() or "warning"
-            if severity not in {"error", "warning"}:
-                severity = "warning"
-            message = str(raw_issue.get("message", "")).strip()
-            if not message:
-                continue
-            issues.append(
-                CheckIssue(
-                    origin="model",
-                    category=category,
-                    severity=severity,
-                    message=message,
-                    source_fragment=str(raw_issue.get("source_fragment", "")).strip(),
-                    translation_fragment=str(raw_issue.get("translation_fragment", "")).strip(),
-                    suggested_translation=str(raw_issue.get("suggested_translation", "")).strip(),
-                )
+            issue = normalize_task_issue(
+                raw_issue,
+                allowed_codes=CHECK_ISSUE_CODES,
+                default_code="check.other",
+                allowed_severities=("error", "warning"),
+                default_severity="warning",
+                default_origin="model",
+                legacy_code_builder=_build_legacy_check_issue_code,
             )
+            if issue is not None:
+                issues.append(issue)
         parsed[item_id] = dedupe_issues(issues)
 
     return parsed
 
 
 def dedupe_issues(issues: List[CheckIssue]) -> List[CheckIssue]:
-    seen: set[Tuple[str, str, str, str, str]] = set()
-    unique: List[CheckIssue] = []
-    for issue in issues:
-        key = (
-            issue.origin,
-            issue.category.lower(),
-            issue.severity.lower(),
-            _normalize_space(issue.message).lower(),
-            _normalize_space(issue.suggested_translation).lower(),
-        )
-        if key in seen:
-            continue
-        seen.add(key)
-        unique.append(issue)
+    return dedupe_task_issues(issues)
 
-    severity_rank = {"error": 0, "warning": 1}
-    unique.sort(
-        key=lambda issue: (
-            severity_rank.get(issue.severity, 9),
-            issue.category.lower(),
-            issue.message.lower(),
-        )
-    )
-    return unique
+
+def _build_legacy_check_issue_code(raw_issue: Dict[str, Any]) -> str:
+    raw_category = str(raw_issue.get("category", "")).strip().lower().replace(" ", "_")
+    if raw_category in CHECK_LEGACY_CATEGORY_TO_CODE:
+        return CHECK_LEGACY_CATEGORY_TO_CODE[raw_category]
+    prefixed = f"check.{raw_category}" if raw_category else ""
+    if prefixed in CHECK_ISSUE_CODES:
+        return prefixed
+    return "check.other"
 
 
 def configure_parser(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
@@ -558,7 +581,14 @@ def run_from_args(args: argparse.Namespace) -> None:
                     "translation_plural_forms": get_translation_plural_forms(entry),
                     "flags": list(getattr(entry, "flags", []) or []),
                     "verdict": "issues" if issues else "ok",
-                    "issues": [asdict(issue) for issue in issues],
+                    "issues": [
+                        serialize_task_issue(
+                            issue,
+                            include_origin=True,
+                            include_fragments=True,
+                        )
+                        for issue in issues
+                    ],
                 }
                 results.append(result_payload)
 

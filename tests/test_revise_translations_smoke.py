@@ -21,6 +21,29 @@ class ReviseTranslationsSmokeTests(unittest.TestCase):
         self.assertIn("Do not rely on source-token overlap alone", system_instruction)
         self.assertIn("real Kazakh Cyrillic alphabet", system_instruction)
 
+    def test_parse_revision_response_preserves_structured_issues(self):
+        payload = {
+            "revisions": [
+                {
+                    "id": "0",
+                    "action": "keep",
+                    "reason": "Instruction does not clearly apply.",
+                    "issues": [
+                        {
+                            "code": "revise.instruction_ambiguous",
+                            "message": "Instruction could apply to multiple UI labels.",
+                            "severity": "warning",
+                        }
+                    ],
+                }
+            ]
+        }
+
+        parsed = revise_translations.parse_revision_response(payload)
+
+        self.assertEqual(parsed["0"].issues[0].code, "revise.instruction_ambiguous")
+        self.assertEqual(parsed["0"].issues[0].severity, "warning")
+
     def test_build_revision_output_path_appends_revised_suffix(self):
         self.assertEqual(
             revise_translations.build_revision_output_path(r"C:\tmp\sample.po"),

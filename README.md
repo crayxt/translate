@@ -115,7 +115,9 @@ Behavior:
 Warnings sidecar behavior:
 
 - warnings are emitted per translated message, not as one batch-level summary
-- each warning item includes the source text, translated text, short warning strings, and any available `context`, `note`, or matched `relevant_vocabulary`
+- each warning item includes structured issues with `code`, `message`, and `severity`, plus the source text, translated text, and any available `context`, `note`, or matched `relevant_vocabulary`
+- translation warning codes use the `translate.*` namespace, for example `translate.ambiguous_term`
+- `severity` is `warning` for real risk or ambiguity, and `info` for notable but non-risk notes such as preserved structure
 - this is a lightweight translator self-report; the dedicated `check` task remains the real QA pass
 
 ### 2. Translate Android XML with a paired source file
@@ -189,6 +191,11 @@ Default output path:
 ```text
 translated.translation-check.json
 ```
+
+Check-report issue shape:
+
+- each issue uses a structured `code`, `message`, and `severity`
+- check issue codes use the `check.*` namespace, for example `check.meaning`, `check.placeholder`, or `check.terminology`
 
 ### 5. Extract glossary terms with a model
 

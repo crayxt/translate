@@ -380,6 +380,37 @@ class ProcessSmokeTests(unittest.TestCase):
                     "id": "0",
                     "text": "Ағынды бастау",
                     "warnings": [
+                        {
+                            "code": "translate.ambiguous_term",
+                            "message": "Stream may be noun or verb; chose noun sense from context.",
+                            "severity": "warning",
+                        }
+                    ],
+                }
+            ]
+        }
+
+        results = process.parse_response(_DummyResponse(parsed=payload))
+
+        self.assertEqual(
+            results["0"].warnings,
+            [
+                process.TranslationWarning(
+                    code="translate.ambiguous_term",
+                    message="Stream may be noun or verb; chose noun sense from context.",
+                    severity="warning",
+                    origin="model",
+                )
+            ],
+        )
+
+    def test_parse_response_normalizes_legacy_string_warning_to_default_code(self):
+        payload = {
+            "translations": [
+                {
+                    "id": "0",
+                    "text": "Ағынды бастау",
+                    "warnings": [
                         "Ambiguous term: stream may be noun or verb; chose noun sense from context."
                     ],
                 }
@@ -390,7 +421,45 @@ class ProcessSmokeTests(unittest.TestCase):
 
         self.assertEqual(
             results["0"].warnings,
-            ["Ambiguous term: stream may be noun or verb; chose noun sense from context."],
+            [
+                process.TranslationWarning(
+                    code="translate.unclear_source_meaning",
+                    message="Ambiguous term: stream may be noun or verb; chose noun sense from context.",
+                    severity="warning",
+                    origin="model",
+                )
+            ],
+        )
+
+    def test_parse_response_preserves_info_level_warning(self):
+        payload = {
+            "translations": [
+                {
+                    "id": "0",
+                    "text": "XML құрылымын сақтау",
+                    "warnings": [
+                        {
+                            "code": "translate.placeholder_attention",
+                            "message": "XML structure preserved exactly.",
+                            "severity": "info",
+                        }
+                    ],
+                }
+            ]
+        }
+
+        results = process.parse_response(_DummyResponse(parsed=payload))
+
+        self.assertEqual(
+            results["0"].warnings,
+            [
+                process.TranslationWarning(
+                    code="translate.placeholder_attention",
+                    message="XML structure preserved exactly.",
+                    severity="info",
+                    origin="model",
+                )
+            ],
         )
 
     def test_apply_translation_to_plural_entry_prefers_plural_texts(self):
@@ -654,7 +723,13 @@ class ProcessSmokeTests(unittest.TestCase):
                         entry,
                         process.TranslationResult(
                             text="Ағынды бастау",
-                            warnings=["Ambiguous term: stream may be noun or verb."],
+                            warnings=[
+                                process.TranslationWarning(
+                                    code="translate.ambiguous_term",
+                                    message="Stream may be noun or verb.",
+                                    severity="warning",
+                                )
+                            ],
                         ),
                         process.build_scoped_vocabulary_entries(
                             "start|бастау|verb|Start playback\nstream|ағын|noun|Media stream"
@@ -678,7 +753,13 @@ class ProcessSmokeTests(unittest.TestCase):
             self.assertEqual(payload["messages"][0]["translation"], "Ағынды бастау")
             self.assertEqual(
                 payload["messages"][0]["warnings"],
-                ["Ambiguous term: stream may be noun or verb."],
+                [
+                    {
+                        "code": "translate.ambiguous_term",
+                        "message": "Stream may be noun or verb.",
+                        "severity": "warning",
+                    }
+                ],
             )
             self.assertEqual(
                 payload["messages"][0]["relevant_vocabulary"][0]["source_term"],

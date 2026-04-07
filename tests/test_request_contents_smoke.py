@@ -132,6 +132,22 @@ class RequestContentsSmokeTests(unittest.TestCase):
             "Use `warnings` only when a message has a real ambiguity, unclear meaning, risky glossary choice, or another review-worthy concern.",
             spec.output_lines,
         )
+        self.assertIn(
+            "Each warning must be an object with `code`, `message`, and `severity`.",
+            spec.output_lines,
+        )
+        self.assertIn(
+            "Allowed warning codes: translate.ambiguous_term, translate.unclear_source_meaning, translate.glossary_variant_choice, translate.possible_untranslated_token, translate.placeholder_attention, translate.length_or_ui_fit_risk.",
+            spec.output_lines,
+        )
+        self.assertIn(
+            "Use severity `warning` for real ambiguity, uncertainty, or human-review risk.",
+            spec.output_lines,
+        )
+        self.assertIn(
+            "Use severity `info` for notable but non-risk notes, such as preserved structure or a confident glossary choice worth surfacing.",
+            spec.output_lines,
+        )
 
     def test_check_request_contents_use_structured_batch_payload(self):
         contents = check_translations.build_check_request_contents(

@@ -16,6 +16,8 @@ import polib
 
 from core.entries import (
     TranslationResult,
+    TranslationWarning,
+    TRANSLATION_WARNING_CODES,
     apply_translation_to_entry,
     build_entry_source_text,
     build_prompt_message_payload,
@@ -122,6 +124,16 @@ SYSTEM_INSTRUCTION = join_instruction_sections(
         "If the input contains 'Singular:' and 'Plural:', provide a natural plural-aware translation for the target language.",
     ),
 )
+from core.task_issues import build_task_issue_schema, serialize_task_issue
+
+TRANSLATION_WARNING_CODE_GUIDANCE: Dict[str, str] = {
+    "translate.ambiguous_term": "a source term has multiple plausible senses or parts of speech",
+    "translate.unclear_source_meaning": "the source meaning is unclear or underspecified",
+    "translate.glossary_variant_choice": "multiple approved glossary variants existed and one was chosen",
+    "translate.possible_untranslated_token": "a token may have been intentionally preserved or may still need review",
+    "translate.placeholder_attention": "placeholders or protected tokens required extra care",
+    "translate.length_or_ui_fit_risk": "the translation may be too long or risky for UI fit",
+}
 
 TRANSLATION_RESPONSE_SCHEMA: dict[str, Any] = {
     "type": "object",
@@ -139,14 +151,19 @@ TRANSLATION_RESPONSE_SCHEMA: dict[str, Any] = {
                     },
                     "warnings": {
                         "type": "array",
-                        "items": {"type": "string"},
+                        "items": build_task_issue_schema(
+                            TRANSLATION_WARNING_CODES,
+                            allowed_severities=("warning", "info"),
+                        ),
                     },
                 },
                 "required": ["id", "text"],
+                "additionalProperties": False,
             },
         },
     },
     "required": ["translations"],
+    "additionalProperties": False,
 }
 
 
@@ -201,7 +218,15 @@ def build_translation_request_spec(force_non_empty: bool = False) -> TaskRequest
             "Keep each translation item's `id` exactly the same as the input key.",
             "Use `plural_texts` only for plural entries when you can provide explicit forms.",
             "Use `warnings` only when a message has a real ambiguity, unclear meaning, risky glossary choice, or another review-worthy concern.",
-            "Keep warnings short and specific to that message.",
+            "Each warning must be an object with `code`, `message`, and `severity`.",
+            f"Allowed warning codes: {', '.join(TRANSLATION_WARNING_CODES)}.",
+            *tuple(
+                f"Use `{code}` when {description}."
+                for code, description in TRANSLATION_WARNING_CODE_GUIDANCE.items()
+            ),
+            "Use severity `warning` for real ambiguity, uncertainty, or human-review risk.",
+            "Use severity `info` for notable but non-risk notes, such as preserved structure or a confident glossary choice worth surfacing.",
+            "Keep each warning `message` short and specific to that message.",
             "Do not add warnings for routine confident translations.",
             "For plural entries (source contains `Singular:`/`Plural:` or `item.plural_forms` is present), return non-empty `plural_texts` with exactly `item.plural_forms` forms (or at least 2 if absent).",
             "If the target language effectively has one plural form but multiple slots are required, repeat the same wording in all required plural slots.",
@@ -466,7 +491,10 @@ def build_translation_warning_item(
     item: Dict[str, Any] = {
         "source": payload.get("source", ""),
         "translation": result.text,
-        "warnings": list(result.warnings),
+        "warnings": [
+            serialize_task_issue(warning)
+            for warning in result.warnings
+        ],
     }
     if result.plural_texts:
         item["plural_texts"] = list(result.plural_texts)
