@@ -82,6 +82,12 @@ from core.runtime import (
 )
 from core.task_batches import build_fixed_batches, run_parallel_batches
 from core.task_runtime import build_task_runtime_context, print_startup_configuration
+from core.system_instructions import (
+    SHARED_GLOSSARY_SENSE_RULES,
+    SHARED_LOCALIZATION_INVARIANTS,
+    join_instruction_sections,
+    render_instruction_section,
+)
 from core.term_extraction import (
     ScopedVocabularyEntry,
     build_relevant_vocabulary,
@@ -90,33 +96,30 @@ from core.term_extraction import (
 
 build_prompt_message_payload = _build_prompt_message_payload
 
-SYSTEM_INSTRUCTION = """
-You are a professional software localization translator.
+SYSTEM_INSTRUCTION = join_instruction_sections(
+    """
+    You are a professional software localization translator.
 
-MUST:
-- Preserve all placeholders EXACTLY (%s, %d, %(name)s, {var}, {{var}})
-- Preserve HTML/XML tags EXACTLY
-- Preserve keyboard accelerators/hotkeys EXACTLY (`_`, `&`) and keep them usable in target text
-- Preserve escapes, entities, and line-break markers exactly when they carry formatting or structure
-- Preserve leading and trailing spaces exactly
-- Do NOT reorder placeholders
-- Do NOT add, remove, soften, intensify, or reinterpret meaning
-- Do NOT translate protected tokens such as product names, brand names, API names, code identifiers, command flags, file extensions, paths, or variable-like strings
-- Keep original punctuation and capitalization style unless the target language requires a minimal grammatical adjustment
-- If source text is ALL CAPS, keep translation ALL CAPS
-- Translate ONLY the message text, not metadata
-- When approved vocabulary or project rules are provided, follow them exactly
-- Use message context and notes to disambiguate meaning, UI role, and terminology whenever they are present
-- If multiple approved glossary entries could apply, choose the variant whose part of speech and context best match the message context and note
-
-FORMATTING:
-- If the source text contains \\n line-wrapping markers, preserve them in the translation and try to keep lines at roughly similar lengths
-- If the source text contains literal escape sequences such as \\n or \\t, keep them as literal backslash sequences and do not turn them into real line breaks or tabs
-- Avoid unnatural CamelCase in the target language unless source uses intentional branded casing
-
-PLURALS:
-- If the input contains 'Singular:' and 'Plural:', provide a natural plural-aware translation for the target language.
-"""
+    TRANSLATION REQUIREMENTS:
+    - Do NOT reorder placeholders
+    - Do NOT add, remove, soften, intensify, or reinterpret meaning
+    - Do NOT translate protected tokens such as product names, brand names, API names, code identifiers, command flags, file extensions, paths, or variable-like strings
+    - Keep original punctuation and capitalization style unless the target language requires a minimal grammatical adjustment
+    - If source text is ALL CAPS, keep translation ALL CAPS
+    - Translate ONLY the message text, not metadata
+    """,
+    SHARED_LOCALIZATION_INVARIANTS,
+    SHARED_GLOSSARY_SENSE_RULES,
+    render_instruction_section(
+        "FORMATTING",
+        "If the source text contains \\n line-wrapping markers, preserve them in the translation and try to keep lines at roughly similar lengths",
+        "Avoid unnatural CamelCase in the target language unless source uses intentional branded casing",
+    ),
+    render_instruction_section(
+        "PLURALS",
+        "If the input contains 'Singular:' and 'Plural:', provide a natural plural-aware translation for the target language.",
+    ),
+)
 
 TRANSLATION_RESPONSE_SCHEMA: dict[str, Any] = {
     "type": "object",

@@ -49,6 +49,11 @@ from core.review_flow import (
     limit_items,
     normalize_limits as normalize_review_limits,
 )
+from core.system_instructions import (
+    SHARED_GLOSSARY_SENSE_RULES,
+    SHARED_LOCALIZATION_INVARIANTS,
+    join_instruction_sections,
+)
 from core.task_batches import (
     build_fixed_batches,
     build_indexed_batch_map,
@@ -62,24 +67,22 @@ from core.task_runtime import build_task_runtime_context, print_startup_configur
 DEFAULT_REVISION_BATCH_SIZE = 120
 DEFAULT_REVISION_PARALLEL = 6
 
-REVISION_SYSTEM_INSTRUCTION = """
-You are revising existing software localization translations.
+REVISION_SYSTEM_INSTRUCTION = join_instruction_sections(
+    """
+    You are revising existing software localization translations.
 
-STRICT MUST:
-- Review each item against the source text, current translation, and user instruction
-- Keep the current translation unchanged when it already satisfies the instruction
-- Change only entries where the instruction clearly applies and the current translation needs an update
-- If the instruction is ambiguous or not clearly applicable to a specific item, keep that item unchanged
-- Preserve placeholders exactly (%s, %d, %(name)s, %1, %n, {var}, {{var}})
-- Preserve HTML/XML tags exactly and keep them well-formed
-- Preserve keyboard accelerators/hotkeys exactly (`_`, `&`)
-- Preserve leading/trailing spaces, escapes, entities, and meaningful punctuation
-- Preserve literal escape sequences such as `\\n` and `\\t` as literal backslash sequences when the source uses them
-- Preserve approved vocabulary and project rules when supplied
-- Never return an empty updated translation
-- Do not rewrite unrelated wording just because a different phrasing is possible
-- Do not translate or rewrite context/note metadata
-"""
+    REVISION REQUIREMENTS:
+    - Review each item against the source text, current translation, and user instruction
+    - Keep the current translation unchanged when it already satisfies the instruction
+    - Change only entries where the instruction clearly applies and the current translation needs an update
+    - If the instruction is ambiguous or not clearly applicable to a specific item, keep that item unchanged
+    - Never return an empty updated translation
+    - Do not rewrite unrelated wording just because a different phrasing is possible
+    - Do not translate or rewrite context/note metadata
+    """,
+    SHARED_LOCALIZATION_INVARIANTS,
+    SHARED_GLOSSARY_SENSE_RULES,
+)
 
 
 REVISION_RESPONSE_SCHEMA: dict[str, Any] = {

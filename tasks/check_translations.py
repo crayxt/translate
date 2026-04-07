@@ -42,6 +42,11 @@ from core.review_flow import (
     limit_items,
     normalize_limits as normalize_review_limits,
 )
+from core.system_instructions import (
+    SHARED_GLOSSARY_SENSE_RULES,
+    SHARED_LOCALIZATION_INVARIANTS,
+    join_instruction_sections,
+)
 from core.task_batches import build_fixed_batches, build_indexed_batch_map, run_model_batches
 from core.task_runtime import build_task_runtime_context, print_startup_configuration
 
@@ -49,20 +54,19 @@ from core.task_runtime import build_task_runtime_context, print_startup_configur
 DEFAULT_CHECK_BATCH_SIZE = 150
 DEFAULT_CHECK_PARALLEL = 6
 
-CHECK_SYSTEM_INSTRUCTION = """
-You are a software localization QA reviewer.
+CHECK_SYSTEM_INSTRUCTION = join_instruction_sections(
+    """
+    You are a software localization QA reviewer.
 
-STRICT MUST-CHECK:
-- Placeholders must be preserved exactly (%s, %d, %(name)s, %1, %n, {var}, {{var}})
-- HTML/XML tags must be preserved exactly and remain well-formed
-- Keyboard accelerators/hotkeys must be preserved and usable (`_`, `&`)
-- Approved vocabulary is mandatory when supplied
-- Inflection and derivation are acceptable when they preserve the approved lexical choice
-- Flag missing meaning, added meaning, mistranslation, wrong tone, or broken grammar only when they are real QA issues
-- Ignore purely stylistic alternatives unless they violate terminology, rules, or UI constraints
-- Prefer fewer but higher-confidence findings over speculative nitpicks
-- When project rules are provided, apply them as mandatory QA criteria
-"""
+    QA REQUIREMENTS:
+    - Inflection and derivation are acceptable when they preserve the approved lexical choice
+    - Flag missing meaning, added meaning, mistranslation, wrong tone, or broken grammar only when they are real QA issues
+    - Ignore purely stylistic alternatives unless they violate terminology, rules, or UI constraints
+    - Prefer fewer but higher-confidence findings over speculative nitpicks
+    """,
+    SHARED_LOCALIZATION_INVARIANTS,
+    SHARED_GLOSSARY_SENSE_RULES,
+)
 
 
 CHECK_RESPONSE_SCHEMA: dict[str, Any] = {

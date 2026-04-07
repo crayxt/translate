@@ -26,8 +26,10 @@ class _BatchProvider:
 class ProcessSmokeTests(unittest.TestCase):
     def test_system_instruction_is_language_neutral(self):
         self.assertNotIn("Kazakh", process.SYSTEM_INSTRUCTION)
-        self.assertIn("MUST:", process.SYSTEM_INSTRUCTION)
+        self.assertIn("MANDATORY LOCALIZATION INVARIANTS", process.SYSTEM_INSTRUCTION)
         self.assertIn("line-wrapping markers", process.SYSTEM_INSTRUCTION)
+        self.assertIn("Determine the intended sense of the source text", process.SYSTEM_INSTRUCTION)
+        self.assertIn("Do not rely on source-token overlap alone", process.SYSTEM_INSTRUCTION)
 
     def test_merge_project_rules_combines_file_and_inline(self):
         merged = process.merge_project_rules("Rule A", "Rule B")

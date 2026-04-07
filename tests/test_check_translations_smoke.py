@@ -53,6 +53,9 @@ class CheckTranslationsSmokeTests(unittest.TestCase):
     def test_build_check_system_instruction_includes_script_guidance(self):
         system_instruction = check_translations.build_check_system_instruction("kk")
         self.assertIn("software localization QA reviewer", system_instruction)
+        self.assertIn("MANDATORY LOCALIZATION INVARIANTS", system_instruction)
+        self.assertIn("Determine the intended sense of the source text", system_instruction)
+        self.assertIn("Do not rely on source-token overlap alone", system_instruction)
         self.assertIn("Suggested fixes must use the actual target-language alphabet/script", system_instruction)
         self.assertIn("real Kazakh Cyrillic alphabet", system_instruction)
         self.assertIn("Latin transliteration", system_instruction)

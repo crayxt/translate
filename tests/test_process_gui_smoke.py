@@ -51,7 +51,8 @@ class ProcessGuiSmokeTests(unittest.TestCase):
     def test_build_system_prompt_preview_for_translate_uses_translation_system_prompt(self):
         preview = process_gui.build_system_prompt_preview("process", "kk")
         self.assertIn("professional software localization translator", preview)
-        self.assertIn("Preserve all placeholders EXACTLY", preview)
+        self.assertIn("MANDATORY LOCALIZATION INVARIANTS", preview)
+        self.assertIn("Placeholders must be preserved exactly", preview)
 
     def test_build_system_prompt_preview_for_check_uses_target_script_guidance(self):
         preview = process_gui.build_system_prompt_preview("check", "kk")

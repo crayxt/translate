@@ -16,6 +16,9 @@ class ReviseTranslationsSmokeTests(unittest.TestCase):
     def test_build_revision_system_instruction_mentions_target_script(self):
         system_instruction = revise_translations.build_revision_system_instruction("kk")
         self.assertIn("revising existing software localization translations", system_instruction)
+        self.assertIn("MANDATORY LOCALIZATION INVARIANTS", system_instruction)
+        self.assertIn("Determine the intended sense of the source text", system_instruction)
+        self.assertIn("Do not rely on source-token overlap alone", system_instruction)
         self.assertIn("real Kazakh Cyrillic alphabet", system_instruction)
 
     def test_build_revision_output_path_appends_revised_suffix(self):
