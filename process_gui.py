@@ -13,6 +13,7 @@ import tkinter as tk
 from dataclasses import dataclass
 from tkinter import filedialog, messagebox, ttk
 from tkinter.scrolledtext import ScrolledText
+from types import SimpleNamespace
 from typing import TextIO
 
 from core.formats import FileKind, detect_file_kind
@@ -23,6 +24,12 @@ from core.providers import (
     get_translation_provider,
 )
 from core.resources import detect_default_text_resource
+from core.task_cli import (
+    GEMINI_BACKEND_CHOICES,
+    apply_provider_environment_from_args,
+    resolve_provider_model,
+)
+from core.term_extraction import validate_max_length
 from tasks import check_translations as check_task
 from tasks import extract_terms as extract_task
 from tasks import extract_terms_local as extract_local_task
@@ -36,7 +43,6 @@ DEFAULT_PROVIDER = DEFAULT_PROVIDER_NAME
 SUPPORTED_PROVIDER_CHOICES = tuple(sorted(SUPPORTED_TRANSLATION_PROVIDERS))
 DEFAULT_MODEL = DEFAULT_PROVIDER_SPEC.default_model
 THINKING_LEVEL_CHOICES = ("", "minimal", "low", "medium", "high")
-GEMINI_BACKEND_CHOICES = ("studio", "vertex")
 EXTRACT_MODE_CHOICES = ("missing", "all")
 EXTRACT_OUTPUT_CHOICES = ("po", "json")
 LOCAL_EXTRACT_MAX_LENGTH_CHOICES = ("1", "2", "3")
@@ -433,7 +439,6 @@ def _validate_base_config(
     cleaned_provider = _clean(provider)
     cleaned_gemini_backend = _clean(gemini_backend).lower()
     cleaned_google_cloud_location = _clean(google_cloud_location)
-    cleaned_model = _clean(model)
     cleaned_vocab = _clean(vocab_path)
     cleaned_rules = _clean(rules_path)
     cleaned_api_key = _clean(api_key)
@@ -476,9 +481,6 @@ def _validate_base_config(
             cleaned_google_cloud_location and cleaned_google_cloud_location.lower() != "global"
         ):
             errors.append("Set Gemini backend to 'vertex' to use a custom Google Cloud location.")
-
-    if not cleaned_model:
-        errors.append("Model is required.")
 
     try:
         _validate_choice(thinking_level, THINKING_LEVEL_CHOICES, "Thinking level")
@@ -638,7 +640,9 @@ def validate_local_extract_gui_config(config: LocalExtractGuiConfig) -> list[str
         except ValueError:
             errors.append("Max length must be 1, 2, or 3.")
         else:
-            if max_length_value not in (1, 2, 3):
+            try:
+                validate_max_length(max_length_value)
+            except ValueError:
                 errors.append("Max length must be 1, 2, or 3.")
         if cleaned_vocab and not path_exists_as_file_or_dir(cleaned_vocab):
             errors.append(f"Vocabulary file or directory does not exist: {cleaned_vocab}")
@@ -779,6 +783,7 @@ def _append_common_cli_args(
     vocab_path: str = "",
 ) -> None:
     provider_name = _clean(provider) or DEFAULT_PROVIDER
+    model_name = resolve_provider_model(provider_name, _clean(model) or None)
     command.extend(
         [
             "--source-lang",
@@ -788,7 +793,7 @@ def _append_common_cli_args(
             "--provider",
             provider_name,
             "--model",
-            _clean(model),
+            model_name,
         ]
     )
 
@@ -1150,13 +1155,14 @@ def build_script_env(
     api_key_env = provider_spec.api_key_env
     if cleaned_api_key and api_key_env:
         env[api_key_env] = cleaned_api_key
-    if _clean(provider).lower() == "gemini":
-        backend_value = _clean(gemini_backend).lower() or "studio"
-        env["GOOGLE_GENAI_USE_VERTEXAI"] = "true" if backend_value == "vertex" else "false"
-        if backend_value == "vertex":
-            location_value = _clean(google_cloud_location)
-            if location_value:
-                env["GOOGLE_CLOUD_LOCATION"] = location_value
+    apply_provider_environment_from_args(
+        SimpleNamespace(
+            provider=provider,
+            gemini_backend=gemini_backend,
+            google_cloud_location=google_cloud_location,
+        ),
+        environ=env,
+    )
     return env
 
 
@@ -1623,11 +1629,9 @@ class BaseToolTab(ttk.Frame):
             return
         provider_name = _clean(self.provider_var.get()) or DEFAULT_PROVIDER
         try:
-            provider_spec = get_translation_provider(provider_name)
+            new_default_model = resolve_provider_model(provider_name, None)
         except ValueError:
             new_default_model = DEFAULT_MODEL
-        else:
-            new_default_model = _clean(provider_spec.default_model) or DEFAULT_MODEL
 
         model_value, self._auto_model = choose_resource_field_value(
             current_value=self.model_var.get(),

@@ -10,6 +10,15 @@ Unify three things that had started to diverge:
 
 The refactor moves reusable extraction logic into `core/term_extraction.py`, moves JSON/PO handoff logic into `core/term_handoff.py`, and promotes the local workflow into `tasks/extract_terms_local.py`.
 
+The broader extraction goal remains the same:
+
+- make glossary output more context-aware
+- make extracted terms more atomic and reusable
+- reduce noisy phrase-shaped candidates
+- reduce dependence on prompt wording alone
+
+This is still intended as an incremental change, not a destabilizing rewrite of the model-based extractor.
+
 ## What Lives Where
 
 ### Shared core
@@ -146,6 +155,14 @@ The local discovery process now looks like this:
    - translation candidates
 5. Optionally write the matching PO handoff in the same run, or convert the resulting JSON into a translation-ready PO glossary file through `core.term_handoff.py`.
 
+## Problems This Addresses
+
+- bare-string extraction lost useful context such as `msgctxt`, comments, and notes
+- the model tended to return message-shaped phrases instead of glossary terms
+- `missing` mode relied too heavily on prompt wording instead of deterministic local logic
+- the old pipeline had little evidence aggregation across messages
+- there was no local confidence model for deciding when to keep a compound term and when to split it
+
 ## Why This Refactor Matters
 
 - One normalization and matching path now serves both local discovery and translation-time glossary injection.
@@ -154,8 +171,50 @@ The local discovery process now looks like this:
 - The production translator can reuse shared extraction primitives without importing export or CLI logic.
 - Translation-time glossary injection and translation warning reporting now both work at the message level instead of as coarse batch-level blobs.
 
-## Next Likely Steps
+## Current Direction
+
+The intended long-term direction is still a conservative hybrid flow:
+
+1. collect contextual source messages
+2. generate local candidate terms from those messages
+3. aggregate evidence per candidate
+4. apply conservative local filtering
+5. use the model for validation, canonicalization, and translation rather than raw free-form discovery
+
+That split is safer than asking the model to do raw discovery and target-language suggestion in one step.
+
+## Remaining Roadmap
 
 - Reuse `core.term_extraction` inside `tasks/extract_terms.py` before model-based term extraction.
 - Tune phrase-denylist and allowlist resources under `data/extract/`.
 - Reduce dependence on the full top-level `vocabulary` field once message-scoped hints prove reliable enough.
+- Continue improving local evidence signals:
+  - message frequency
+  - exact-label frequency
+  - context diversity
+  - repeated occurrence across files or locations
+  - optional source-file occurrence summaries
+- Continue tightening deterministic local filtering for:
+  - existing glossary terms
+  - stop-word noise
+  - placeholders, tags, and structural tokens
+  - weak one-off multi-word phrases
+  - trivial non-terms that should never reach the final glossary
+
+Important: local filtering should keep preferring rejection of uncertain phrases over inventing overly aggressive splits.
+
+## Acceptance Criteria
+
+The extraction work should be considered successful when:
+
+- loose UI phrases are substantially reduced
+- fixed technical compounds are preserved reliably
+- context-sensitive terms are handled better than before
+- `missing` mode drops already-known glossary terms deterministically
+- output carries enough evidence to make human review faster
+
+## Non-Goals
+
+- no big destabilizing rewrite of `tasks/extract_terms.py` in one step
+- no attempt to solve all terminology quality issues with prompt wording alone
+- no aggressive local auto-splitting that could damage valid compounds

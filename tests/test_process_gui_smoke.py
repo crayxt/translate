@@ -340,6 +340,35 @@ class ProcessGuiSmokeTests(unittest.TestCase):
                 if os.path.exists(path):
                     os.remove(path)
 
+    def test_build_process_command_uses_provider_default_model_when_blank(self):
+        input_path = os.path.join(os.getcwd(), "_tmp_gui_default_model.po")
+        script_path = os.path.join(os.getcwd(), "_tmp_process_script.py")
+        try:
+            with open(input_path, "w", encoding="utf-8") as handle:
+                handle.write('msgid "Open"\nmsgstr ""\n')
+            with open(script_path, "w", encoding="utf-8") as handle:
+                handle.write("print('stub')\n")
+
+            config = process_gui.ProcessGuiConfig(
+                input_file=input_path,
+                provider="openai",
+                model="",
+                api_key="openai-key",
+            )
+
+            command = process_gui.build_process_command(
+                config,
+                python_executable="python",
+                script_path=script_path,
+            )
+
+            self.assertIn("--model", command)
+            self.assertEqual(command[command.index("--model") + 1], "gpt-5-mini")
+        finally:
+            for path in (input_path, script_path):
+                if os.path.exists(path):
+                    os.remove(path)
+
     def test_build_process_command_supports_multiple_input_files(self):
         input_one = os.path.join(os.getcwd(), "_tmp_gui_one.po")
         input_two = os.path.join(os.getcwd(), "_tmp_gui_two.po")

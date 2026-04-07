@@ -11,7 +11,6 @@ from typing import Any, Dict, List, Literal, Tuple
 
 import polib
 
-from core.entries import get_entry_prompt_context_and_note
 from core.review_common import build_target_script_guidance as build_shared_target_script_guidance
 from core.formats import (
     FileKind,
@@ -40,6 +39,7 @@ from core.resources import load_vocabulary_pairs, read_optional_vocabulary_file,
 from core.runtime import resolve_runtime_limits
 from core.task_batches import build_fixed_batches, build_indexed_batch_map, run_model_batches
 from core.task_runtime import build_task_runtime_context, print_startup_configuration
+from core.term_extraction import collect_source_messages as collect_shared_source_messages
 
 
 DiscoveryMode = Literal["all", "missing"]
@@ -101,62 +101,16 @@ def build_term_output_path(
     return f"{root}.{suffix}.{output_format}"
 
 
-def should_include_text(text: str) -> bool:
-    stripped = text.strip()
-    if not stripped:
-        return False
-    return any(ch.isalpha() for ch in stripped)
-
-
-def build_term_message_payload(
-    source_text: str,
-    *,
-    context: str | None = None,
-    note: str | None = None,
-) -> Dict[str, str]:
-    payload: Dict[str, str] = {"source": source_text}
-    if context:
-        payload["context"] = context
-    if note:
-        payload["note"] = note
-    return payload
-
-
 def collect_source_messages(entries: List[Any]) -> List[Dict[str, str]]:
+    """Project entries through the shared extractor and preserve the existing payload shape."""
     results: List[Dict[str, str]] = []
-    seen: set[Tuple[str, str, str]] = set()
-
-    def add_message(text: str, *, context: str | None, note: str | None) -> None:
-        normalized = " ".join(text.split())
-        if not should_include_text(normalized):
-            return
-        key = (
-            normalized.lower(),
-            " ".join(str(context or "").split()).lower(),
-            " ".join(str(note or "").split()).lower(),
-        )
-        if key in seen:
-            return
-        seen.add(key)
-        results.append(
-            build_term_message_payload(
-                normalized,
-                context=context,
-                note=note,
-            )
-        )
-
-    for entry in entries:
-        if getattr(entry, "obsolete", False):
-            continue
-        if not getattr(entry, "include_in_term_extraction", True):
-            continue
-        context, note = get_entry_prompt_context_and_note(entry)
-        add_message(getattr(entry, "msgid", "") or "", context=context, note=note)
-        plural_text = getattr(entry, "msgid_plural", None)
-        if plural_text:
-            add_message(plural_text, context=context, note=note)
-
+    for item in collect_shared_source_messages(entries):
+        payload: Dict[str, str] = {"source": item.source}
+        if item.context:
+            payload["context"] = item.context
+        if item.note:
+            payload["note"] = item.note
+        results.append(payload)
     return results
 
 

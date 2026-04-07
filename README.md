@@ -41,7 +41,18 @@ The preferred entry point is:
 python translate_cli.py
 ```
 
-Legacy wrapper scripts still exist for compatibility, but the unified CLI is the main surface.
+`translate_cli.py` is the main CLI surface, and `process_gui.py` is the GUI entry point.
+
+## Task Docs
+
+Detailed task guides live in `docs/`:
+
+- `docs/translate.md`
+- `docs/check.md`
+- `docs/extract.md`
+- `docs/extract-local.md`
+- `docs/revise.md`
+- `docs/extraction-refactor.md`
 
 ## Quick Start
 
