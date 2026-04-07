@@ -14,11 +14,11 @@ from core.review_common import (
     json_load_maybe,
     plural_key_sort_key,
 )
+from core.entries import build_source_message_payload
 from core.formats import (
     FileKind,
     build_entry_source_text,
     detect_file_kind,
-    get_entry_prompt_context_and_note,
     load_po,
     load_ts,
 )
@@ -276,7 +276,8 @@ def build_check_request_spec() -> TaskRequestSpec:
         ),
         payload_lines=(
             "The payload contains source language, target language, optional approved vocabulary/glossary, optional project translation rules/instructions, and a `messages` map.",
-            "Each message item may include `source`, `translation`, optional `translation_plural_forms`, `context`, and `note`.",
+            "Each non-plural message item includes `source` and `translation`, and may also include `context` and `note`.",
+            "Each plural message item includes `source_singular`, `source_plural`, `plural_forms`, `plural_slots`, `translation`, and may also include `translation_plural_forms`, `context`, and `note`.",
         ),
         output_lines=(
             "Return only valid JSON, with no markdown or commentary.",
@@ -292,6 +293,7 @@ def build_check_request_spec() -> TaskRequestSpec:
             "Use severity `warning` for likely but less certain QA issues.",
             "`suggested_translation` is optional and should be included only when you can provide a clear fix.",
             "If you provide `suggested_translation`, it must use the real target-language alphabet/script.",
+            "For plural items, review `translation_plural_forms` against both `source_singular` and `source_plural`, not only the first translated form.",
             "Do not duplicate the same issue in multiple phrasings.",
             "Do not flag a terminology issue solely because the translation uses an inflected or derived form instead of the exact glossary dictionary form.",
         ),
@@ -358,18 +360,11 @@ def build_check_prompt(
 
 
 def build_check_message_payload(entry: Any) -> Dict[str, Any]:
-    payload: Dict[str, Any] = {
-        "source": build_entry_source_text(entry),
-        "translation": get_entry_translation_text(entry),
-    }
+    payload = build_source_message_payload(entry)
+    payload["translation"] = get_entry_translation_text(entry)
     plural_forms = get_translation_plural_forms(entry)
     if plural_forms:
         payload["translation_plural_forms"] = plural_forms
-    context, note = get_entry_prompt_context_and_note(entry)
-    if context:
-        payload["context"] = context
-    if note:
-        payload["note"] = note
     return payload
 
 

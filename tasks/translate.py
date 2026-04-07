@@ -121,7 +121,7 @@ SYSTEM_INSTRUCTION = join_instruction_sections(
     ),
     render_instruction_section(
         "PLURALS",
-        "If the input contains 'Singular:' and 'Plural:', provide a natural plural-aware translation for the target language.",
+        "For plural messages, use `source_singular`, `source_plural`, `plural_forms`, and `plural_slots` to produce natural target-language `plural_texts`.",
     ),
 )
 from core.task_issues import build_task_issue_schema, serialize_task_issue

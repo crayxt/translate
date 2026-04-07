@@ -80,6 +80,23 @@ class CheckTranslationsSmokeTests(unittest.TestCase):
         self.assertIn("Do not flag a terminology issue solely because", prompt)
         self.assertIn("suggested_translation", prompt)
 
+    def test_build_check_message_payload_uses_structured_plural_source_fields(self):
+        entry = polib.POEntry(
+            msgid="File",
+            msgid_plural="Files",
+            msgstr_plural={0: "Файл", 1: "Файлдар"},
+        )
+
+        payload = check_translations.build_check_message_payload(entry)
+
+        self.assertEqual(payload["source_singular"], "File")
+        self.assertEqual(payload["source_plural"], "Files")
+        self.assertEqual(payload["plural_forms"], 2)
+        self.assertEqual(payload["plural_slots"], ["0", "1"])
+        self.assertEqual(payload["translation"], "Файл")
+        self.assertEqual(payload["translation_plural_forms"], ["Файл", "Файлдар"])
+        self.assertNotIn("source", payload)
+
     def test_parse_check_response_uses_parsed_payload(self):
         payload = {
             "results": [

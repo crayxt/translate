@@ -165,6 +165,11 @@ class RequestContentsSmokeTests(unittest.TestCase):
             spec.output_lines,
         )
 
+    def test_translate_system_instruction_uses_structured_plural_wording(self):
+        self.assertIn("source_singular", translate.SYSTEM_INSTRUCTION)
+        self.assertIn("plural_slots", translate.SYSTEM_INSTRUCTION)
+        self.assertNotIn("If the input contains 'Singular:' and 'Plural:'", translate.SYSTEM_INSTRUCTION)
+
     def test_check_request_contents_use_structured_batch_payload(self):
         contents = check_translations.build_check_request_contents(
             messages={"0": {"source": "Open", "translation": "Ashu"}},
@@ -178,6 +183,22 @@ class RequestContentsSmokeTests(unittest.TestCase):
         payload = contents[0].parts[1].function_response.response
         self.assertEqual(contents[0].parts[1].function_response.name, "translation_check_batch")
         self.assertEqual(payload["messages"]["0"]["translation"], "Ashu")
+
+    def test_check_request_spec_mentions_structured_plural_source_fields(self):
+        spec = check_translations.build_check_request_spec()
+
+        self.assertIn(
+            "Each non-plural message item includes `source` and `translation`, and may also include `context` and `note`.",
+            spec.payload_lines,
+        )
+        self.assertIn(
+            "Each plural message item includes `source_singular`, `source_plural`, `plural_forms`, `plural_slots`, `translation`, and may also include `translation_plural_forms`, `context`, and `note`.",
+            spec.payload_lines,
+        )
+        self.assertIn(
+            "For plural items, review `translation_plural_forms` against both `source_singular` and `source_plural`, not only the first translated form.",
+            spec.output_lines,
+        )
 
     def test_extract_request_contents_use_structured_batch_payload(self):
         contents = extract_terms.build_term_request_contents(

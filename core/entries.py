@@ -291,20 +291,30 @@ def get_entry_prompt_context_and_note(entry: Any) -> Tuple[str | None, str | Non
     return (context or None), (note or None)
 
 
-def build_prompt_message_payload(entry: Any) -> Dict[str, Any]:
+def build_source_message_payload(entry: Any) -> Dict[str, Any]:
     payload: Dict[str, Any]
     if is_plural_entry(entry):
         payload = {
             "source_singular": entry.msgid,
             "source_plural": entry.msgid_plural,
+            "plural_forms": get_plural_form_count(entry),
+            "plural_slots": get_plural_slot_ids(entry),
         }
     else:
         payload = {"source": build_entry_source_text(entry)}
     context, note = get_entry_prompt_context_and_note(entry)
+    if context:
+        payload["context"] = context
+    if note:
+        payload["note"] = note
+    return payload
+
+
+def build_prompt_message_payload(entry: Any) -> Dict[str, Any]:
+    payload = build_source_message_payload(entry)
     if is_plural_entry(entry):
-        plural_forms = get_plural_form_count(entry)
-        payload["plural_forms"] = plural_forms
-        payload["plural_slots"] = get_plural_slot_ids(entry)
+        plural_forms = int(payload.get("plural_forms", 0) or 0)
+        note = str(payload.get("note", "") or "")
         plural_note = (
             f"plural forms required: {plural_forms}"
             " | translate source_singular and source_plural separately but keep them"
@@ -313,9 +323,6 @@ def build_prompt_message_payload(entry: Any) -> Dict[str, Any]:
             " repeat the consistent wording in all required plural slots"
         )
         note = f"{note} | {plural_note}" if note else plural_note
-    if context:
-        payload["context"] = context
-    if note:
         payload["note"] = note
     return payload
 
@@ -324,6 +331,7 @@ __all__ = [
     "TranslationResult",
     "apply_translation_to_entry",
     "build_entry_source_text",
+    "build_source_message_payload",
     "build_prompt_message_payload",
     "get_entry_prompt_context_and_note",
     "get_plural_form_count",
