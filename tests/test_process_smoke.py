@@ -61,7 +61,7 @@ class ProcessSmokeTests(unittest.TestCase):
         self.assertIn("mandatory, not advisory", prompt.lower())
         self.assertIn("run a silent vocabulary audit", prompt.lower())
         self.assertIn("Return only the corrected final JSON.", prompt)
-        self.assertIn("prefer the source plural form as the basis for translation", prompt)
+        self.assertIn("translated consistently", prompt)
         self.assertIn("numeric placeholder", prompt.lower())
 
     def test_build_scoped_vocabulary_entries_parses_rich_vocabulary_text(self):
@@ -98,6 +98,38 @@ class ProcessSmokeTests(unittest.TestCase):
                     "target_term": "бастау",
                     "part_of_speech": "verb",
                     "context_note": "Start playback",
+                },
+            ],
+        )
+
+    def test_build_translation_message_payload_plural_uses_structured_source_and_relevant_vocabulary(self):
+        entry = polib.POEntry(msgid="File", msgid_plural="Files")
+        entry.msgstr_plural = {0: "", 1: ""}
+
+        payload = process.build_translation_message_payload(
+            entry,
+            process.build_scoped_vocabulary_entries(
+                "file|файл|noun|\nfiles|файлдар|noun|plural form\nopen|ашу|verb|"
+            ),
+        )
+
+        self.assertNotIn("source", payload)
+        self.assertEqual(payload["source_singular"], "File")
+        self.assertEqual(payload["source_plural"], "Files")
+        self.assertEqual(payload["plural_slots"], ["0", "1"])
+        self.assertEqual(
+            payload["relevant_vocabulary"],
+            [
+                {
+                    "source_term": "files",
+                    "target_term": "файлдар",
+                    "part_of_speech": "noun",
+                    "context_note": "plural form",
+                },
+                {
+                    "source_term": "file",
+                    "target_term": "файл",
+                    "part_of_speech": "noun",
                 },
             ],
         )
@@ -342,8 +374,12 @@ class ProcessSmokeTests(unittest.TestCase):
 
         payload = process.build_prompt_message_payload(entry)
 
+        self.assertEqual(payload["source_singular"], "%n file(s)")
+        self.assertEqual(payload["source_plural"], "%n file(s)")
         self.assertEqual(payload["plural_forms"], 2)
+        self.assertEqual(payload["plural_slots"], ["0", "1"])
         self.assertIn("plural forms required: 2", payload["note"])
+        self.assertNotIn("source", payload)
 
     def test_build_prompt_message_payload_plural_adds_plural_basis_note(self):
         entry = polib.POEntry(msgid="One file deleted", msgid_plural="%d files deleted")
@@ -351,9 +387,20 @@ class ProcessSmokeTests(unittest.TestCase):
 
         payload = process.build_prompt_message_payload(entry)
 
+        self.assertEqual(payload["source_singular"], "One file deleted")
+        self.assertEqual(payload["source_plural"], "%d files deleted")
         self.assertEqual(payload["plural_forms"], 2)
-        self.assertIn("no plural difference", payload["note"])
-        self.assertIn("prefer the source plural variant as the basis for translation", payload["note"])
+        self.assertEqual(payload["plural_slots"], ["0", "1"])
+        self.assertIn("translate source_singular and source_plural separately", payload["note"])
+        self.assertIn("repeat the consistent wording in all required plural slots", payload["note"])
+
+    def test_build_prompt_message_payload_plural_uses_existing_plural_keys_as_slots(self):
+        entry = polib.POEntry(msgid="Day", msgid_plural="Days")
+        entry.msgstr_plural = {0: "", 1: "", 5: ""}
+
+        payload = process.build_prompt_message_payload(entry)
+
+        self.assertEqual(payload["plural_slots"], ["0", "1", "5"])
 
     def test_parse_response_uses_parsed_payload(self):
         payload = {
@@ -491,6 +538,22 @@ class ProcessSmokeTests(unittest.TestCase):
         self.assertEqual(entry.msgstr_plural[0], "Kun")
         self.assertEqual(entry.msgstr_plural[1], "Kun")
         self.assertEqual(entry.msgstr_plural[2], "Kun")
+
+    def test_apply_translation_to_plural_entry_rejects_labeled_plural_text_in_text(self):
+        entry = polib.POEntry(msgid="Day", msgid_plural="Days")
+        entry.msgstr_plural = {0: "", 1: "", 2: ""}
+
+        applied = process.apply_translation_to_entry(
+            entry,
+            process.TranslationResult(
+                text="Singular: Kun\nPlural: Kunder"
+            ),
+        )
+
+        self.assertFalse(applied)
+        self.assertEqual(entry.msgstr_plural[0], "")
+        self.assertEqual(entry.msgstr_plural[1], "")
+        self.assertEqual(entry.msgstr_plural[2], "")
 
     def test_apply_translation_to_plural_entry_ignores_blank_plural_forms(self):
         entry = polib.POEntry(msgid="Day", msgid_plural="Days")

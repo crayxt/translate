@@ -117,7 +117,11 @@ class RequestContentsSmokeTests(unittest.TestCase):
         spec = translate.build_translation_request_spec()
 
         self.assertIn(
-            "Each message includes source text and may also include `context`, `note`, and `relevant_vocabulary`.",
+            "Each plural message includes `source_singular`, `source_plural`, `plural_forms`, and `plural_slots`, and may also include `context`, `note`, and `relevant_vocabulary`.",
+            spec.payload_lines,
+        )
+        self.assertIn(
+            "Each non-plural message includes `source` and may also include `context`, `note`, and `relevant_vocabulary`.",
             spec.payload_lines,
         )
         self.assertIn(
@@ -146,6 +150,18 @@ class RequestContentsSmokeTests(unittest.TestCase):
         )
         self.assertIn(
             "Use severity `info` for notable but non-risk notes, such as preserved structure or a confident glossary choice worth surfacing.",
+            spec.output_lines,
+        )
+        self.assertIn(
+            "Treat `item.source_singular` and `item.source_plural` as separate source forms that must be translated consistently.",
+            spec.output_lines,
+        )
+        self.assertIn(
+            "Align `plural_texts` to the order of `item.plural_slots`.",
+            spec.output_lines,
+        )
+        self.assertIn(
+            "For plural entries, do not put labeled `Singular:`/`Plural:` output inside `text`; put the actual translated forms into `plural_texts` only.",
             spec.output_lines,
         )
 

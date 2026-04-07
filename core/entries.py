@@ -170,6 +170,16 @@ def get_plural_form_count(entry: Any) -> int:
     return 2
 
 
+def get_plural_slot_ids(entry: Any) -> List[str]:
+    if not is_plural_entry(entry):
+        return []
+    plural_map = getattr(entry, "msgstr_plural", None)
+    if isinstance(plural_map, dict) and plural_map:
+        plural_keys = sorted(plural_map.keys(), key=plural_key_sort_key)
+        return [str(key) for key in plural_keys]
+    return [str(index) for index in range(get_plural_form_count(entry))]
+
+
 def translation_has_content(result: TranslationResult | None) -> bool:
     if result is None:
         return False
@@ -215,6 +225,9 @@ def apply_translation_to_entry(entry: Any, result: TranslationResult) -> bool:
             return True
 
         if is_non_empty_text(result.text):
+            lowered_text = result.text.lower()
+            if "singular:" in lowered_text and "plural:" in lowered_text:
+                return False
             normalized_text = normalize_model_escaped_text(source_text, result.text)
             for key in plural_keys:
                 plural_map[key] = normalized_text
@@ -279,16 +292,25 @@ def get_entry_prompt_context_and_note(entry: Any) -> Tuple[str | None, str | Non
 
 
 def build_prompt_message_payload(entry: Any) -> Dict[str, Any]:
-    payload: Dict[str, Any] = {"source": build_entry_source_text(entry)}
+    payload: Dict[str, Any]
+    if is_plural_entry(entry):
+        payload = {
+            "source_singular": entry.msgid,
+            "source_plural": entry.msgid_plural,
+        }
+    else:
+        payload = {"source": build_entry_source_text(entry)}
     context, note = get_entry_prompt_context_and_note(entry)
     if is_plural_entry(entry):
         plural_forms = get_plural_form_count(entry)
         payload["plural_forms"] = plural_forms
+        payload["plural_slots"] = get_plural_slot_ids(entry)
         plural_note = (
             f"plural forms required: {plural_forms}"
+            " | translate source_singular and source_plural separately but keep them"
+            " terminologically and stylistically consistent"
             " | for target languages with no plural difference (for example Kazakh),"
-            " prefer the source plural variant as the basis for translation and repeat"
-            " that wording in all required plural slots"
+            " repeat the consistent wording in all required plural slots"
         )
         note = f"{note} | {plural_note}" if note else plural_note
     if context:
@@ -305,6 +327,7 @@ __all__ = [
     "build_prompt_message_payload",
     "get_entry_prompt_context_and_note",
     "get_plural_form_count",
+    "get_plural_slot_ids",
     "is_non_empty_text",
     "is_plural_entry",
     "json_load_maybe",

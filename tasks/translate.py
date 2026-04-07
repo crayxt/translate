@@ -172,7 +172,16 @@ def build_translation_message_payload(
     scoped_vocabulary_entries: List[ScopedVocabularyEntry],
 ) -> Dict[str, Any]:
     payload = build_prompt_message_payload(entry)
-    relevant_vocabulary = build_relevant_vocabulary(payload.get("source"), scoped_vocabulary_entries)
+    source_for_vocabulary = payload.get("source")
+    if source_for_vocabulary is None:
+        source_parts = [
+            payload.get("source_singular"),
+            payload.get("source_plural"),
+        ]
+        source_for_vocabulary = " ".join(
+            part for part in source_parts if isinstance(part, str) and part.strip()
+        )
+    relevant_vocabulary = build_relevant_vocabulary(source_for_vocabulary, scoped_vocabulary_entries)
     if relevant_vocabulary:
         payload["relevant_vocabulary"] = relevant_vocabulary
     return payload
@@ -210,7 +219,8 @@ def build_translation_request_spec(force_non_empty: bool = False) -> TaskRequest
         ),
         payload_lines=(
             "The payload includes source language, target language, optional approved vocabulary/glossary, optional project translation rules/instructions, and a `messages` map.",
-            "Each message includes source text and may also include `context`, `note`, and `relevant_vocabulary`.",
+            "Each non-plural message includes `source` and may also include `context`, `note`, and `relevant_vocabulary`.",
+            "Each plural message includes `source_singular`, `source_plural`, `plural_forms`, and `plural_slots`, and may also include `context`, `note`, and `relevant_vocabulary`.",
             "When present, `relevant_vocabulary` is a message-scoped list of approved term translations and may contain multiple variants for the same source term.",
         ),
         output_lines=(
@@ -228,9 +238,11 @@ def build_translation_request_spec(force_non_empty: bool = False) -> TaskRequest
             "Use severity `info` for notable but non-risk notes, such as preserved structure or a confident glossary choice worth surfacing.",
             "Keep each warning `message` short and specific to that message.",
             "Do not add warnings for routine confident translations.",
-            "For plural entries (source contains `Singular:`/`Plural:` or `item.plural_forms` is present), return non-empty `plural_texts` with exactly `item.plural_forms` forms (or at least 2 if absent).",
+            "For plural entries (`item.source_singular`/`item.source_plural` present), return non-empty `plural_texts` with exactly `item.plural_forms` forms (or at least 2 if absent).",
+            "Treat `item.source_singular` and `item.source_plural` as separate source forms that must be translated consistently.",
+            "Align `plural_texts` to the order of `item.plural_slots`.",
+            "For plural entries, do not put labeled `Singular:`/`Plural:` output inside `text`; put the actual translated forms into `plural_texts` only.",
             "If the target language effectively has one plural form but multiple slots are required, repeat the same wording in all required plural slots.",
-            "For target languages with no plural difference, prefer the source plural form as the basis for translation.",
             "Run a silent vocabulary audit before finalizing each translation and prefer approved terminology when applicable.",
             "When `message.relevant_vocabulary` is present, prefer those term translations for that message.",
             "Use `message.context` and `message.note` to disambiguate meaning and select the correct approved terminology for that message.",
