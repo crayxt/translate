@@ -13,6 +13,7 @@ MAX_PROMPT_OCCURRENCES = 3
 class TranslationResult:
     text: str = ""
     plural_texts: List[str] = field(default_factory=list)
+    warnings: List[str] = field(default_factory=list)
 
 
 def json_load_maybe(text: str) -> Any:
@@ -54,7 +55,20 @@ def _normalize_translation_payload(payload: Any) -> Dict[str, TranslationResult]
                         if value is None:
                             continue
                         plural_texts.append(value if isinstance(value, str) else str(value))
-                results[str(msg_id)] = TranslationResult(text=text, plural_texts=plural_texts)
+                warnings_raw = item.get("warnings")
+                warnings: List[str] = []
+                if isinstance(warnings_raw, list):
+                    for value in warnings_raw:
+                        if value is None:
+                            continue
+                        warning_text = value if isinstance(value, str) else str(value)
+                        if warning_text.strip():
+                            warnings.append(warning_text)
+                results[str(msg_id)] = TranslationResult(
+                    text=text,
+                    plural_texts=plural_texts,
+                    warnings=warnings,
+                )
             return results
         for key, value in payload.items():
             if isinstance(value, str):
@@ -62,7 +76,18 @@ def _normalize_translation_payload(payload: Any) -> Dict[str, TranslationResult]
             elif isinstance(value, dict):
                 text = value.get("text")
                 if isinstance(text, str):
-                    results[str(key)] = TranslationResult(text=text)
+                    warnings_raw = value.get("warnings")
+                    warnings: List[str] = []
+                    if isinstance(warnings_raw, list):
+                        for warning_value in warnings_raw:
+                            if warning_value is None:
+                                continue
+                            warning_text = (
+                                warning_value if isinstance(warning_value, str) else str(warning_value)
+                            )
+                            if warning_text.strip():
+                                warnings.append(warning_text)
+                    results[str(key)] = TranslationResult(text=text, warnings=warnings)
     return results
 
 

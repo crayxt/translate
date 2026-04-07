@@ -113,6 +113,7 @@ class ProcessGuiConfig:
     api_key: str = ""
     flex_mode: bool = False
     retranslate_all: bool = False
+    warnings_report: bool = False
 
 
 @dataclass(slots=True)
@@ -875,6 +876,8 @@ def build_process_command(
 
     if config.retranslate_all:
         command.append("--retranslate-all")
+    if config.warnings_report:
+        command.append("--warnings-report")
 
     return command
 
@@ -1737,6 +1740,7 @@ class ProcessToolTab(BaseToolTab):
     def __init__(self, app: "ProcessGuiApp", notebook: ttk.Notebook) -> None:
         self.source_file_var = tk.StringVar()
         self.retranslate_all_var = tk.BooleanVar(value=False)
+        self.warnings_report_var = tk.BooleanVar(value=True)
         self.selected_input_files: tuple[str, ...] = ()
         self._selected_input_files_display = ""
         super().__init__(
@@ -1787,7 +1791,12 @@ class ProcessToolTab(BaseToolTab):
             text="Retranslate all entries",
             variable=self.retranslate_all_var,
         ).grid(row=start_row + 2, column=0, columnspan=3, sticky="w", pady=(4, 8))
-        return start_row + 3
+        ttk.Checkbutton(
+            parent,
+            text="Write translation warnings JSON report",
+            variable=self.warnings_report_var,
+        ).grid(row=start_row + 3, column=0, columnspan=3, sticky="w", pady=(0, 8))
+        return start_row + 4
 
     def _browse_source_file(self) -> None:
         selected = filedialog.askopenfilename(
@@ -1818,6 +1827,7 @@ class ProcessToolTab(BaseToolTab):
             api_key=self.api_key_var.get(),
             flex_mode=self.flex_mode_var.get(),
             retranslate_all=self.retranslate_all_var.get(),
+            warnings_report=self.warnings_report_var.get(),
         )
 
     def build_command(self) -> list[str]:

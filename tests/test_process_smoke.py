@@ -373,6 +373,26 @@ class ProcessSmokeTests(unittest.TestCase):
         results = process.parse_response(_DummyResponse(text=text))
         self.assertEqual(results["7"].text, "Gamma")
 
+    def test_parse_response_preserves_message_warnings(self):
+        payload = {
+            "translations": [
+                {
+                    "id": "0",
+                    "text": "Ағынды бастау",
+                    "warnings": [
+                        "Ambiguous term: stream may be noun or verb; chose noun sense from context."
+                    ],
+                }
+            ]
+        }
+
+        results = process.parse_response(_DummyResponse(parsed=payload))
+
+        self.assertEqual(
+            results["0"].warnings,
+            ["Ambiguous term: stream may be noun or verb; chose noun sense from context."],
+        )
+
     def test_apply_translation_to_plural_entry_prefers_plural_texts(self):
         entry = polib.POEntry(msgid="File", msgid_plural="Files")
         entry.msgstr_plural = {0: "", 1: ""}
@@ -613,6 +633,60 @@ class ProcessSmokeTests(unittest.TestCase):
         self.assertIn("fuzzy", entry_a.flags)
         self.assertIn("fuzzy", entry_b.flags)
         self.assertCountEqual(saved, ["one", "two"])
+
+    def test_write_translation_warning_report_writes_sidecar_json(self):
+        entry = polib.POEntry(msgid="Start stream", msgctxt="Button label")
+        output_path = os.path.join(os.getcwd(), "_tmp_warning_report.ai-translated.po")
+        report_path = process.build_translation_warnings_output_path(output_path)
+        try:
+            job = process.TranslationFileJob(
+                file_path="input.po",
+                file_kind=process.FileKind.PO,
+                entries=[entry],
+                save_callback=None,
+                output_path=output_path,
+            )
+
+            written_path = process.write_translation_warning_report(
+                job=job,
+                warning_items=[
+                    process.build_translation_warning_item(
+                        entry,
+                        process.TranslationResult(
+                            text="Ағынды бастау",
+                            warnings=["Ambiguous term: stream may be noun or verb."],
+                        ),
+                        process.build_scoped_vocabulary_entries(
+                            "start|бастау|verb|Start playback\nstream|ағын|noun|Media stream"
+                        ),
+                    )
+                ],
+                provider_name="gemini",
+                model="gemini-test",
+                source_lang="en",
+                target_lang="kk",
+            )
+
+            self.assertEqual(written_path, report_path)
+            with open(report_path, "r", encoding="utf-8") as handle:
+                payload = process.json.load(handle)
+
+            self.assertEqual(payload["output_file"], output_path)
+            self.assertEqual(payload["warning_message_count"], 1)
+            self.assertEqual(payload["messages"][0]["source"], "Start stream")
+            self.assertEqual(payload["messages"][0]["context"], "Button label")
+            self.assertEqual(payload["messages"][0]["translation"], "Ағынды бастау")
+            self.assertEqual(
+                payload["messages"][0]["warnings"],
+                ["Ambiguous term: stream may be noun or verb."],
+            )
+            self.assertEqual(
+                payload["messages"][0]["relevant_vocabulary"][0]["source_term"],
+                "stream",
+            )
+        finally:
+            if os.path.exists(report_path):
+                os.remove(report_path)
 
     def test_unified_entry_model_exposes_status_and_string_type(self):
         in_path = os.path.join(os.getcwd(), "_tmp_unified.strings")

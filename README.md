@@ -101,6 +101,7 @@ python translate_cli.py translate source.po --thinking-level medium
 python translate_cli.py translate source.po --batch-size 100 --parallel-requests 4
 python translate_cli.py translate source.po --retranslate-all
 python translate_cli.py translate source.po --flex
+python translate_cli.py translate source.po --warnings-report
 ```
 
 Behavior:
@@ -109,6 +110,13 @@ Behavior:
 - by default, only unfinished messages are translated
 - `--retranslate-all` forces already translated messages through translation again
 - translated output is written as `*.ai-translated.<ext>`
+- `--warnings-report` also writes `*.translation-warnings.json` with only the messages where the model reported ambiguity, unclear meaning, risky glossary choice, or another review-worthy concern
+
+Warnings sidecar behavior:
+
+- warnings are emitted per translated message, not as one batch-level summary
+- each warning item includes the source text, translated text, short warning strings, and any available `context`, `note`, or matched `relevant_vocabulary`
+- this is a lightweight translator self-report; the dedicated `check` task remains the real QA pass
 
 ### 2. Translate Android XML with a paired source file
 
@@ -321,6 +329,8 @@ save|store|verb|short imperative UI action
 
 During translation, the toolkit still sends the full vocabulary for compatibility, but it also computes `relevant_vocabulary` per message so each message sees the subset of glossary entries that actually match it.
 
+When warnings reporting is enabled, the translation response can also include a per-message `warnings` field. Those warnings are written to a separate JSON sidecar so you can inspect ambiguous or risky messages without rereading the whole translated file.
+
 ## Format Behavior At A Glance
 
 | Format | Translate | Revise | Extract Terms | Notes |
@@ -353,6 +363,11 @@ The GUI is a frontend over the same backend concepts as the CLI. It includes:
 - instruction preview for the resolved system prompt and language rules
 - a `Translate` tab with Android `Source file` support
 - a `Local Extract` tab for file, folder, and JSON-to-PO local extraction workflows
+
+Translate-tab note:
+
+- the GUI enables the translation warnings JSON sidecar by default
+- a normal translate run writes the translated output file and a matching `*.translation-warnings.json` report
 
 ## Project Layout
 

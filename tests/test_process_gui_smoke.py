@@ -419,6 +419,35 @@ class ProcessGuiSmokeTests(unittest.TestCase):
                 if os.path.exists(path):
                     os.remove(path)
 
+    def test_build_process_command_includes_warnings_report_flag(self):
+        input_path = os.path.join(os.getcwd(), "_tmp_gui_warn.po")
+        script_path = os.path.join(os.getcwd(), "_tmp_process_script.py")
+        try:
+            with open(input_path, "w", encoding="utf-8") as handle:
+                handle.write('msgid "Open"\nmsgstr ""\n')
+            with open(script_path, "w", encoding="utf-8") as handle:
+                handle.write("print('stub')\n")
+
+            config = process_gui.ProcessGuiConfig(
+                input_file=input_path,
+                provider="gemini",
+                model="gemini-test",
+                api_key="test-key",
+                warnings_report=True,
+            )
+
+            command = process_gui.build_process_command(
+                config,
+                python_executable="python",
+                script_path=script_path,
+            )
+
+            self.assertIn("--warnings-report", command)
+        finally:
+            for path in (input_path, script_path):
+                if os.path.exists(path):
+                    os.remove(path)
+
     def test_build_process_command_includes_gemini_vertex_args(self):
         input_path = os.path.join(os.getcwd(), "_tmp_gui_vertex_args.po")
         script_path = os.path.join(os.getcwd(), "_tmp_process_script.py")

@@ -8,9 +8,7 @@ Unify three things that had started to diverge:
 - translation-time glossary matching
 - extraction resource handling
 
-The refactor moves reusable extraction logic into `core/term_extraction.py`, moves JSON/PO
-handoff logic into `core/term_handoff.py`, and promotes the workflow into
-`tasks/extract_terms_local.py`.
+The refactor moves reusable extraction logic into `core/term_extraction.py`, moves JSON/PO handoff logic into `core/term_handoff.py`, and promotes the local workflow into `tasks/extract_terms_local.py`.
 
 ## What Lives Where
 
@@ -31,6 +29,7 @@ handoff logic into `core/term_handoff.py`, and promotes the workflow into
   - `borderline`
   - `rejected`
 - scoped glossary matching for translation-time vocabulary hints
+- message-scoped glossary matching that can be reused by the translator
 
 Main public pieces include:
 
@@ -44,10 +43,12 @@ Main public pieces include:
 
 `core/term_handoff.py` now owns:
 
-- building the prototype JSON payload
-- converting prototype JSON into PO
+- building the local extraction JSON payload
+- converting local extraction JSON into PO
 - translation candidate export helpers
 - PO note and occurrence shaping
+
+This keeps extraction mechanics separate from export and review handoff logic.
 
 ### Local task
 
@@ -127,8 +128,9 @@ Example message payload:
 }
 ```
 
-The full vocabulary text is still kept in the request for compatibility, but the design direction
-is now message-scoped suggestions, not global prompt dumping.
+The full vocabulary text is still kept in the request for compatibility, but the design direction is now message-scoped suggestions, not global prompt dumping.
+
+The translation task can also return a per-message `warnings` array when a message is ambiguous or otherwise review-worthy. When enabled, those warnings are written to a separate `*.translation-warnings.json` sidecar so risky messages can be inspected directly.
 
 ## Local Discovery Flow
 
@@ -150,6 +152,7 @@ The local discovery process now looks like this:
 - Extraction resources are data-driven instead of hardcoded Python sets.
 - The local discovery workflow is now a proper task instead of a standalone prototype script.
 - The production translator can reuse shared extraction primitives without importing export or CLI logic.
+- Translation-time glossary injection and translation warning reporting now both work at the message level instead of as coarse batch-level blobs.
 
 ## Next Likely Steps
 

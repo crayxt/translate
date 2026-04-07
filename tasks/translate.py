@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+from datetime import datetime, timezone
+import json
 import math
 import os
 import sys
@@ -135,6 +137,10 @@ TRANSLATION_RESPONSE_SCHEMA: dict[str, Any] = {
                         "type": "array",
                         "items": {"type": "string"},
                     },
+                    "warnings": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                    },
                 },
                 "required": ["id", "text"],
             },
@@ -194,6 +200,9 @@ def build_translation_request_spec(force_non_empty: bool = False) -> TaskRequest
             "Return only the corrected final JSON.",
             "Keep each translation item's `id` exactly the same as the input key.",
             "Use `plural_texts` only for plural entries when you can provide explicit forms.",
+            "Use `warnings` only when a message has a real ambiguity, unclear meaning, risky glossary choice, or another review-worthy concern.",
+            "Keep warnings short and specific to that message.",
+            "Do not add warnings for routine confident translations.",
             "For plural entries (source contains `Singular:`/`Plural:` or `item.plural_forms` is present), return non-empty `plural_texts` with exactly `item.plural_forms` forms (or at least 2 if absent).",
             "If the target language effectively has one plural form but multiple slots are required, repeat the same wording in all required plural slots.",
             "For target languages with no plural difference, prefer the source plural form as the basis for translation.",
@@ -361,6 +370,7 @@ class TranslationRunConfig:
     rules_str: str | None
     retranslate_all: bool
     flex_mode: bool
+    warnings_report: bool
 
 
 @dataclass
@@ -410,6 +420,11 @@ def configure_parser(parser: argparse.ArgumentParser) -> argparse.ArgumentParser
         action="store_true",
         help="Force translation of all translatable messages, not only unfinished/fuzzy ones",
     )
+    parser.add_argument(
+        "--warnings-report",
+        action="store_true",
+        help="Write a separate JSON sidecar with per-message translation warnings and ambiguities.",
+    )
     return parser
 
 
@@ -433,7 +448,62 @@ def config_from_args(args: argparse.Namespace) -> TranslationRunConfig:
         rules_str=args.rules_str,
         retranslate_all=args.retranslate_all,
         flex_mode=args.flex_mode,
+        warnings_report=args.warnings_report,
     )
+
+
+def build_translation_warnings_output_path(output_path: str) -> str:
+    root, _ = os.path.splitext(output_path)
+    return f"{root}.translation-warnings.json"
+
+
+def build_translation_warning_item(
+    entry: Any,
+    result: TranslationResult,
+    scoped_vocabulary_entries: List[ScopedVocabularyEntry],
+) -> Dict[str, Any]:
+    payload = build_translation_message_payload(entry, scoped_vocabulary_entries)
+    item: Dict[str, Any] = {
+        "source": payload.get("source", ""),
+        "translation": result.text,
+        "warnings": list(result.warnings),
+    }
+    if result.plural_texts:
+        item["plural_texts"] = list(result.plural_texts)
+    for field_name in ("context", "note", "relevant_vocabulary", "plural_forms"):
+        if field_name in payload:
+            item[field_name] = payload[field_name]
+    return item
+
+
+def write_translation_warning_report(
+    *,
+    job: TranslationFileJob,
+    warning_items: List[Dict[str, Any]],
+    provider_name: str,
+    model: str,
+    source_lang: str,
+    target_lang: str,
+    source_file: str | None = None,
+) -> str:
+    out_path = build_translation_warnings_output_path(job.output_path)
+    payload: Dict[str, Any] = {
+        "source_file": job.file_path,
+        "output_file": job.output_path,
+        "file_kind": job.file_kind.value,
+        "provider": provider_name,
+        "model": model,
+        "source_lang": source_lang,
+        "target_lang": target_lang,
+        "generated_at_utc": datetime.now(timezone.utc).isoformat(),
+        "warning_message_count": len(warning_items),
+        "messages": warning_items,
+    }
+    if source_file:
+        payload["paired_source_file"] = source_file
+    with open(out_path, "w", encoding="utf-8") as handle:
+        json.dump(payload, handle, ensure_ascii=False, indent=2)
+    return out_path
 
 
 def load_entries_for_translation(file_path: str, source_file: str | None = None):
@@ -590,6 +660,7 @@ async def run_translation_batches(
     vocabulary_text: str | None,
     project_rules: str | None,
     scoped_vocabulary_entries: List[ScopedVocabularyEntry],
+    warning_items_by_output_path: Dict[str, List[Dict[str, Any]]] | None = None,
 ) -> int:
     batches = len(all_batches)
 
@@ -662,6 +733,10 @@ async def run_translation_batches(
         for i, item in enumerate(batch):
             result = translations.get(str(i))
             entry = item.entry
+            if result and result.warnings and warning_items_by_output_path is not None:
+                warning_items_by_output_path.setdefault(item.job.output_path, []).append(
+                    build_translation_warning_item(entry, result, scoped_vocabulary_entries)
+                )
             if result and apply_translation_to_entry(entry, result):
                 if "fuzzy" not in entry.flags:
                     entry.flags.append("fuzzy")
@@ -742,6 +817,7 @@ def run_translation(config: TranslationRunConfig) -> None:
         ("Batch size", batch_size),
         ("Limits mode", limits_mode),
         ("Retranslate all", "yes" if config.retranslate_all else "no"),
+        ("Warnings report", "yes" if config.warnings_report else "no"),
         ("Vocabulary source", resource_context.vocabulary_source),
         ("Scoped vocabulary entries", len(scoped_vocabulary_entries)),
         ("Rules source", resource_context.rules_source or "none"),
@@ -749,6 +825,11 @@ def run_translation(config: TranslationRunConfig) -> None:
     )
     all_batches = build_batches(work_items, parallel_requests, batch_size)
     print(f"Total batches: {len(all_batches)}")
+    warning_items_by_output_path: Dict[str, List[Dict[str, Any]]] | None = (
+        {job.output_path: [] for job in file_jobs}
+        if config.warnings_report
+        else None
+    )
 
     try:
         asyncio.run(
@@ -765,6 +846,7 @@ def run_translation(config: TranslationRunConfig) -> None:
                 vocabulary_text=resource_context.vocabulary_text,
                 project_rules=resource_context.project_rules,
                 scoped_vocabulary_entries=scoped_vocabulary_entries,
+                warning_items_by_output_path=warning_items_by_output_path,
             )
         )
     except RuntimeError as exc:
@@ -774,6 +856,21 @@ def run_translation(config: TranslationRunConfig) -> None:
         if job.save_callback:
             job.save_callback()
 
+    warning_report_paths: List[str] = []
+    if warning_items_by_output_path is not None:
+        for job in file_jobs:
+            warning_report_paths.append(
+                write_translation_warning_report(
+                    job=job,
+                    warning_items=warning_items_by_output_path.get(job.output_path, []),
+                    provider_name=provider.name,
+                    model=config.model,
+                    source_lang=config.source_lang,
+                    target_lang=config.target_lang,
+                    source_file=config.source_file,
+                )
+            )
+
     print("\nTranslation complete.")
     if len(file_jobs) == 1:
         print(f"Saved file: {file_jobs[0].output_path}")
@@ -781,6 +878,13 @@ def run_translation(config: TranslationRunConfig) -> None:
         print(f"Saved files ({len(file_jobs)}):")
         for job in file_jobs:
             print(f"- {job.output_path}")
+    if warning_report_paths:
+        if len(warning_report_paths) == 1:
+            print(f"Saved warnings report: {warning_report_paths[0]}")
+        else:
+            print(f"Saved warnings reports ({len(warning_report_paths)}):")
+            for path in warning_report_paths:
+                print(f"- {path}")
     print("All AI-generated translations are marked as fuzzy/unfinished for human review.")
 
 

@@ -128,6 +128,10 @@ class RequestContentsSmokeTests(unittest.TestCase):
             "If multiple `message.relevant_vocabulary` entries share the same `source_term`, choose the variant whose `part_of_speech` and `context_note` best match `message.context` and `message.note`.",
             spec.output_lines,
         )
+        self.assertIn(
+            "Use `warnings` only when a message has a real ambiguity, unclear meaning, risky glossary choice, or another review-worthy concern.",
+            spec.output_lines,
+        )
 
     def test_check_request_contents_use_structured_batch_payload(self):
         contents = check_translations.build_check_request_contents(
