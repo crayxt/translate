@@ -6,7 +6,7 @@ This repository is for software-localization work, not generic document translat
 
 - translate unfinished localization files
 - revise existing translations with a precise instruction
-- check translated PO files for QA issues
+- check translated PO or TS files for QA issues
 - extract glossary terms with a model
 - discover glossary candidates locally without any API call
 
@@ -157,12 +157,13 @@ Revision behavior:
 - `--dry-run` reviews and reports changes without writing output
 - changed AI-reviewed entries are marked as review-required where the format supports it
 
-### 4. Check a translated PO file
+### 4. Check a translated PO or TS file
 
-Use `check` for QA on an already translated PO file:
+Use `check` for QA on an already translated PO or TS file:
 
 ```powershell
 python translate_cli.py check translated.po
+python translate_cli.py check translated.ts
 python translate_cli.py check translated.po --probe 50
 python translate_cli.py check translated.po --out report.json --include-ok
 ```
@@ -333,7 +334,7 @@ During translation, the toolkit still sends the full vocabulary for compatibilit
 
 Additional notes:
 
-- `check` is currently for translated `.po` files
+- `check` currently supports translated `.po` and `.ts` files
 - `.strings` translation treats commented key/value entries as untranslated source entries and uncommented entries as translated entries
 - `.strings` output preserves file encoding and common literal escape sequences
 - `.txt` output preserves original line order and blank lines

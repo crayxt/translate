@@ -66,7 +66,9 @@ RULES_FILETYPES = [
     ("All files", "*.*"),
 ]
 CHECK_FILETYPES = [
+    ("Checkable files", "*.po *.ts"),
     ("PO files", "*.po"),
+    ("Qt TS files", "*.ts"),
     ("All files", "*.*"),
 ]
 LOCAL_EXTRACT_FILETYPES = [

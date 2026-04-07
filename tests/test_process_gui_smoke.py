@@ -26,6 +26,9 @@ class _FakeWidget:
 
 
 class ProcessGuiSmokeTests(unittest.TestCase):
+    def test_check_filetypes_include_ts(self):
+        self.assertIn(("Qt TS files", "*.ts"), process_gui.CHECK_FILETYPES)
+
     def test_summarize_input_files_formats_multi_file_display(self):
         summary = process_gui.summarize_input_files(
             [r"C:\tmp\one.po", r"C:\tmp\two.po", r"C:\tmp\three.po"]

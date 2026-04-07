@@ -218,6 +218,60 @@ class CheckTranslationsSmokeTests(unittest.TestCase):
             if os.path.exists(out_path):
                 os.remove(out_path)
 
+    def test_main_writes_json_report_for_ts(self):
+        out_path = os.path.join(os.getcwd(), "_tmp_translation_check_ts.json")
+        entries = [
+            process.UnifiedEntry(
+                file_kind=process.FileKind.TS,
+                msgid="Open",
+                msgstr="Ashu",
+                msgctxt="MainWindow",
+                status=process.EntryStatus.TRANSLATED,
+            ),
+            process.UnifiedEntry(
+                file_kind=process.FileKind.TS,
+                msgid="Save",
+                msgstr="Saqtau",
+                status=process.EntryStatus.TRANSLATED,
+            ),
+        ]
+
+        try:
+            provider = _DummyProvider()
+            with (
+                patch.dict(os.environ, {"GOOGLE_API_KEY": "test-key"}, clear=False),
+                patch("tasks.check_translations.get_translation_provider", return_value=provider),
+                patch("tasks.check_translations.detect_file_kind", return_value=process.FileKind.TS),
+                patch(
+                    "tasks.check_translations.resolve_resource_path",
+                    side_effect=[
+                        os.path.join("data", "locales", "kk", "vocab.txt"),
+                        os.path.join("data", "locales", "kk", "rules.md"),
+                    ],
+                ),
+                patch("tasks.check_translations.read_optional_vocabulary_file", return_value=""),
+                patch("tasks.check_translations.read_optional_text_file", return_value=""),
+                patch("tasks.check_translations.load_ts", return_value=(entries, None, None)),
+                patch(
+                    "tasks.check_translations.sys.argv",
+                    ["check_translations.py", "input.ts", "--out", out_path],
+                ),
+                patch("builtins.print"),
+            ):
+                check_translations.main()
+
+            with open(out_path, "r", encoding="utf-8") as f:
+                payload = json.load(f)
+
+            self.assertEqual(payload["source_file"], "input.ts")
+            self.assertEqual(payload["total_entries_checked"], 2)
+            self.assertEqual(payload["entries_with_issues"], 0)
+            self.assertEqual(payload["issue_count"], 0)
+            self.assertEqual(len(payload["results"]), 0)
+        finally:
+            if os.path.exists(out_path):
+                os.remove(out_path)
+
 
 if __name__ == "__main__":
     unittest.main()

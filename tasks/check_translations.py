@@ -20,6 +20,7 @@ from core.formats import (
     detect_file_kind,
     get_entry_prompt_context_and_note,
     load_po,
+    load_ts,
 )
 from core.providers import DEFAULT_PROVIDER, DEFAULT_PROVIDER_NAME, get_translation_provider
 from core.request_contents import TaskRequestSpec, build_task_request_contents, render_text_fallback_prompt
@@ -126,6 +127,15 @@ def build_check_generation_config(
 def build_check_output_path(file_path: str) -> str:
     root, _ = os.path.splitext(file_path)
     return f"{root}.translation-check.json"
+
+
+def load_entries_for_check(file_path: str, file_kind: FileKind) -> List[Any]:
+    """Load translated entries for supported QA file kinds."""
+    if file_kind == FileKind.TS:
+        entries, _, _ = load_ts(file_path)
+        return entries
+    entries, _, _ = load_po(file_path)
+    return entries
 
 
 def normalize_limits(
@@ -397,8 +407,8 @@ def dedupe_issues(issues: List[CheckIssue]) -> List[CheckIssue]:
 
 
 def configure_parser(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
-    parser.description = "Check translated PO files using the configured provider"
-    parser.add_argument("file", help="Input translated .po file")
+    parser.description = "Check translated PO or TS files using the configured provider"
+    parser.add_argument("file", help="Input translated .po or .ts file")
     add_language_arguments(parser)
     add_provider_arguments(
         parser,
@@ -437,8 +447,8 @@ def run_from_args(args: argparse.Namespace) -> None:
     except ValueError as e:
         sys.exit(f"ERROR: {e}")
 
-    if file_kind != FileKind.PO:
-        sys.exit("ERROR: the check command currently supports only .po files")
+    if file_kind not in (FileKind.PO, FileKind.TS):
+        sys.exit("ERROR: the check command currently supports only .po and .ts files")
 
     runtime_context = build_task_runtime_context(
         provider_name=args.provider,
@@ -456,7 +466,7 @@ def run_from_args(args: argparse.Namespace) -> None:
     client = runtime_context.client
     resource_context = runtime_context.resources
 
-    entries, _, _ = load_po(args.file)
+    entries = load_entries_for_check(args.file, file_kind)
     try:
         review_entries = limit_review_entries(
             select_review_entries(entries),
@@ -467,7 +477,7 @@ def run_from_args(args: argparse.Namespace) -> None:
 
     total = len(review_entries)
     if total == 0:
-        print("No translated PO entries found to review.")
+        print(f"No translated {file_kind.value.upper()} entries found to review.")
         return
 
     try:
