@@ -2,10 +2,12 @@
 a
 abc
 all
+also
 alt
 an
 and
 any
+anyway
 are
 as
 at
@@ -17,6 +19,7 @@ can
 can't
 cannot
 could
+couldn't
 ctrl
 def
 did
@@ -29,6 +32,7 @@ eight
 eighty
 eleven
 esc
+every
 few
 fifty
 five
@@ -57,6 +61,7 @@ jkl
 let
 many
 may
+mayn't
 might
 million
 mno
@@ -64,6 +69,9 @@ more
 most
 much
 must
+mustn't
+need
+needn't
 nine
 ninety
 no
@@ -80,6 +88,8 @@ seventy
 shall
 she
 shift
+should
+shouldn't
 six
 sixty
 so
@@ -93,6 +103,9 @@ their
 them
 then
 these
+there
+they're
+they
 thirty
 this
 those
@@ -108,11 +121,13 @@ was
 we
 were
 where
+whether
 which
 will
 with
 without
 would
+wouldn't
 wxyz
 yes
 yet
