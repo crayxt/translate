@@ -32,7 +32,7 @@ Core inputs:
 
 Optional shared resources:
 
-- vocabulary from `data/locales/<target-lang>/vocab.txt` or a glossary directory
+- vocabulary from `data/locales/<target-lang>/vocab.txt`, a glossary `.tbx`, or a glossary directory bundle
 
 Extraction behavior is driven by data files under:
 

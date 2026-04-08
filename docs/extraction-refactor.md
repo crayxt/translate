@@ -104,7 +104,7 @@ The translation task no longer relies only on a large top-level vocabulary blob.
 
 Current flow:
 
-1. Load the approved vocabulary from `data/locales/<target-lang>/vocab.txt` or a glossary PO.
+1. Load the approved vocabulary from `data/locales/<target-lang>/vocab.txt`, a glossary PO, or a glossary TBX.
 2. Parse it into rich entries:
    - `source_term`
    - `target_term`

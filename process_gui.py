@@ -61,9 +61,10 @@ TRANSLATABLE_FILETYPES = [
     ("All files", "*.*"),
 ]
 VOCAB_FILETYPES = [
-    ("Vocabulary files", "*.txt *.po"),
+    ("Vocabulary files", "*.txt *.po *.tbx"),
     ("Text files", "*.txt"),
     ("PO files", "*.po"),
+    ("TBX files", "*.tbx"),
     ("All files", "*.*"),
 ]
 RULES_FILETYPES = [

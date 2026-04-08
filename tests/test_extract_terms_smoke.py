@@ -356,7 +356,11 @@ class ExtractTermsSmokeTests(unittest.TestCase):
         ):
             extract_terms.main()
 
-        load_pairs_mock.assert_called_once_with(os.path.join("data", "locales", "kk", "vocab.txt"), "Vocabulary")
+        load_pairs_mock.assert_called_once_with(
+            os.path.join("data", "locales", "kk", "vocab.txt"),
+            "Vocabulary",
+            target_lang="kk",
+        )
 
 
 if __name__ == "__main__":

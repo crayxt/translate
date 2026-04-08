@@ -33,7 +33,7 @@ Core inputs:
 
 Optional shared resources:
 
-- vocabulary from `data/locales/<target-lang>/vocab.txt` or a glossary PO
+- vocabulary from `data/locales/<target-lang>/vocab.txt`, a glossary PO, or a glossary TBX
 - rules from `data/locales/<target-lang>/rules.md`
 
 At runtime, the task builds message-scoped glossary hints:

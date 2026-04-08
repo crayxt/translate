@@ -1,13 +1,15 @@
 from __future__ import annotations
 
 import os
+import xml.etree.ElementTree as ET
 from typing import Any, Callable, Dict, List, Tuple
 
 import polib
 
 from core.formats import PO_WRAP_WIDTH
 
-VOCABULARY_FILE_EXTENSIONS = (".txt", ".po")
+VOCABULARY_FILE_EXTENSIONS = (".txt", ".po", ".tbx")
+XML_LANG_ATTR = "{http://www.w3.org/XML/1998/namespace}lang"
 
 
 def read_optional_text_file(path: str | None, label: str) -> str | None:
@@ -95,6 +97,235 @@ def parse_vocabulary_line(line: str) -> Tuple[str, str] | None:
     return source_term, target_term
 
 
+def _strip_xml_namespace(tag: str) -> str:
+    if not isinstance(tag, str):
+        return ""
+    if "}" in tag:
+        return tag.split("}", 1)[1]
+    return tag
+
+
+def _normalize_language_code(value: str | None) -> str:
+    return str(value or "").strip().replace("_", "-").lower()
+
+
+def _build_language_code_match_set(value: str | None) -> set[str]:
+    return {
+        _normalize_language_code(candidate)
+        for candidate in build_language_code_candidates(str(value or ""))
+        if _normalize_language_code(candidate)
+    }
+
+
+def _get_xml_lang(element: ET.Element) -> str:
+    return str(
+        element.attrib.get(XML_LANG_ATTR)
+        or element.attrib.get("xml:lang")
+        or ""
+    ).strip()
+
+
+def _iter_xml_children(element: ET.Element, local_name: str) -> List[ET.Element]:
+    return [
+        child
+        for child in list(element)
+        if isinstance(child.tag, str) and _strip_xml_namespace(child.tag) == local_name
+    ]
+
+
+def _iter_xml_descendants(element: ET.Element, local_name: str) -> List[ET.Element]:
+    return [
+        child
+        for child in element.iter()
+        if child is not element
+        and isinstance(child.tag, str)
+        and _strip_xml_namespace(child.tag) == local_name
+    ]
+
+
+def _append_unique_text(values: List[str], raw_value: str | None) -> None:
+    normalized = _normalize_vocabulary_cell(raw_value)
+    if normalized and normalized not in values:
+        values.append(normalized)
+
+
+def _collect_tbx_document_languages(root: ET.Element) -> List[str]:
+    languages: List[str] = []
+    for lang_set in _iter_xml_descendants(root, "langSet"):
+        lang_code = _normalize_language_code(_get_xml_lang(lang_set))
+        if lang_code and lang_code not in languages:
+            languages.append(lang_code)
+    return languages
+
+
+def _resolve_tbx_languages(
+    root: ET.Element,
+    path: str,
+    label: str,
+    *,
+    target_lang: str | None = None,
+) -> Tuple[str | None, str | None]:
+    document_languages = _collect_tbx_document_languages(root)
+    source_lang = _normalize_language_code(_get_xml_lang(root))
+    requested_target_matches = _build_language_code_match_set(target_lang)
+
+    if not source_lang and requested_target_matches and len(document_languages) == 2:
+        for lang_code in document_languages:
+            if lang_code not in requested_target_matches:
+                source_lang = lang_code
+                break
+
+    if not source_lang and document_languages:
+        source_lang = document_languages[0]
+
+    if not source_lang:
+        print(f"Warning: {label} file '{path}' has no usable TBX source language metadata.")
+        return None, None
+
+    if requested_target_matches:
+        for lang_code in document_languages:
+            if lang_code in requested_target_matches:
+                return source_lang, lang_code
+        print(
+            f"Warning: {label} file '{path}' has no TBX langSet matching target language "
+            f"'{target_lang}'."
+        )
+        return source_lang, None
+
+    non_source_languages = [
+        lang_code for lang_code in document_languages if lang_code and lang_code != source_lang
+    ]
+    if len(non_source_languages) == 1:
+        return source_lang, non_source_languages[0]
+    if len(non_source_languages) > 1:
+        print(
+            f"Warning: {label} file '{path}' contains multiple TBX target languages. "
+            "Pass the task target language so the correct glossary language can be selected."
+        )
+        return source_lang, None
+    print(f"Warning: {label} file '{path}' has no TBX target language entries.")
+    return source_lang, None
+
+
+def _collect_tbx_terms(lang_set: ET.Element) -> List[str]:
+    values: List[str] = []
+    for term_element in _iter_xml_descendants(lang_set, "term"):
+        _append_unique_text(values, "".join(term_element.itertext()))
+    return values
+
+
+def _collect_tbx_context_notes(
+    term_entry: ET.Element,
+    *,
+    source_lang: str | None,
+    target_lang: str | None,
+) -> str:
+    notes: List[str] = []
+    for child in list(term_entry):
+        local_name = _strip_xml_namespace(child.tag)
+        if local_name in ("descrip", "note"):
+            _append_unique_text(notes, "".join(child.itertext()))
+            continue
+        if local_name != "langSet":
+            continue
+        lang_code = _normalize_language_code(_get_xml_lang(child))
+        if lang_code not in {source_lang, target_lang}:
+            continue
+        for note_element in _iter_xml_descendants(child, "descrip") + _iter_xml_descendants(child, "note"):
+            _append_unique_text(notes, "".join(note_element.itertext()))
+    return " ".join(notes)
+
+
+def _extract_tbx_part_of_speech(
+    term_entry: ET.Element,
+    *,
+    source_lang: str | None,
+    target_lang: str | None,
+) -> str:
+    for scope in [term_entry] + _iter_xml_children(term_entry, "langSet"):
+        if scope is not term_entry:
+            lang_code = _normalize_language_code(_get_xml_lang(scope))
+            if lang_code not in {source_lang, target_lang}:
+                continue
+        for term_note in _iter_xml_descendants(scope, "termNote"):
+            note_type = _normalize_vocabulary_cell(
+                term_note.attrib.get("type")
+                or term_note.attrib.get("termNoteType")
+                or ""
+            ).lower().replace(" ", "")
+            if note_type not in {"pos", "partofspeech"} and "speech" not in note_type:
+                continue
+            value = _normalize_vocabulary_cell("".join(term_note.itertext()))
+            if value:
+                return value
+    return ""
+
+
+def _load_tbx_vocabulary_records(
+    path: str,
+    label: str,
+    *,
+    target_lang: str | None = None,
+) -> List[Tuple[str, str, str, str]]:
+    try:
+        root = ET.parse(path).getroot()
+    except FileNotFoundError:
+        print(f"Warning: {label} file '{path}' not found.")
+        return []
+    except ET.ParseError as exc:
+        print(f"Warning: {label} file '{path}' is not valid TBX XML: {exc}")
+        return []
+    except OSError as exc:
+        print(f"Warning: Could not read {label} file '{path}': {exc}")
+        return []
+
+    source_lang, resolved_target_lang = _resolve_tbx_languages(
+        root,
+        path,
+        label,
+        target_lang=target_lang,
+    )
+    if not source_lang or not resolved_target_lang:
+        return []
+
+    records: List[Tuple[str, str, str, str]] = []
+    for term_entry in _iter_xml_descendants(root, "termEntry"):
+        source_terms: List[str] = []
+        target_terms: List[str] = []
+        for lang_set in _iter_xml_children(term_entry, "langSet"):
+            lang_code = _normalize_language_code(_get_xml_lang(lang_set))
+            terms = _collect_tbx_terms(lang_set)
+            if not terms:
+                continue
+            if lang_code == source_lang:
+                for term in terms:
+                    _append_unique_text(source_terms, term)
+            elif lang_code == resolved_target_lang:
+                for term in terms:
+                    _append_unique_text(target_terms, term)
+
+        if not source_terms or not target_terms:
+            continue
+
+        part_of_speech = _extract_tbx_part_of_speech(
+            term_entry,
+            source_lang=source_lang,
+            target_lang=resolved_target_lang,
+        )
+        context_note = _collect_tbx_context_notes(
+            term_entry,
+            source_lang=source_lang,
+            target_lang=resolved_target_lang,
+        )
+        for source_term in source_terms:
+            for target_term in target_terms:
+                records.append((source_term, target_term, part_of_speech, context_note))
+
+    if not records:
+        print(f"Warning: {label} file '{path}' has no usable TBX term pairs.")
+    return records
+
+
 def _resolve_vocabulary_source_paths(
     path: str | None,
     label: str,
@@ -112,7 +343,7 @@ def _resolve_vocabulary_source_paths(
         if not source_paths:
             print(
                 f"Warning: {label} directory '{path}' has no supported glossary files "
-                "(.txt or .po)."
+                "(.txt, .po, or .tbx)."
             )
         return source_paths
 
@@ -132,8 +363,13 @@ def _load_vocabulary_records_from_path(
     label: str,
     *,
     pofile_loader: Callable[..., Any] | None = None,
+    target_lang: str | None = None,
 ) -> List[Tuple[str, str, str, str]]:
-    if not path.lower().endswith(".po"):
+    lowered_path = path.lower()
+    if lowered_path.endswith(".tbx"):
+        return _load_tbx_vocabulary_records(path, label, target_lang=target_lang)
+
+    if not lowered_path.endswith(".po"):
         content = read_optional_text_file(path, label)
         if not content:
             return []
@@ -174,6 +410,7 @@ def _load_vocabulary_records(
     label: str = "Vocabulary",
     *,
     pofile_loader: Callable[..., Any] | None = None,
+    target_lang: str | None = None,
 ) -> List[Tuple[str, str, str, str]]:
     records: List[Tuple[str, str, str, str]] = []
     seen_indices: Dict[str, int] = {}
@@ -182,6 +419,7 @@ def _load_vocabulary_records(
             source_path,
             label,
             pofile_loader=pofile_loader,
+            target_lang=target_lang,
         ):
             key = build_vocabulary_identity_key(source_term, part_of_speech, context_note)
             record = (source_term, target_term, part_of_speech, context_note)
@@ -198,6 +436,7 @@ def load_vocabulary_pairs(
     label: str = "Vocabulary",
     *,
     pofile_loader: Callable[..., Any] | None = None,
+    target_lang: str | None = None,
 ) -> List[Tuple[str, str]]:
     return [
         (source_term, target_term)
@@ -205,6 +444,7 @@ def load_vocabulary_pairs(
             path,
             label,
             pofile_loader=pofile_loader,
+            target_lang=target_lang,
         )
     ]
 
@@ -214,11 +454,13 @@ def read_optional_vocabulary_file(
     label: str = "Vocabulary",
     *,
     pofile_loader: Callable[..., Any] | None = None,
+    target_lang: str | None = None,
 ) -> str | None:
     records = _load_vocabulary_records(
         path,
         label,
         pofile_loader=pofile_loader,
+        target_lang=target_lang,
     )
     if not records:
         return None

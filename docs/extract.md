@@ -26,7 +26,7 @@ Core inputs:
 
 Optional shared resources:
 
-- vocabulary from `data/locales/<target-lang>/vocab.txt` or a glossary PO
+- vocabulary from `data/locales/<target-lang>/vocab.txt`, a glossary PO, or a glossary TBX
 
 In `missing` mode, vocabulary is used to suppress already known terms and keep the output focused on missing glossary entries.
 

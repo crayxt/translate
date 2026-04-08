@@ -89,6 +89,40 @@ class TaskResourcesSmokeTests(unittest.TestCase):
             if os.path.isdir(vocab_dir):
                 os.rmdir(vocab_dir)
 
+    def test_load_task_resource_context_selects_target_language_from_tbx(self):
+        vocab_path = os.path.join(os.getcwd(), "_tmp_task_vocab.tbx")
+        try:
+            with open(vocab_path, "w", encoding="utf-8") as handle:
+                handle.write(
+                    """<?xml version="1.0" encoding="UTF-8"?>
+<martif type="TBX" xml:lang="en">
+  <text>
+    <body>
+      <termEntry>
+        <langSet xml:lang="en"><tig><term>save</term></tig></langSet>
+        <langSet xml:lang="fr"><tig><term>enregistrer</term></tig></langSet>
+        <langSet xml:lang="kk"><tig><term>сақтау</term></tig></langSet>
+      </termEntry>
+    </body>
+  </text>
+</martif>
+"""
+                )
+
+            context = load_task_resource_context(
+                target_lang="kk",
+                explicit_vocab_path=vocab_path,
+                include_rules=False,
+                load_vocab_pairs_flag=True,
+            )
+
+            self.assertEqual(context.vocabulary_source, f"file:{vocab_path}")
+            self.assertEqual(context.vocabulary_pairs, [("save", "сақтау")])
+            self.assertEqual(context.vocabulary_text, "save|сақтау||")
+        finally:
+            if os.path.exists(vocab_path):
+                os.remove(vocab_path)
+
 
 if __name__ == "__main__":
     unittest.main()

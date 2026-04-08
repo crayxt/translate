@@ -325,12 +325,32 @@ def load_po(file_path: str):
     return _core_load_po(file_path, pofile_loader=polib.pofile)
 
 
-def load_vocabulary_pairs(path: str | None, label: str = "Vocabulary"):
-    return _core_load_vocabulary_pairs(path, label, pofile_loader=polib.pofile)
+def load_vocabulary_pairs(
+    path: str | None,
+    label: str = "Vocabulary",
+    *,
+    target_lang: str | None = None,
+):
+    return _core_load_vocabulary_pairs(
+        path,
+        label,
+        pofile_loader=polib.pofile,
+        target_lang=target_lang,
+    )
 
 
-def read_optional_vocabulary_file(path: str | None, label: str = "Vocabulary"):
-    return _core_read_optional_vocabulary_file(path, label, pofile_loader=polib.pofile)
+def read_optional_vocabulary_file(
+    path: str | None,
+    label: str = "Vocabulary",
+    *,
+    target_lang: str | None = None,
+):
+    return _core_read_optional_vocabulary_file(
+        path,
+        label,
+        pofile_loader=polib.pofile,
+        target_lang=target_lang,
+    )
 
 
 def build_language_code_candidates(target_lang: str) -> List[str]:

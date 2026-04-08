@@ -55,6 +55,7 @@ def load_task_resource_context(
         context.vocabulary_text = read_optional_vocabulary_file_fn(
             context.vocabulary_path,
             "Vocabulary",
+            target_lang=target_lang,
         )
         if context.vocabulary_text and context.vocabulary_path:
             source_prefix = "dir" if os.path.isdir(context.vocabulary_path) else "file"
@@ -63,6 +64,7 @@ def load_task_resource_context(
             context.vocabulary_pairs = load_vocabulary_pairs_fn(
                 context.vocabulary_path,
                 "Vocabulary",
+                target_lang=target_lang,
             )
 
     if include_rules:

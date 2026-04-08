@@ -301,7 +301,8 @@ python translate_cli.py translate source.po --vocab custom-vocab --rules-str "Us
 
 - a glossary `.txt`
 - a glossary `.po`
-- a directory containing glossary `.txt` and `.po` files
+- a glossary `.tbx`
+- a directory containing glossary `.txt`, `.po`, and `.tbx` files
 
 When a vocabulary directory is used:
 

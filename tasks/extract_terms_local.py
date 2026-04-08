@@ -198,7 +198,11 @@ def run_from_args(args: argparse.Namespace) -> None:
         target_lang=args.target_lang,
         allow_directory=True,
     )
-    vocabulary_pairs = load_vocabulary_pairs(vocabulary_path, "Vocabulary")
+    vocabulary_pairs = load_vocabulary_pairs(
+        vocabulary_path,
+        "Vocabulary",
+        target_lang=args.target_lang,
+    )
     if not messages:
         print("No source messages found for local terminology extraction.")
         return

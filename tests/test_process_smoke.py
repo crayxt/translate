@@ -178,6 +178,37 @@ class ProcessSmokeTests(unittest.TestCase):
             if os.path.exists(vocab_path):
                 os.remove(vocab_path)
 
+    def test_read_optional_vocabulary_file_supports_tbx_glossary(self):
+        vocab_path = os.path.join(os.getcwd(), "_tmp_vocab_glossary.tbx")
+        try:
+            with open(vocab_path, "w", encoding="utf-8") as handle:
+                handle.write(
+                    """<?xml version="1.0" encoding="UTF-8"?>
+<martif type="TBX" xml:lang="en">
+  <text>
+    <body>
+      <termEntry>
+        <langSet xml:lang="en"><tig><term>start</term></tig></langSet>
+        <langSet xml:lang="kk"><tig><term>бастау</term></tig></langSet>
+        <descrip>Start playback</descrip>
+      </termEntry>
+      <termEntry>
+        <langSet xml:lang="en"><tig><term>skip me</term></tig></langSet>
+        <langSet xml:lang="kk"><tig><term/></tig></langSet>
+      </termEntry>
+    </body>
+  </text>
+</martif>
+"""
+                )
+
+            vocabulary = process.read_optional_vocabulary_file(vocab_path)
+
+            self.assertEqual(vocabulary, "start|бастау||Start playback")
+        finally:
+            if os.path.exists(vocab_path):
+                os.remove(vocab_path)
+
     def test_read_optional_vocabulary_file_supports_directory_bundle(self):
         vocab_dir = os.path.join(os.getcwd(), "_tmp_vocab_bundle")
         txt_path = os.path.join(vocab_dir, "10-common.txt")
@@ -271,6 +302,44 @@ class ProcessSmokeTests(unittest.TestCase):
             )
         finally:
             for path in (first_path, second_path):
+                if os.path.exists(path):
+                    os.remove(path)
+            if os.path.isdir(vocab_dir):
+                os.rmdir(vocab_dir)
+
+    def test_load_vocabulary_pairs_from_directory_bundle_supports_tbx(self):
+        vocab_dir = os.path.join(os.getcwd(), "_tmp_vocab_tbx_bundle")
+        tbx_path = os.path.join(vocab_dir, "10-common.tbx")
+        txt_path = os.path.join(vocab_dir, "20-overrides.txt")
+        try:
+            os.makedirs(vocab_dir, exist_ok=True)
+            with open(tbx_path, "w", encoding="utf-8") as handle:
+                handle.write(
+                    """<?xml version="1.0" encoding="UTF-8"?>
+<martif type="TBX" xml:lang="en">
+  <text>
+    <body>
+      <termEntry>
+        <langSet xml:lang="en"><tig><term>save</term></tig></langSet>
+        <langSet xml:lang="kk"><tig><term>сақтау</term></tig></langSet>
+      </termEntry>
+      <termEntry>
+        <langSet xml:lang="en"><tig><term>open</term></tig></langSet>
+        <langSet xml:lang="kk"><tig><term>ашу</term></tig></langSet>
+      </termEntry>
+    </body>
+  </text>
+</martif>
+"""
+                )
+            with open(txt_path, "w", encoding="utf-8") as handle:
+                handle.write("save|қору||\n")
+
+            pairs = process.load_vocabulary_pairs(vocab_dir)
+
+            self.assertEqual(pairs, [("save", "қору"), ("open", "ашу")])
+        finally:
+            for path in (tbx_path, txt_path):
                 if os.path.exists(path):
                     os.remove(path)
             if os.path.isdir(vocab_dir):
