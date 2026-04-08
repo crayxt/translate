@@ -248,6 +248,7 @@ class PrototypeTermExtractorTests(unittest.TestCase):
                     source="Access token",
                     context="Security settings",
                     note="API authentication label locations: src/auth/api.c:10 src/gui/token.c:42",
+                    source_file="ui/security.po",
                 )
             ],
             mode="all",
@@ -264,6 +265,8 @@ class PrototypeTermExtractorTests(unittest.TestCase):
         )
         self.assertEqual(accepted["access token"].examples, ["Access token"])
         self.assertEqual(accepted["access token"].context_diversity, 1)
+        self.assertEqual(accepted["access token"].file_count, 1)
+        self.assertEqual(accepted["access token"].files, ["ui/security.po"])
         self.assertEqual(accepted["access token"].location_file_count, 2)
         self.assertEqual(accepted["access token"].location_scope_count, 2)
         self.assertEqual(accepted["access token"].location_scopes, ["src/auth", "src/gui"])
@@ -411,6 +414,7 @@ class PrototypeTermExtractorTests(unittest.TestCase):
                     source="Access token",
                     context="Security settings",
                     note="API authentication label locations: src/auth/api.c:10",
+                    source_file="ui/security.po",
                 )
             ],
             mode="all",
@@ -425,6 +429,8 @@ class PrototypeTermExtractorTests(unittest.TestCase):
         self.assertEqual(exported["access token"]["decision"], "accepted")
         self.assertEqual(exported["access token"]["contexts"], ["Security settings"])
         self.assertEqual(exported["access token"]["examples"], ["Access token"])
+        self.assertEqual(exported["access token"]["file_count"], 1)
+        self.assertEqual(exported["access token"]["files"], ["ui/security.po"])
         self.assertEqual(exported["access token"]["location_files"], ["src/auth/api.c:10"])
         self.assertEqual(exported["access token"]["location_scopes"], ["src/auth"])
 

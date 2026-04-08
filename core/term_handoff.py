@@ -23,6 +23,8 @@ class TermTranslationCandidate:
     contexts: List[str] | None = None
     examples: List[str] | None = None
     notes: List[str] | None = None
+    file_count: int = 0
+    files: List[str] | None = None
     location_files: List[str] | None = None
     location_scopes: List[str] | None = None
     known_translation: str = ""
@@ -62,6 +64,8 @@ def build_translation_candidate_payload(
                 "contexts": list(item.contexts),
                 "examples": list(item.examples),
                 "notes": list(item.notes),
+                "file_count": item.file_count,
+                "files": list(item.files),
                 "location_files": list(item.location_files),
                 "location_scopes": list(item.location_scopes),
                 "known_translation": item.known_translation,
@@ -124,6 +128,11 @@ def coerce_translation_candidate(
         score = int(score_raw)
     except (TypeError, ValueError):
         score = 0
+    file_count_raw = item.get("file_count", 0)
+    try:
+        file_count = int(file_count_raw)
+    except (TypeError, ValueError):
+        file_count = 0
 
     return TermTranslationCandidate(
         source_term=source_term,
@@ -133,6 +142,8 @@ def coerce_translation_candidate(
         contexts=[normalize_space(value) for value in item.get("contexts", []) if normalize_space(value)],
         examples=[normalize_space(value) for value in item.get("examples", []) if normalize_space(value)],
         notes=[normalize_space(value) for value in item.get("notes", []) if normalize_space(value)],
+        file_count=file_count,
+        files=[normalize_space(value) for value in item.get("files", []) if normalize_space(value)],
         location_files=[
             normalize_space(value)
             for value in item.get("location_files", [])
@@ -208,6 +219,8 @@ def build_translation_entry_note(candidate: TermTranslationCandidate) -> str | N
         lines.append(f"Example: {candidate.examples[0]}")
     if candidate.notes:
         lines.extend(f"Note: {note}" for note in candidate.notes[:3])
+    if candidate.files:
+        lines.append(f"Files: {', '.join(candidate.files[:5])}")
     if candidate.location_scopes:
         lines.append(f"Location scopes: {', '.join(candidate.location_scopes[:5])}")
     if candidate.known_translation:

@@ -88,6 +88,7 @@ class SourceMessage:
     source: str
     context: str = ""
     note: str = ""
+    source_file: str = ""
 
 
 @dataclass
@@ -99,11 +100,13 @@ class CandidateEvidence:
     message_count: int = 0
     exact_source_match_count: int = 0
     context_diversity: int = 0
+    file_count: int = 0
     location_file_count: int = 0
     location_scope_count: int = 0
     examples: List[str] = field(default_factory=list)
     contexts: List[str] = field(default_factory=list)
     notes: List[str] = field(default_factory=list)
+    files: List[str] = field(default_factory=list)
     location_files: List[str] = field(default_factory=list)
     location_scopes: List[str] = field(default_factory=list)
     surface_forms: List[str] = field(default_factory=list)
@@ -135,6 +138,8 @@ class _CandidateAccumulator:
     context_keys: set[str] = field(default_factory=set)
     notes: List[str] = field(default_factory=list)
     note_keys: set[str] = field(default_factory=set)
+    files: List[str] = field(default_factory=list)
+    file_keys: set[str] = field(default_factory=set)
     location_files: List[str] = field(default_factory=list)
     location_file_keys: set[str] = field(default_factory=set)
     location_scopes: List[str] = field(default_factory=list)
@@ -433,13 +438,19 @@ def build_location_scope(location: str) -> str:
     return parts[0] if parts else ""
 
 
-def build_source_message_key(source: str, context: str = "", note: str = "") -> str:
+def build_source_message_key(
+    source: str,
+    context: str = "",
+    note: str = "",
+    source_file: str = "",
+) -> str:
     """Build a stable dedupe key for a source message payload."""
     return "\u241f".join(
         (
             normalize_candidate_key(source),
             normalize_space(context).lower(),
             normalize_space(note).lower(),
+            normalize_space(source_file).replace("\\", "/").lower(),
         )
     )
 
@@ -460,6 +471,7 @@ def coerce_source_message(item: SourceMessage | Mapping[str, Any]) -> SourceMess
         source=normalize_space(item.get("source", "")),
         context=normalize_space(item.get("context", "")),
         note=normalize_space(item.get("note", "")),
+        source_file=normalize_space(item.get("source_file", "")).replace("\\", "/"),
     )
 
 
@@ -474,7 +486,7 @@ def build_source_messages_from_payloads(
         item = coerce_source_message(raw_item)
         if not should_include_source_text(item.source):
             continue
-        key = build_source_message_key(item.source, item.context, item.note)
+        key = build_source_message_key(item.source, item.context, item.note, item.source_file)
         if key in seen:
             continue
         seen.add(key)
@@ -483,7 +495,7 @@ def build_source_messages_from_payloads(
     return results
 
 
-def collect_source_messages(entries: Iterable[Any]) -> List[SourceMessage]:
+def collect_source_messages(entries: Iterable[Any], *, source_file: str = "") -> List[SourceMessage]:
     """Project localization entries into normalized source messages for local extraction."""
     payloads: List[dict[str, str]] = []
 
@@ -496,6 +508,7 @@ def collect_source_messages(entries: Iterable[Any]) -> List[SourceMessage]:
                 "source": normalized,
                 "context": normalize_space(context),
                 "note": normalize_space(note),
+                "source_file": normalize_space(source_file).replace("\\", "/"),
             }
         )
 
@@ -585,7 +598,12 @@ def collect_raw_candidate_evidence(
     evidence: Dict[str, _CandidateAccumulator] = {}
 
     for message in messages:
-        message_key = build_source_message_key(message.source, message.context, message.note)
+        message_key = build_source_message_key(
+            message.source,
+            message.context,
+            message.note,
+            message.source_file,
+        )
         candidate_counts = extract_message_candidate_counts(
             message.source,
             max_length=max_length,
@@ -611,6 +629,9 @@ def collect_raw_candidate_evidence(
             if message.note:
                 add_unique_limited(item.notes, message.note)
                 item.note_keys.add(normalize_space(message.note).lower())
+            if message.source_file:
+                add_unique_limited(item.files, message.source_file, limit=10)
+                item.file_keys.add(message.source_file)
             for location in parsed_locations:
                 add_unique_limited(item.location_files, location, limit=10)
                 item.location_file_keys.add(location)
@@ -671,11 +692,13 @@ def finalize_candidate_evidence(item: _CandidateAccumulator) -> CandidateEvidenc
         message_count=len(item.message_keys),
         exact_source_match_count=item.exact_source_match_count,
         context_diversity=len(item.context_keys),
+        file_count=len(item.file_keys),
         location_file_count=len(item.location_file_keys),
         location_scope_count=len(item.location_scope_keys),
         examples=list(item.examples),
         contexts=list(item.contexts),
         notes=list(item.notes),
+        files=list(item.files),
         location_files=list(item.location_files),
         location_scopes=list(item.location_scopes),
         surface_forms=list(item.surface_forms),
@@ -713,6 +736,7 @@ def collect_candidate_evidence(
         item.message_keys.update(raw_item.message_keys)
         item.context_keys.update(raw_item.context_keys)
         item.note_keys.update(raw_item.note_keys)
+        item.file_keys.update(raw_item.file_keys)
         item.location_file_keys.update(raw_item.location_file_keys)
         item.location_scope_keys.update(raw_item.location_scope_keys)
         for value in raw_item.examples:
@@ -721,6 +745,8 @@ def collect_candidate_evidence(
             add_unique_limited(item.contexts, value)
         for value in raw_item.notes:
             add_unique_limited(item.notes, value)
+        for value in raw_item.files:
+            add_unique_limited(item.files, value, limit=10)
         for value in raw_item.location_files:
             add_unique_limited(item.location_files, value, limit=10)
         for value in raw_item.location_scopes:
@@ -775,11 +801,13 @@ def decide_candidate(
         message_count=item.message_count,
         exact_source_match_count=item.exact_source_match_count,
         context_diversity=item.context_diversity,
+        file_count=item.file_count,
         location_file_count=item.location_file_count,
         location_scope_count=item.location_scope_count,
         examples=list(item.examples),
         contexts=list(item.contexts),
         notes=list(item.notes),
+        files=list(item.files),
         location_files=list(item.location_files),
         location_scopes=list(item.location_scopes),
         surface_forms=list(item.surface_forms),

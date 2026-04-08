@@ -106,12 +106,38 @@ class ExtractTermsLocalSmokeTests(unittest.TestCase):
             self.assertEqual(payload["source_file"], input_root)
             self.assertGreaterEqual(payload["total_source_messages"], 2)
             self.assertGreaterEqual(payload["translation_candidate_count"], 1)
+            terms = {item["source_term"]: item for item in payload["terms"]}
+            self.assertIn("access token", terms)
+            self.assertEqual(terms["access token"]["file_count"], 1)
+            self.assertEqual(terms["access token"]["files"], ["first.po"])
 
             po = polib.pofile(po_path, wrapwidth=78)
             msgids = {entry.msgid for entry in po}
             self.assertIn("access token", msgids)
         finally:
             self._cleanup_paths(input_root, vocab_path, json_path, po_path)
+
+    def test_directory_extraction_keeps_identical_messages_from_different_files_distinct(self):
+        input_root = os.path.abspath("_tmp_extract_terms_provenance")
+        nested_root = os.path.join(input_root, "sub")
+        po_one = os.path.join(input_root, "first.po")
+        po_two = os.path.join(nested_root, "second.po")
+        self._cleanup_paths(input_root)
+
+        try:
+            os.makedirs(nested_root, exist_ok=True)
+            with open(po_one, "w", encoding="utf-8") as handle:
+                handle.write('msgid "Access token"\nmsgstr ""\n')
+            with open(po_two, "w", encoding="utf-8") as handle:
+                handle.write('msgid "Access token"\nmsgstr ""\n')
+
+            messages, scanned_files = extract_terms_local.load_messages_for_input(input_root)
+
+            self.assertEqual(len(scanned_files), 2)
+            self.assertEqual(len(messages), 2)
+            self.assertEqual([item.source_file for item in messages], ["first.po", "sub/second.po"])
+        finally:
+            self._cleanup_paths(input_root)
 
 
 if __name__ == "__main__":

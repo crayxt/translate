@@ -36,10 +36,24 @@ def load_entries_for_file(file_path: str, file_kind: FileKind) -> List[Any]:
     return entries
 
 
-def collect_messages_for_file(file_path: str, file_kind: FileKind) -> List[SourceMessage]:
+def normalize_source_file_label(file_path: str, *, root_path: str | None = None) -> str:
+    """Build a compact source-file label for per-term provenance in JSON output."""
+    if root_path:
+        label = os.path.relpath(file_path, root_path)
+    else:
+        label = os.path.basename(file_path)
+    return label.replace("\\", "/")
+
+
+def collect_messages_for_file(
+    file_path: str,
+    file_kind: FileKind,
+    *,
+    source_file: str,
+) -> List[SourceMessage]:
     """Load one file and return its normalized source messages for extraction."""
     entries = load_entries_for_file(file_path, file_kind)
-    return collect_source_messages(entries)
+    return collect_source_messages(entries, source_file=source_file)
 
 
 def discover_supported_source_files(root_path: str) -> List[Tuple[str, FileKind]]:
@@ -64,22 +78,23 @@ def load_messages_for_input(input_path: str) -> Tuple[List[SourceMessage], List[
         supported_files = discover_supported_source_files(input_path)
         if not supported_files:
             raise ValueError(f"No supported source files found under directory: {input_path}")
+        root_path = input_path
     else:
         supported_files = [(input_path, detect_file_kind(input_path))]
+        root_path = None
 
     messages: List[SourceMessage] = []
-    seen: set[Tuple[str, str, str]] = set()
     scanned_files: List[str] = []
 
     for file_path, file_kind in supported_files:
-        file_messages = collect_messages_for_file(file_path, file_kind)
+        source_file = normalize_source_file_label(file_path, root_path=root_path)
+        file_messages = collect_messages_for_file(
+            file_path,
+            file_kind,
+            source_file=source_file,
+        )
         scanned_files.append(file_path)
-        for item in file_messages:
-            key = (str(item.source or ""), str(item.context or ""), str(item.note or ""))
-            if key in seen:
-                continue
-            seen.add(key)
-            messages.append(item)
+        messages.extend(file_messages)
 
     return messages, scanned_files
 
