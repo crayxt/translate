@@ -398,6 +398,14 @@ def summarize_input_files(file_paths: list[str] | tuple[str, ...]) -> str:
     return f"{cleaned_paths[0]} (+{len(cleaned_paths) - 1} more)"
 
 
+def summarize_recursive_input_folder(folder_path: str, file_count: int) -> str:
+    cleaned_folder = _clean(folder_path)
+    if not cleaned_folder:
+        return ""
+    suffix = "file" if file_count == 1 else "files"
+    return f"{cleaned_folder} ({file_count} recursive {suffix})"
+
+
 def get_local_extract_file_dialog_config(to_po_mode: bool) -> tuple[str, list[tuple[str, str]]]:
     if to_po_mode:
         return "Select local extraction JSON file", JSON_FILETYPES
@@ -429,6 +437,7 @@ def _validate_base_config(
     api_key: str,
     environ: dict[str, str] | None = None,
     rules_path: str = "",
+    allow_input_directories: bool = False,
 ) -> list[str]:
     env = environ if environ is not None else os.environ
     errors: list[str] = []
@@ -446,10 +455,16 @@ def _validate_base_config(
 
     if cleaned_input_files:
         for file_path in cleaned_input_files:
-            if not os.path.isfile(file_path):
+            if allow_input_directories:
+                if not path_exists_as_file_or_dir(file_path):
+                    errors.append(f"Input file or directory does not exist: {file_path}")
+            elif not os.path.isfile(file_path):
                 errors.append(f"Input file does not exist: {file_path}")
     elif not cleaned_input:
         errors.append("Input file is required.")
+    elif allow_input_directories:
+        if not path_exists_as_file_or_dir(cleaned_input):
+            errors.append(f"Input file or directory does not exist: {cleaned_input}")
     elif not os.path.isfile(cleaned_input):
         errors.append(f"Input file does not exist: {cleaned_input}")
 
@@ -544,6 +559,7 @@ def validate_process_gui_config(
         rules_path=config.rules_path,
         api_key=config.api_key,
         environ=environ,
+        allow_input_directories=True,
     )
 
     cleaned_source_file = _clean(config.source_file)
@@ -1748,6 +1764,8 @@ class ProcessToolTab(BaseToolTab):
         self.warnings_report_var = tk.BooleanVar(value=True)
         self.selected_input_files: tuple[str, ...] = ()
         self._selected_input_files_display = ""
+        self.input_files_button: ttk.Button | None = None
+        self.input_folder_button: ttk.Button | None = None
         super().__init__(
             app,
             notebook,
@@ -1757,8 +1775,32 @@ class ProcessToolTab(BaseToolTab):
             input_filetypes=TRANSLATABLE_FILETYPES,
             supports_vocab=True,
             supports_rules=True,
-            input_label="Input file(s)",
+            input_label="Input file(s) / folder",
         )
+
+    def _build_input_row(self, parent: ttk.Frame, row: int) -> int:
+        ttk.Label(parent, text=self.input_label).grid(row=row, column=0, sticky="w", pady=4)
+        ttk.Entry(parent, textvariable=self.input_file_var).grid(
+            row=row,
+            column=1,
+            sticky="ew",
+            pady=4,
+        )
+        button_frame = ttk.Frame(parent)
+        button_frame.grid(row=row, column=2, sticky="nw", padx=(8, 0), pady=4)
+        self.input_files_button = ttk.Button(
+            button_frame,
+            text="Input files",
+            command=self._browse_input_file,
+        )
+        self.input_files_button.grid(row=0, column=0, sticky="ew")
+        self.input_folder_button = ttk.Button(
+            button_frame,
+            text="Input folder",
+            command=self._browse_input_folder,
+        )
+        self.input_folder_button.grid(row=1, column=0, sticky="ew", pady=(4, 0))
+        return 1
 
     def _browse_input_file(self) -> None:
         selected = tuple(
@@ -1771,6 +1813,25 @@ class ProcessToolTab(BaseToolTab):
             return
         self.selected_input_files = selected
         self._selected_input_files_display = summarize_input_files(selected)
+        self.input_file_var.set(self._selected_input_files_display)
+
+    def _browse_input_folder(self) -> None:
+        selected = filedialog.askdirectory(
+            title=f"Select input folder for {self.title}",
+            mustexist=True,
+        )
+        if not selected:
+            return
+        try:
+            resolved_files = translate_task.resolve_translation_input_paths([selected])
+        except ValueError as exc:
+            messagebox.showwarning("No supported files", str(exc))
+            return
+        self.selected_input_files = (selected,)
+        self._selected_input_files_display = summarize_recursive_input_folder(
+            selected,
+            len(resolved_files),
+        )
         self.input_file_var.set(self._selected_input_files_display)
 
     def _resolve_selected_input_files(self) -> tuple[str, ...]:

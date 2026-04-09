@@ -36,6 +36,11 @@ class ProcessGuiSmokeTests(unittest.TestCase):
 
         self.assertEqual(summary, r"C:\tmp\one.po (+2 more)")
 
+    def test_summarize_recursive_input_folder_includes_count(self):
+        summary = process_gui.summarize_recursive_input_folder(r"C:\tmp\tree", 3)
+
+        self.assertEqual(summary, r"C:\tmp\tree (3 recursive files)")
+
     def test_get_local_extract_file_dialog_config_uses_source_files_in_extract_mode(self):
         title, filetypes = process_gui.get_local_extract_file_dialog_config(False)
 
@@ -274,6 +279,28 @@ class ProcessGuiSmokeTests(unittest.TestCase):
                 if os.path.exists(path):
                     os.remove(path)
 
+    def test_validate_process_config_accepts_input_directory(self):
+        input_dir = os.path.join(os.getcwd(), "_tmp_gui_input_dir")
+        input_path = os.path.join(input_dir, "first.po")
+        try:
+            os.makedirs(input_dir, exist_ok=True)
+            with open(input_path, "w", encoding="utf-8") as handle:
+                handle.write('msgid "Open"\nmsgstr ""\n')
+
+            config = process_gui.ProcessGuiConfig(
+                input_file=input_dir,
+                api_key="test-key",
+            )
+
+            errors = process_gui.validate_process_gui_config(config, environ={})
+
+            self.assertEqual(errors, [])
+        finally:
+            if os.path.exists(input_path):
+                os.remove(input_path)
+            if os.path.isdir(input_dir):
+                os.rmdir(input_dir)
+
     def test_build_process_command_includes_required_and_optional_flags(self):
         input_path = os.path.join(os.getcwd(), "_tmp_gui_input.po")
         script_path = os.path.join(os.getcwd(), "_tmp_process_script.py")
@@ -339,6 +366,45 @@ class ProcessGuiSmokeTests(unittest.TestCase):
             for path in (input_path, script_path):
                 if os.path.exists(path):
                     os.remove(path)
+
+    def test_build_process_command_accepts_input_directory(self):
+        input_dir = os.path.join(os.getcwd(), "_tmp_gui_process_dir")
+        input_path = os.path.join(input_dir, "first.po")
+        script_path = os.path.join(os.getcwd(), "_tmp_process_script.py")
+        try:
+            os.makedirs(input_dir, exist_ok=True)
+            with open(input_path, "w", encoding="utf-8") as handle:
+                handle.write('msgid "Open"\nmsgstr ""\n')
+            with open(script_path, "w", encoding="utf-8") as handle:
+                handle.write("print('stub')\n")
+
+            config = process_gui.ProcessGuiConfig(
+                input_file=input_dir,
+                api_key="test-key",
+            )
+
+            command = process_gui.build_process_command(
+                config,
+                python_executable="python",
+                script_path=script_path,
+            )
+
+            self.assertEqual(
+                command[:5],
+                [
+                    "python",
+                    "-u",
+                    os.path.abspath(script_path),
+                    "translate",
+                    input_dir,
+                ],
+            )
+        finally:
+            for path in (input_path, script_path):
+                if os.path.exists(path):
+                    os.remove(path)
+            if os.path.isdir(input_dir):
+                os.rmdir(input_dir)
 
     def test_build_process_command_uses_provider_default_model_when_blank(self):
         input_path = os.path.join(os.getcwd(), "_tmp_gui_default_model.po")

@@ -14,8 +14,9 @@ Use it when you want normal translation output, not QA findings, revision-only c
 - `.strings`
 - `.txt`
 - Android `<resources>` XML
+- a directory tree containing supported files
 
-Multi-file translation is supported when all inputs use the same format.
+Multi-file translation is supported when all resolved inputs use the same format.
 
 Android XML is a special case:
 

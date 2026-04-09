@@ -1,6 +1,7 @@
 ﻿import unittest
-from unittest.mock import patch
+from unittest.mock import AsyncMock, Mock, patch
 import os
+from types import SimpleNamespace
 import xml.etree.ElementTree as ET
 
 import polib
@@ -420,6 +421,57 @@ class ProcessSmokeTests(unittest.TestCase):
         text = process.build_entry_source_text(entry)
         self.assertEqual(text, "Singular: File\nPlural: Files")
 
+    def test_resolve_translation_input_paths_expands_directory_recursively(self):
+        root_dir = os.path.join(os.getcwd(), "_tmp_translate_tree")
+        top_po = os.path.join(root_dir, "top.po")
+        nested_dir = os.path.join(root_dir, "nested")
+        nested_po = os.path.join(nested_dir, "child.po")
+        ignored = os.path.join(nested_dir, "notes.md")
+        try:
+            os.makedirs(nested_dir, exist_ok=True)
+            with open(top_po, "w", encoding="utf-8") as handle:
+                handle.write('msgid "Top"\nmsgstr ""\n')
+            with open(nested_po, "w", encoding="utf-8") as handle:
+                handle.write('msgid "Child"\nmsgstr ""\n')
+            with open(ignored, "w", encoding="utf-8") as handle:
+                handle.write("ignore me\n")
+
+            resolved = process.resolve_translation_input_paths([root_dir])
+
+            self.assertEqual(resolved, [top_po, nested_po])
+        finally:
+            for path in (top_po, nested_po, ignored):
+                if os.path.exists(path):
+                    os.remove(path)
+            if os.path.isdir(nested_dir):
+                os.rmdir(nested_dir)
+            if os.path.isdir(root_dir):
+                os.rmdir(root_dir)
+
+    def test_validate_translation_files_accepts_directory_tree_of_same_format(self):
+        root_dir = os.path.join(os.getcwd(), "_tmp_translate_tree_validate")
+        first_po = os.path.join(root_dir, "one.po")
+        second_po = os.path.join(root_dir, "sub", "two.po")
+        try:
+            os.makedirs(os.path.dirname(second_po), exist_ok=True)
+            with open(first_po, "w", encoding="utf-8") as handle:
+                handle.write('msgid "One"\nmsgstr ""\n')
+            with open(second_po, "w", encoding="utf-8") as handle:
+                handle.write('msgid "Two"\nmsgstr ""\n')
+
+            kind = process.validate_translation_files([root_dir])
+
+            self.assertEqual(kind, process.FileKind.PO)
+        finally:
+            for path in (first_po, second_po):
+                if os.path.exists(path):
+                    os.remove(path)
+            subdir = os.path.dirname(second_po)
+            if os.path.isdir(subdir):
+                os.rmdir(subdir)
+            if os.path.isdir(root_dir):
+                os.rmdir(root_dir)
+
     def test_build_prompt_message_payload_includes_context_and_notes(self):
         entry = polib.POEntry(msgid="Save", msgctxt="Menu|File")
         entry.tcomment = "Action label"
@@ -806,7 +858,7 @@ class ProcessSmokeTests(unittest.TestCase):
             }
         )
 
-        translated_count = process.asyncio.run(
+        translated_count, touched_output_paths = process.asyncio.run(
             process.run_translation_batches(
                 provider=provider,
                 client=object(),
@@ -829,6 +881,10 @@ class ProcessSmokeTests(unittest.TestCase):
         )
 
         self.assertEqual(translated_count, 2)
+        self.assertEqual(
+            touched_output_paths,
+            {"one.ai-translated.po", "two.ai-translated.po"},
+        )
         self.assertEqual(entry_a.msgstr, "Ashu")
         self.assertEqual(entry_b.msgstr, "Saqtau")
         self.assertIn("fuzzy", entry_a.flags)
@@ -1297,6 +1353,129 @@ class ProcessSmokeTests(unittest.TestCase):
             )
 
         self.assertEqual(resolved, vocab_dir)
+
+    def test_run_translation_skips_outputs_for_jobs_with_no_work_items(self):
+        active_job = process.TranslationFileJob(
+            file_path="active.po",
+            file_kind=process.FileKind.PO,
+            entries=[],
+            save_callback=Mock(),
+            output_path="active.ai-translated.po",
+        )
+        idle_job = process.TranslationFileJob(
+            file_path="idle.po",
+            file_kind=process.FileKind.PO,
+            entries=[],
+            save_callback=Mock(),
+            output_path="idle.ai-translated.po",
+        )
+        runtime_context = SimpleNamespace(
+            provider=SimpleNamespace(name="gemini", supports_flex_mode=False),
+            client=object(),
+            resources=SimpleNamespace(
+                vocabulary_text=None,
+                project_rules=None,
+                vocabulary_source="none",
+                rules_source=None,
+            ),
+        )
+        active_item = process.TranslationQueueItem(job=active_job, entry=object())
+
+        with (
+            patch("tasks.translate.resolve_translation_input_paths", return_value=["active.po", "idle.po"]),
+            patch("tasks.translate.validate_translation_files", return_value=process.FileKind.PO),
+            patch("tasks.translate.load_translation_jobs", return_value=[active_job, idle_job]),
+            patch("tasks.translate.build_task_runtime_context", return_value=runtime_context),
+            patch("tasks.translate.build_translation_queue", return_value=[active_item]),
+            patch("tasks.translate.resolve_runtime_limits", return_value=(10, 1, "manual")),
+            patch("tasks.translate.build_translation_generation_config", return_value=object()),
+            patch("tasks.translate.build_scoped_vocabulary_entries", return_value=[]),
+            patch("tasks.translate.build_batches", return_value=[[active_item]]),
+            patch(
+                "tasks.translate.run_translation_batches",
+                new=AsyncMock(return_value=(1, {"active.ai-translated.po"})),
+            ),
+            patch(
+                "tasks.translate.write_translation_warning_report",
+                return_value="active.translation-warnings.json",
+            ) as report_mock,
+            patch("builtins.print"),
+        ):
+            process.run_translation(
+                process.TranslationRunConfig(
+                    files=["selected-root"],
+                    source_file=None,
+                    source_lang="en",
+                    target_lang="kk",
+                    provider="gemini",
+                    model="gemini-test",
+                    thinking_level=None,
+                    batch_size=None,
+                    parallel_requests=None,
+                    vocab=None,
+                    rules=None,
+                    rules_str=None,
+                    retranslate_all=False,
+                    flex_mode=False,
+                    warnings_report=True,
+                )
+            )
+
+        active_job.save_callback.assert_called_once()
+        idle_job.save_callback.assert_not_called()
+        report_mock.assert_called_once()
+        self.assertEqual(report_mock.call_args.kwargs["job"], active_job)
+
+    def test_run_translation_with_no_work_items_writes_no_outputs(self):
+        idle_job = process.TranslationFileJob(
+            file_path="idle.po",
+            file_kind=process.FileKind.PO,
+            entries=[],
+            save_callback=Mock(),
+            output_path="idle.ai-translated.po",
+        )
+        runtime_context = SimpleNamespace(
+            provider=SimpleNamespace(name="gemini", supports_flex_mode=False),
+            client=object(),
+            resources=SimpleNamespace(
+                vocabulary_text=None,
+                project_rules=None,
+                vocabulary_source="none",
+                rules_source=None,
+            ),
+        )
+
+        with (
+            patch("tasks.translate.resolve_translation_input_paths", return_value=["idle.po"]),
+            patch("tasks.translate.validate_translation_files", return_value=process.FileKind.PO),
+            patch("tasks.translate.load_translation_jobs", return_value=[idle_job]),
+            patch("tasks.translate.build_task_runtime_context", return_value=runtime_context),
+            patch("tasks.translate.build_translation_queue", return_value=[]),
+            patch("tasks.translate.write_translation_warning_report") as report_mock,
+            patch("builtins.print"),
+        ):
+            process.run_translation(
+                process.TranslationRunConfig(
+                    files=["selected-root"],
+                    source_file=None,
+                    source_lang="en",
+                    target_lang="kk",
+                    provider="gemini",
+                    model="gemini-test",
+                    thinking_level=None,
+                    batch_size=None,
+                    parallel_requests=None,
+                    vocab=None,
+                    rules=None,
+                    rules_str=None,
+                    retranslate_all=False,
+                    flex_mode=False,
+                    warnings_report=True,
+                )
+            )
+
+        idle_job.save_callback.assert_not_called()
+        report_mock.assert_not_called()
 
     def test_resolve_resource_path_prefers_explicit_path(self):
         with patch("tasks.translate.detect_default_text_resource") as mocked_detect:

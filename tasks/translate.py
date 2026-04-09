@@ -98,6 +98,18 @@ from core.term_extraction import (
     build_scoped_vocabulary_entries,
 )
 
+TRANSLATABLE_INPUT_EXTENSIONS = frozenset(
+    {
+        ".po",
+        ".pot",
+        ".ts",
+        ".resx",
+        ".strings",
+        ".txt",
+        ".xml",
+    }
+)
+
 build_prompt_message_payload = _build_prompt_message_payload
 
 SYSTEM_INSTRUCTION = join_instruction_sections(
@@ -452,7 +464,7 @@ def configure_parser(parser: argparse.ArgumentParser) -> argparse.ArgumentParser
     parser.add_argument(
         "files",
         nargs="+",
-        help="Input .po, .ts, .resx, .strings, .txt, or Android .xml file(s)",
+        help="Input .po, .ts, .resx, .strings, .txt, or Android .xml file(s) or directory tree(s)",
     )
     parser.add_argument(
         "--source-file",
@@ -512,6 +524,40 @@ def config_from_args(args: argparse.Namespace) -> TranslationRunConfig:
 def build_translation_warnings_output_path(output_path: str) -> str:
     root, _ = os.path.splitext(output_path)
     return f"{root}.translation-warnings.json"
+
+
+def _is_supported_translation_input_file(path: str) -> bool:
+    return os.path.splitext(path)[1].lower() in TRANSLATABLE_INPUT_EXTENSIONS
+
+
+def _collect_translation_files_from_directory(root_dir: str) -> List[str]:
+    collected: List[str] = []
+    for current_root, dirnames, filenames in os.walk(root_dir):
+        dirnames.sort(key=str.lower)
+        for filename in sorted(filenames, key=str.lower):
+            candidate = os.path.join(current_root, filename)
+            if _is_supported_translation_input_file(candidate):
+                collected.append(candidate)
+    return collected
+
+
+def resolve_translation_input_paths(input_paths: List[str]) -> List[str]:
+    resolved: List[str] = []
+    for raw_path in input_paths:
+        cleaned_path = str(raw_path or "").strip()
+        if not cleaned_path:
+            continue
+        if os.path.isdir(cleaned_path):
+            directory_files = _collect_translation_files_from_directory(cleaned_path)
+            if not directory_files:
+                raise ValueError(f"No supported translation files found under directory: {cleaned_path}")
+            resolved.extend(directory_files)
+            continue
+        resolved.append(cleaned_path)
+
+    if not resolved:
+        raise ValueError("At least one input file or directory is required.")
+    return resolved
 
 
 def build_translation_warning_item(
@@ -596,6 +642,7 @@ def _normalize_path(path: str) -> str:
 
 
 def validate_translation_files(file_paths: List[str], source_file: str | None = None) -> FileKind:
+    file_paths = resolve_translation_input_paths(file_paths)
     expected_kind: FileKind | None = None
     seen_inputs: set[str] = set()
     seen_outputs: dict[str, str] = {}
@@ -721,11 +768,12 @@ async def run_translation_batches(
     project_rules: str | None,
     scoped_vocabulary_entries: List[ScopedVocabularyEntry],
     warning_items_by_output_path: Dict[str, List[Dict[str, Any]]] | None = None,
-) -> int:
+) -> tuple[int, set[str]]:
     batches = len(all_batches)
 
     translated_count = 0
     completed_batches = 0
+    touched_output_paths: set[str] = set()
 
     async def process_batch(batch_index: int, batch: List[TranslationQueueItem]) -> Dict[str, TranslationResult]:
         msg_map = {
@@ -802,6 +850,7 @@ async def run_translation_batches(
                     entry.flags.append("fuzzy")
                 batch_translated += 1
                 touched_jobs[item.job.output_path] = item.job
+                touched_output_paths.add(item.job.output_path)
 
         translated_count += batch_translated
         completed_batches += 1
@@ -821,13 +870,14 @@ async def run_translation_batches(
         process_batch=process_batch,
         on_batch_completed=on_batch_completed,
     )
-    return translated_count
+    return translated_count, touched_output_paths
 
 
 def run_translation(config: TranslationRunConfig) -> None:
     try:
-        file_kind = validate_translation_files(config.files, source_file=config.source_file)
-        file_jobs = load_translation_jobs(config.files, source_file=config.source_file)
+        resolved_files = resolve_translation_input_paths(config.files)
+        file_kind = validate_translation_files(resolved_files, source_file=config.source_file)
+        file_jobs = load_translation_jobs(resolved_files, source_file=config.source_file)
     except ValueError as exc:
         sys.exit(f"ERROR: {exc}")
 
@@ -885,14 +935,15 @@ def run_translation(config: TranslationRunConfig) -> None:
     )
     all_batches = build_batches(work_items, parallel_requests, batch_size)
     print(f"Total batches: {len(all_batches)}")
+    work_output_paths = {item.job.output_path for item in work_items}
     warning_items_by_output_path: Dict[str, List[Dict[str, Any]]] | None = (
-        {job.output_path: [] for job in file_jobs}
+        {job.output_path: [] for job in file_jobs if job.output_path in work_output_paths}
         if config.warnings_report
         else None
     )
 
     try:
-        asyncio.run(
+        _translated_count, touched_output_paths = asyncio.run(
             run_translation_batches(
                 provider=provider,
                 client=client,
@@ -912,13 +963,14 @@ def run_translation(config: TranslationRunConfig) -> None:
     except RuntimeError as exc:
         sys.exit(str(exc))
 
-    for job in file_jobs:
+    saved_jobs = [job for job in file_jobs if job.output_path in touched_output_paths]
+    for job in saved_jobs:
         if job.save_callback:
             job.save_callback()
 
     warning_report_paths: List[str] = []
     if warning_items_by_output_path is not None:
-        for job in file_jobs:
+        for job in saved_jobs:
             warning_report_paths.append(
                 write_translation_warning_report(
                     job=job,
@@ -932,11 +984,17 @@ def run_translation(config: TranslationRunConfig) -> None:
             )
 
     print("\nTranslation complete.")
-    if len(file_jobs) == 1:
-        print(f"Saved file: {file_jobs[0].output_path}")
+    skipped_without_work = len(file_jobs) - len(work_output_paths)
+    if skipped_without_work > 0:
+        label = "file" if skipped_without_work == 1 else "files"
+        print(f"Skipped {skipped_without_work} fully translated {label} with no work items.")
+    if not saved_jobs:
+        print("No output files were written.")
+    elif len(saved_jobs) == 1:
+        print(f"Saved file: {saved_jobs[0].output_path}")
     else:
-        print(f"Saved files ({len(file_jobs)}):")
-        for job in file_jobs:
+        print(f"Saved files ({len(saved_jobs)}):")
+        for job in saved_jobs:
             print(f"- {job.output_path}")
     if warning_report_paths:
         if len(warning_report_paths) == 1:
