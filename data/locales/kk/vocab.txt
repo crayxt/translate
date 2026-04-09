@@ -498,7 +498,6 @@ draw|сурет салу|verb|draw lines or drawing action
 driver|драйвер|noun|hardware driver
 drive|диск құрылғысы|noun|multi-disk drive
 drop-down|ашылмалы тізім|noun|drop-down control
-drop-down|ашылмалы тізім|noun|drop-down control
 dropdown|ашылмалы тізім|noun|drop-down UI control
 dropped|тасталған|adjective|dropped image or text
 drop|тастау|verb|drop action in drag and drop
@@ -716,7 +715,6 @@ hardness|қаттылық|noun|brush hardness or edge hardness
 hardware|аппараттық құрал|noun|device hardware
 hash|хэш|noun|file checksum or hash value
 hatching|штрихтау|noun|hatching fill pattern
-hatching|штрихтау|noun|hatching fill pattern
 hatch|штрихтау|noun|hatch fill or hatch pattern
 header|жоғарғы колонтитул|noun|
 header|тақырыптама|noun|network requests
@@ -777,7 +775,6 @@ important|маңызды|adjective|important warning or message
 imported|импортталған|adjective|imported path, image, or resource
 importing|импорттау|noun|import operation
 import|импорттау|verb|import file or settings
-impress|Impress|noun|LibreOffice Impress module
 impress|Impress|noun|LibreOffice Impress module
 inches|дюйм|noun|imperial length unit
 include|қамту|verb|include hidden cells or selected range
@@ -1171,7 +1168,6 @@ podcast|подкаст|noun|
 pointer|курсор|noun|
 point|нүкте|noun|
 policy|саясат|noun|security or signature policy
-policy|саясат|noun|security or signature policy
 polygon|полигон|noun|
 polyline|полисызық|noun|polyline geometry
 pool|пул|noun|connection pooling
@@ -1220,7 +1216,6 @@ progress|прогресс|noun|progress display or state
 projection|проекция|noun|layer or output projection
 projector|проектор|noun|display projector
 project|жоба|noun|
-promote|деңгейді көтеру|verb|promote outline or list level
 promote|деңгейді көтеру|verb|promote outline or list level
 properties|қасиеттер|noun|file or media properties dialog
 proportional|пропорционалды|adjective|proportional line spacing
@@ -1490,7 +1485,6 @@ specify|көрсету|verb|specify option or file
 specular|айнадай шағылысу|noun|specular lighting effect
 speed|жылдамдық|noun|
 spellcheck|емлені тексеру|noun|spellcheck feature
-spellcheck|емлені тексеру|noun|spellcheck feature
 spelling|емле|noun|spelling check or spelling option
 spell|емле|noun|spell checking context
 spherical|сфералық|adjective|spherical gradient or spherical blending
@@ -1632,6 +1626,8 @@ transformation|трансформация|noun|2D/3D or tasselled cap transforma
 transformed|түрлендірілген|adjective|transformed geometry or layer
 transform|түрлендіру|verb|transform, FFT, or reprojection operation
 transition|ауысу|noun|slide transition effect
+translate|аудару|verb|translate text or language
+translate|түрлендіру|verb|translate coordinates to another coordinate reference system
 transliterations|транслитерациялар|noun|transliteration search options
 transparency|мөлдірлік|noun|
 transparent|мөлдір|adjective|transparent background or color
