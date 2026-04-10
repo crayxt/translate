@@ -111,6 +111,8 @@ Translation warnings use:
 
 - by default, only unfinished or fuzzy entries are translated
 - `--retranslate-all` forces all translatable entries back through the model
+- recursive directory translation skips generated toolkit artifacts such as `*.ai-translated.*`, `*.glossary.po`, `*.missing-terms.po`, and `*.prototype-*.po`
+- when the scan root is this toolkit repository itself, recursive translation also skips toolkit-owned directories such as `data/`, `logs/`, `docs/`, `tests/`, `tasks/`, and `core/`
 - placeholders and protected tokens are preserved
 - message `context` and `note` are sent to the model when available
 - `relevant_vocabulary` can include multiple variants for the same source term, and the model is instructed to choose by context and part of speech

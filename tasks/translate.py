@@ -109,6 +109,29 @@ TRANSLATABLE_INPUT_EXTENSIONS = frozenset(
         ".xml",
     }
 )
+TRANSLATION_SCAN_EXCLUDED_OUTPUT_SUFFIXES = frozenset(
+    {
+        ".ai-translated",
+        ".glossary",
+        ".missing-terms",
+        ".prototype-glossary",
+        ".prototype-missing-terms",
+    }
+)
+TRANSLATION_SCAN_TOOLKIT_ROOT_EXCLUDED_DIRS = frozenset(
+    {
+        ".git",
+        "__pycache__",
+        "core",
+        "data",
+        "docs",
+        "logs",
+        "tasks",
+        "tests",
+    }
+)
+TRANSLATION_SCAN_TOOLKIT_ROOT_EXCLUDED_FILENAMES = frozenset({"requirements.txt"})
+TOOLKIT_PROJECT_ROOT = os.path.normcase(os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir)))
 
 build_prompt_message_payload = _build_prompt_message_payload
 
@@ -530,13 +553,47 @@ def _is_supported_translation_input_file(path: str) -> bool:
     return os.path.splitext(path)[1].lower() in TRANSLATABLE_INPUT_EXTENSIONS
 
 
+def _normalize_scan_path(path: str) -> str:
+    return os.path.normcase(os.path.abspath(path))
+
+
+def _looks_like_generated_translation_artifact(path: str) -> bool:
+    root, _ext = os.path.splitext(path)
+    normalized_root = str(root or "").strip().lower()
+    return any(
+        normalized_root.endswith(suffix)
+        for suffix in TRANSLATION_SCAN_EXCLUDED_OUTPUT_SUFFIXES
+    )
+
+
+def _should_skip_toolkit_root_scan_file(scan_root: str, candidate: str) -> bool:
+    if _normalize_scan_path(scan_root) != TOOLKIT_PROJECT_ROOT:
+        return False
+    candidate_parent = _normalize_scan_path(os.path.dirname(candidate))
+    if candidate_parent != TOOLKIT_PROJECT_ROOT:
+        return False
+    return os.path.basename(candidate).lower() in TRANSLATION_SCAN_TOOLKIT_ROOT_EXCLUDED_FILENAMES
+
+
 def _collect_translation_files_from_directory(root_dir: str) -> List[str]:
     collected: List[str] = []
+    normalized_root_dir = _normalize_scan_path(root_dir)
+    scanning_toolkit_root = normalized_root_dir == TOOLKIT_PROJECT_ROOT
     for current_root, dirnames, filenames in os.walk(root_dir):
         dirnames.sort(key=str.lower)
+        if scanning_toolkit_root and _normalize_scan_path(current_root) == TOOLKIT_PROJECT_ROOT:
+            dirnames[:] = [
+                dirname
+                for dirname in dirnames
+                if dirname.lower() not in TRANSLATION_SCAN_TOOLKIT_ROOT_EXCLUDED_DIRS
+            ]
         for filename in sorted(filenames, key=str.lower):
             candidate = os.path.join(current_root, filename)
             if _is_supported_translation_input_file(candidate):
+                if _looks_like_generated_translation_artifact(candidate):
+                    continue
+                if _should_skip_toolkit_root_scan_file(root_dir, candidate):
+                    continue
                 collected.append(candidate)
     return collected
 

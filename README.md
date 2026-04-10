@@ -120,6 +120,8 @@ Behavior:
 - default target language is `kk`
 - by default, only unfinished messages are translated
 - `--retranslate-all` forces already translated messages through translation again
+- recursive directory translation skips generated toolkit artifacts such as `*.ai-translated.*`, `*.glossary.po`, `*.missing-terms.po`, and `*.prototype-*.po`
+- when the scan root is this toolkit repository itself, recursive translation also skips toolkit-owned directories such as `data/`, `logs/`, `docs/`, `tests/`, `tasks/`, and `core/`
 - translated output is written as `*.ai-translated.<ext>`
 - `--warnings-report` also writes `*.translation-warnings.json` with only the messages where the model reported ambiguity, unclear meaning, risky glossary choice, or another review-worthy concern
 

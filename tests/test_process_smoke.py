@@ -448,6 +448,77 @@ class ProcessSmokeTests(unittest.TestCase):
             if os.path.isdir(root_dir):
                 os.rmdir(root_dir)
 
+    def test_resolve_translation_input_paths_skips_generated_outputs_in_directory_scan(self):
+        root_dir = os.path.join(os.getcwd(), "_tmp_translate_generated_filter")
+        source_po = os.path.join(root_dir, "source.po")
+        generated_po = os.path.join(root_dir, "source.ai-translated.po")
+        glossary_po = os.path.join(root_dir, "source.glossary.po")
+        missing_po = os.path.join(root_dir, "source.missing-terms.po")
+        prototype_po = os.path.join(root_dir, "source.prototype-missing-terms.po")
+        try:
+            os.makedirs(root_dir, exist_ok=True)
+            for path in (source_po, generated_po, glossary_po, missing_po, prototype_po):
+                with open(path, "w", encoding="utf-8") as handle:
+                    handle.write('msgid "One"\nmsgstr ""\n')
+
+            resolved = process.resolve_translation_input_paths([root_dir])
+
+            self.assertEqual(resolved, [source_po])
+        finally:
+            for path in (source_po, generated_po, glossary_po, missing_po, prototype_po):
+                if os.path.exists(path):
+                    os.remove(path)
+            if os.path.isdir(root_dir):
+                os.rmdir(root_dir)
+
+    def test_resolve_translation_input_paths_skips_toolkit_resource_dirs_when_scanning_repo_root(self):
+        root_dir = os.path.join(os.getcwd(), "_tmp_translate_repo_root")
+        source_dir = os.path.join(root_dir, "locale")
+        source_po = os.path.join(source_dir, "source.po")
+        vocab_dir = os.path.join(root_dir, "data", "locales", "kk")
+        vocab_txt = os.path.join(vocab_dir, "vocab.txt")
+        logs_dir = os.path.join(root_dir, "logs")
+        log_txt = os.path.join(logs_dir, "run.txt")
+        requirements_txt = os.path.join(root_dir, "requirements.txt")
+        try:
+            os.makedirs(source_dir, exist_ok=True)
+            os.makedirs(vocab_dir, exist_ok=True)
+            os.makedirs(logs_dir, exist_ok=True)
+            with open(source_po, "w", encoding="utf-8") as handle:
+                handle.write('msgid "One"\nmsgstr ""\n')
+            with open(vocab_txt, "w", encoding="utf-8") as handle:
+                handle.write("save|сақтау||\n")
+            with open(log_txt, "w", encoding="utf-8") as handle:
+                handle.write("tool log\n")
+            with open(requirements_txt, "w", encoding="utf-8") as handle:
+                handle.write("polib>=1.2.0\n")
+
+            with patch(
+                "tasks.translate.TOOLKIT_PROJECT_ROOT",
+                process._normalize_scan_path(root_dir),
+            ):
+                resolved = process.resolve_translation_input_paths([root_dir])
+
+            self.assertEqual(resolved, [source_po])
+        finally:
+            for path in (source_po, vocab_txt, log_txt, requirements_txt):
+                if os.path.exists(path):
+                    os.remove(path)
+            for path in (source_dir, vocab_dir, logs_dir):
+                if os.path.isdir(path):
+                    os.rmdir(path)
+            data_locales_dir = os.path.join(root_dir, "data", "locales")
+            data_dir = os.path.join(root_dir, "data")
+            if os.path.isdir(data_locales_dir):
+                os.rmdir(data_locales_dir)
+            if os.path.isdir(data_dir):
+                os.rmdir(data_dir)
+            locale_parent = os.path.join(root_dir, "locale")
+            if os.path.isdir(locale_parent):
+                os.rmdir(locale_parent)
+            if os.path.isdir(root_dir):
+                os.rmdir(root_dir)
+
     def test_validate_translation_files_accepts_directory_tree_of_same_format(self):
         root_dir = os.path.join(os.getcwd(), "_tmp_translate_tree_validate")
         first_po = os.path.join(root_dir, "one.po")
