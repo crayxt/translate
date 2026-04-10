@@ -51,6 +51,86 @@ Useful options:
 - `--out`
 - `--max-terms-per-batch`
 
+## Entry Paths
+
+Unified CLI path:
+
+- `translate_cli.main()`
+- `translate_cli.build_parser()`
+- `core.task_cli.apply_provider_environment_from_args()`
+- `translate_cli.run_extract_terms()`
+- `tasks.extract_terms.run_from_args()`
+
+GUI path:
+
+- `process_gui.build_extract_command()`
+- subprocess call to `translate_cli.py extract-terms ...`
+- same unified CLI path as above
+
+Standalone module path:
+
+- `tasks.extract_terms.main()`
+- `core.task_cli.run_task_main()`
+- `tasks.extract_terms.configure_parser()`
+- `core.task_cli.apply_provider_environment_from_args()`
+- `tasks.extract_terms.run_from_args()`
+
+## Execution Flow
+
+```text
+translate_cli / process_gui
+        |
+        v
+tasks.extract_terms.run_from_args
+        |
+        +--> resolve_provider_model
+        +--> build_task_runtime_context
+        |     \--> load_task_resource_context
+        +--> detect_file_kind
+        +--> load_entries_for_file
+        |     \--> load_po / load_ts / load_resx / load_strings / load_txt / load_android_xml
+        +--> collect_source_messages
+        |     \--> core.term_extraction.collect_source_messages
+        +--> normalize_limits
+        +--> build_fixed_batches
+        +--> build_term_output_path
+        +--> build_term_generation_config
+        |     \--> build_term_system_instruction
+        |
+        \--> asyncio.run(run_extraction)
+                |
+                +--> build_term_request_contents
+                |     +--> build_indexed_batch_map
+                |     +--> build_term_request_payload
+                |     +--> build_term_request_spec
+                |     \--> build_task_request_contents
+                +--> run_model_batches
+                +--> parse_term_response
+                |     \--> _json_load_maybe
+                \--> collect raw candidates
+        |
+        +--> merge_term_candidates
+        +--> sort candidates
+        \--> save_terms_as_po or write JSON
+```
+
+## Detailed Call Order
+
+1. `run_from_args()` resolves the effective model name and validates `--max-terms-per-batch` and `--max-attempts`.
+2. `build_task_runtime_context()` creates the provider client and loads vocabulary resources. This task sets `include_rules=False`.
+3. `detect_file_kind()` validates the input format, and `load_entries_for_file()` dispatches to `load_po()`, `load_ts()`, `load_resx()`, `load_strings()`, `load_txt()`, or `load_android_xml()`.
+4. `collect_source_messages()` projects those entries through `core.term_extraction.collect_source_messages()` so extraction batches use contextual source messages instead of raw strings only.
+5. `normalize_limits()` chooses task-default batching when the user omits both runtime knobs.
+6. `build_fixed_batches()` groups source messages into extraction batches.
+7. `build_term_output_path()` chooses the default output filename based on `--mode` and `--out-format`.
+8. `build_term_generation_config()` creates the provider config and injects target-script guidance through `build_term_system_instruction()`.
+9. `run_extraction()` prepares each batch with `build_term_request_contents()`.
+10. `build_term_request_contents()` calls `build_indexed_batch_map()`, `build_term_request_payload()`, `build_term_request_spec()`, and `build_task_request_contents()`.
+11. `run_model_batches()` executes the provider calls and parses each response with `parse_term_response()`.
+12. `parse_term_response()` accepts structured payloads directly or falls back through `_json_load_maybe()` for plain-text JSON responses.
+13. After all batches complete, `merge_term_candidates()` deduplicates source terms case-insensitively and preserves the best-known fields.
+14. The final output path is written either through `save_terms_as_po()` or by dumping the JSON payload with metadata.
+
 ## Modes
 
 - `all`

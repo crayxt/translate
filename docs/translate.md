@@ -71,6 +71,111 @@ Useful options:
 - `--retranslate-all`
 - `--warnings-report`
 
+## Entry Paths
+
+Unified CLI path:
+
+- `translate_cli.main()`
+- `translate_cli.build_parser()`
+- `core.task_cli.apply_provider_environment_from_args()`
+- `translate_cli.run_translate()`
+- `tasks.translate.run_from_args()`
+
+GUI path:
+
+- `process_gui.build_process_command()`
+- subprocess call to `translate_cli.py translate ...`
+- same unified CLI path as above
+
+Standalone module path:
+
+- `tasks.translate.main()`
+- `core.task_cli.run_task_main()`
+- `tasks.translate.configure_parser()`
+- `core.task_cli.apply_provider_environment_from_args()`
+- `tasks.translate.run_from_args()`
+
+## Execution Flow
+
+```text
+translate_cli / process_gui
+        |
+        v
+tasks.translate.run_from_args
+        |
+        v
+config_from_args
+        |
+        v
+run_translation
+        |
+        +--> resolve_translation_input_paths
+        +--> validate_translation_files
+        +--> load_translation_jobs
+                |
+                +--> load_entries_for_translation
+                        |
+                        +--> detect_file_kind
+                        +--> load_po / load_ts / load_resx / load_strings / load_txt
+                        \--> load_paired_android_xml
+        |
+        +--> build_task_runtime_context
+                |
+                +--> get_translation_provider
+                +--> provider.create_client_from_env
+                \--> load_task_resource_context
+                        |
+                        +--> resolve_resource_path
+                        +--> read_optional_vocabulary_file
+                        +--> read_optional_text_file
+                        +--> merge_project_rules
+                        \--> detect_rules_source
+        |
+        +--> build_translation_queue
+        +--> resolve_runtime_limits
+        +--> build_translation_generation_config
+        +--> build_scoped_vocabulary_entries
+        +--> build_batches
+        |
+        \--> asyncio.run(run_translation_batches)
+                |
+                +--> build_translation_message_payload
+                |     \--> build_relevant_vocabulary
+                +--> build_translation_request_contents
+                |     +--> build_translation_request_spec
+                |     +--> build_translation_request_payload
+                |     \--> build_task_request_contents
+                +--> provider.generate_with_retry
+                +--> parse_response
+                +--> optional retry for missing items
+                +--> apply_translation_to_entry
+                +--> build_translation_warning_item
+                \--> save_callback per touched job
+        |
+        +--> final save_callback pass
+        \--> optional write_translation_warning_report
+```
+
+## Detailed Call Order
+
+1. `run_from_args()` converts parsed args into `TranslationRunConfig` with `config_from_args()`.
+2. `run_translation()` expands file and directory inputs with `resolve_translation_input_paths()`.
+3. `validate_translation_files()` checks duplicate inputs, output-path collisions, mixed formats, and Android `--source-file` rules.
+4. `load_translation_jobs()` loads each file through `load_entries_for_translation()`.
+5. `load_entries_for_translation()` dispatches to the format adapter:
+   `load_po()`, `load_ts()`, `load_resx()`, `load_strings()`, `load_txt()`, or `load_paired_android_xml()`.
+6. `build_task_runtime_context()` creates the provider client and loads shared resources.
+7. `load_task_resource_context()` resolves glossary and rules files through `resolve_resource_path()`, `read_optional_vocabulary_file()`, `read_optional_text_file()`, `merge_project_rules()`, and `detect_rules_source()`.
+8. `build_translation_queue()` flattens loaded files into entry-level work items using `select_work_items()`.
+9. `resolve_runtime_limits()` chooses batch size and concurrency, then `build_translation_generation_config()` builds the provider config.
+10. `build_scoped_vocabulary_entries()` precomputes glossary matchers for message-scoped hints.
+11. `build_batches()` either splits evenly in small-file mode or uses `build_fixed_batches()`.
+12. `run_translation_batches()` drives the async work:
+    `build_translation_message_payload()` shapes each message, `build_relevant_vocabulary()` attaches glossary hints, `build_translation_request_contents()` builds provider input, `provider.generate_with_retry()` performs the API call, and `parse_response()` normalizes model output.
+13. If the model omits items, `run_translation_batches()` rebuilds a smaller request with `force_non_empty=True` and retries just the missing subset.
+14. `on_batch_completed()` applies translations with `apply_translation_to_entry()`, records structured warning items with `build_translation_warning_item()`, and writes touched outputs through each job's `save_callback`.
+15. After the async phase, `run_translation()` writes any remaining touched outputs again, optionally emits `write_translation_warning_report()`, and prints the final saved output paths.
+
 ## Output
 
 Default translated output:
