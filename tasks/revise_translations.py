@@ -311,7 +311,7 @@ def get_plural_form_count(entry: UnifiedEntry) -> int:
     if not entry.msgid_plural:
         return 0
     if entry.msgstr_plural:
-        return max(2, len(entry.msgstr_plural))
+        return len(entry.msgstr_plural)
     return 2
 
 

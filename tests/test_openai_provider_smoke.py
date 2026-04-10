@@ -7,6 +7,7 @@ import httpx
 from openai import APIConnectionError
 
 from core.providers.openai import OpenAITranslationProvider
+from tasks import check_translations, translate
 
 
 class _DummyResponses:
@@ -102,9 +103,31 @@ class OpenAIProviderSmokeTests(unittest.TestCase):
         schema = config["text"]["format"]["schema"]
         self.assertEqual(schema["type"], "object")
         self.assertFalse(schema["additionalProperties"])
-        self.assertEqual(schema["required"], ["ok", "nested"])
         self.assertFalse(schema["properties"]["nested"]["additionalProperties"])
-        self.assertEqual(schema["properties"]["nested"]["required"], ["value"])
+        self.assertNotIn("required", schema)
+        self.assertNotIn("required", schema["properties"]["nested"])
+
+    def test_build_generation_config_preserves_optional_task_fields(self):
+        provider = OpenAITranslationProvider()
+
+        translation_config = provider.build_generation_config(
+            thinking_level=None,
+            json_schema=translate.TRANSLATION_RESPONSE_SCHEMA,
+            system_instruction="You are a translator.",
+        )
+        translation_item_schema = translation_config["text"]["format"]["schema"]["properties"]["translations"]["items"]
+        self.assertEqual(translation_item_schema["required"], ["id", "text"])
+        self.assertNotIn("plural_texts", translation_item_schema["required"])
+        self.assertNotIn("warnings", translation_item_schema["required"])
+
+        check_config = provider.build_generation_config(
+            thinking_level=None,
+            json_schema=check_translations.CHECK_RESPONSE_SCHEMA,
+            system_instruction="You are a reviewer.",
+        )
+        issue_schema = check_config["text"]["format"]["schema"]["properties"]["results"]["items"]["properties"]["issues"]["items"]
+        self.assertEqual(issue_schema["required"], ["code", "message", "severity"])
+        self.assertNotIn("suggested_translation", issue_schema["required"])
 
     def test_build_generation_config_sets_flex_service_tier(self):
         provider = OpenAITranslationProvider()

@@ -121,7 +121,6 @@ class OpenAITranslationProvider:
         if isinstance(normalized.get("properties"), dict) and schema_type in (None, "object"):
             normalized["type"] = "object"
             normalized["additionalProperties"] = False
-            normalized["required"] = list(normalized["properties"].keys())
 
         return normalized
 

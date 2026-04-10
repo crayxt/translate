@@ -523,6 +523,15 @@ class ProcessSmokeTests(unittest.TestCase):
 
         self.assertEqual(payload["plural_slots"], ["0", "1", "5"])
 
+    def test_build_prompt_message_payload_plural_form_count_matches_existing_slots(self):
+        entry = polib.POEntry(msgid="Day", msgid_plural="Days")
+        entry.msgstr_plural = {0: ""}
+
+        payload = process.build_prompt_message_payload(entry)
+
+        self.assertEqual(payload["plural_forms"], 1)
+        self.assertEqual(payload["plural_slots"], ["0"])
+
     def test_parse_response_uses_parsed_payload(self):
         payload = {
             "translations": [
@@ -743,6 +752,29 @@ class ProcessSmokeTests(unittest.TestCase):
         forms = message.find("translation").findall("numerusform")
         self.assertEqual(forms[0].text, "%n TERM")
         self.assertEqual(forms[1].text, "%n TERM")
+
+    def test_apply_translation_to_ts_plural_entry_creates_missing_numerusform_nodes(self):
+        message = ET.fromstring(
+            "<message numerus='yes'>"
+            "<source>%n file(s)</source>"
+            "<translation type='unfinished'></translation>"
+            "</message>"
+        )
+        entry = process.TSEntryAdapter(message, context_name="Files")
+
+        applied = process.apply_translation_to_entry(
+            entry,
+            process.TranslationResult(
+                text="Fallback",
+                plural_texts=["%n file", "%n files"],
+            ),
+        )
+
+        self.assertTrue(applied)
+        self.assertEqual(entry.msgstr_plural[0], "%n file")
+        self.assertEqual(entry.msgstr_plural[1], "%n files")
+        forms = message.find("translation").findall("numerusform")
+        self.assertEqual([node.text for node in forms], ["%n file", "%n files"])
 
     def test_ts_plural_entry_translated_requires_all_forms(self):
         message = ET.fromstring(
