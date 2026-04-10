@@ -519,6 +519,39 @@ class ProcessSmokeTests(unittest.TestCase):
             if os.path.isdir(root_dir):
                 os.rmdir(root_dir)
 
+    def test_run_translation_reports_malformed_ts_as_error(self):
+        file_path = os.path.join(os.getcwd(), "_tmp_malformed_translate.ts")
+        try:
+            with open(file_path, "w", encoding="utf-8", newline="") as handle:
+                handle.write("<TS><context>")
+
+            with self.assertRaises(SystemExit) as raised:
+                process.run_translation(
+                    process.TranslationRunConfig(
+                        files=[file_path],
+                        source_file=None,
+                        source_lang="en",
+                        target_lang="kk",
+                        provider="gemini",
+                        model="gemini-test",
+                        thinking_level=None,
+                        batch_size=None,
+                        parallel_requests=None,
+                        vocab=None,
+                        rules=None,
+                        rules_str=None,
+                        retranslate_all=False,
+                        flex_mode=False,
+                        warnings_report=False,
+                    )
+                )
+
+            self.assertIn("ERROR: Failed to load translation input", str(raised.exception))
+            self.assertIn("_tmp_malformed_translate.ts", str(raised.exception))
+        finally:
+            if os.path.exists(file_path):
+                os.remove(file_path)
+
     def test_validate_translation_files_accepts_directory_tree_of_same_format(self):
         root_dir = os.path.join(os.getcwd(), "_tmp_translate_tree_validate")
         first_po = os.path.join(root_dir, "one.po")
@@ -878,8 +911,21 @@ class ProcessSmokeTests(unittest.TestCase):
         )
 
     def test_validate_translation_files_rejects_mixed_file_types(self):
-        with self.assertRaisesRegex(ValueError, "same format"):
-            process.validate_translation_files(["first.po", "second.ts"])
+        po_path = os.path.join(os.getcwd(), "_tmp_validate_mixed.po")
+        ts_path = os.path.join(os.getcwd(), "_tmp_validate_mixed.ts")
+        try:
+            with open(po_path, "w", encoding="utf-8", newline="") as handle:
+                handle.write('msgid ""\nmsgstr ""\n')
+            with open(ts_path, "w", encoding="utf-8", newline="") as handle:
+                handle.write("<TS></TS>")
+
+            with self.assertRaisesRegex(ValueError, "same format"):
+                process.validate_translation_files([po_path, ts_path])
+        finally:
+            if os.path.exists(po_path):
+                os.remove(po_path)
+            if os.path.exists(ts_path):
+                os.remove(ts_path)
 
     def test_select_work_items_respects_retranslate_all(self):
         entries = [

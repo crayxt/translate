@@ -9,6 +9,7 @@ import json
 import math
 import os
 import sys
+import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, List
 
@@ -610,6 +611,10 @@ def resolve_translation_input_paths(input_paths: List[str]) -> List[str]:
                 raise ValueError(f"No supported translation files found under directory: {cleaned_path}")
             resolved.extend(directory_files)
             continue
+        if not os.path.exists(cleaned_path):
+            raise ValueError(f"Input file does not exist: {cleaned_path}")
+        if not os.path.isfile(cleaned_path):
+            raise ValueError(f"Input path is not a file: {cleaned_path}")
         resolved.append(cleaned_path)
 
     if not resolved:
@@ -694,23 +699,26 @@ def load_entries_for_translation(file_path: str, source_file: str | None = None)
     except ValueError as exc:
         sys.exit(f"ERROR: {exc}")
 
-    if file_kind == FileKind.ANDROID_XML:
-        if not source_file:
-            raise ValueError(
-                "--source-file is required for .xml translation runs because the translated file "
-                "does not retain the original source text."
-            )
-        entries, save_callback, output_path, warnings = load_paired_android_xml(source_file, file_path)
-        return file_kind, entries, save_callback, output_path, warnings
-    if file_kind == FileKind.TS:
-        return file_kind, *load_ts(file_path), []
-    if file_kind == FileKind.RESX:
-        return file_kind, *load_resx(file_path), []
-    if file_kind == FileKind.STRINGS:
-        return file_kind, *load_strings(file_path), []
-    if file_kind == FileKind.TXT:
-        return file_kind, *load_txt(file_path), []
-    return file_kind, *load_po(file_path), []
+    try:
+        if file_kind == FileKind.ANDROID_XML:
+            if not source_file:
+                raise ValueError(
+                    "--source-file is required for .xml translation runs because the translated file "
+                    "does not retain the original source text."
+                )
+            entries, save_callback, output_path, warnings = load_paired_android_xml(source_file, file_path)
+            return file_kind, entries, save_callback, output_path, warnings
+        if file_kind == FileKind.TS:
+            return file_kind, *load_ts(file_path), []
+        if file_kind == FileKind.RESX:
+            return file_kind, *load_resx(file_path), []
+        if file_kind == FileKind.STRINGS:
+            return file_kind, *load_strings(file_path), []
+        if file_kind == FileKind.TXT:
+            return file_kind, *load_txt(file_path), []
+        return file_kind, *load_po(file_path), []
+    except (OSError, ET.ParseError) as exc:
+        raise ValueError(f"Failed to load translation input '{file_path}': {exc}") from exc
 
 
 def _normalize_path(path: str) -> str:
@@ -755,6 +763,10 @@ def validate_translation_files(file_paths: List[str], source_file: str | None = 
                 "--source-file is required for .xml translation runs because the translated file "
                 "does not retain the original source text."
             )
+        if not os.path.exists(source_file):
+            raise ValueError(f"Source file does not exist: {source_file}")
+        if not os.path.isfile(source_file):
+            raise ValueError(f"Source file is not a file: {source_file}")
         source_kind = detect_file_kind(source_file)
         if source_kind != expected_kind:
             raise ValueError(
@@ -1087,7 +1099,11 @@ def run_translation(config: TranslationRunConfig) -> None:
 
 
 def run_from_args(args: argparse.Namespace) -> None:
-    run_translation(config_from_args(args))
+    try:
+        config = config_from_args(args)
+    except ValueError as exc:
+        sys.exit(f"ERROR: {exc}")
+    run_translation(config)
 
 
 def main(argv: list[str] | None = None) -> None:

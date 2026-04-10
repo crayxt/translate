@@ -14,6 +14,24 @@ class TranslateCliSmokeTests(unittest.TestCase):
         self.assertEqual(mocked_main.call_args.args[0].files, ["input.po"])
         self.assertEqual(mocked_main.call_args.args[0].target_lang, "fr")
 
+    def test_translate_subcommand_reports_invalid_provider_as_error(self):
+        with self.assertRaises(SystemExit) as raised:
+            translate_cli.main(["translate", "input.po", "--provider", "nope"])
+
+        self.assertEqual(
+            str(raised.exception),
+            "ERROR: Unsupported provider: 'nope'. Supported providers: anthropic, gemini, openai",
+        )
+
+    def test_translate_subcommand_reports_missing_input_file_as_error(self):
+        with self.assertRaises(SystemExit) as raised:
+            translate_cli.main(["translate", "_missing_translate_input.po"])
+
+        self.assertEqual(
+            str(raised.exception),
+            "ERROR: Input file does not exist: _missing_translate_input.po",
+        )
+
     def test_translate_subcommand_accepts_multiple_files(self):
         with patch("translate_cli.run_translate") as mocked_main:
             translate_cli.main(["translate", "one.po", "two.po"])
