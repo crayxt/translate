@@ -67,7 +67,7 @@ from core.resources import (
     read_optional_vocabulary_file as _core_read_optional_vocabulary_file,
     resolve_resource_path as _core_resolve_resource_path,
 )
-from core.providers import DEFAULT_PROVIDER, DEFAULT_PROVIDER_NAME, get_translation_provider
+from core.providers import DEFAULT_PROVIDER, DEFAULT_PROVIDER_NAME, TranslationProvider, get_translation_provider
 from core.request_contents import TaskRequestSpec, build_task_request_contents, render_text_fallback_prompt
 from core.task_cli import (
     add_language_arguments,
@@ -202,7 +202,7 @@ def build_translation_message_payload(
 def build_translation_generation_config(
     thinking_level: str | None = None,
     *,
-    provider: Any = DEFAULT_PROVIDER,
+    provider: TranslationProvider = DEFAULT_PROVIDER,
     system_instruction: str | None = None,
     flex_mode: bool = False,
 ) -> Any:
@@ -292,7 +292,7 @@ def build_translation_request_contents(
     vocabulary: str | None,
     translation_rules: str | None,
     *,
-    provider: Any = DEFAULT_PROVIDER,
+    provider: TranslationProvider = DEFAULT_PROVIDER,
     force_non_empty: bool = False,
 ) -> Any:
     task_spec = build_translation_request_spec(force_non_empty=force_non_empty)
@@ -446,7 +446,7 @@ class TranslationRunConfig:
 class TranslationFileJob:
     file_path: str
     file_kind: FileKind
-    entries: List[Any]
+    entries: List[UnifiedEntry]
     save_callback: Callable[[], None] | None
     output_path: str
 
@@ -454,7 +454,7 @@ class TranslationFileJob:
 @dataclass(frozen=True)
 class TranslationQueueItem:
     job: TranslationFileJob
-    entry: Any
+    entry: UnifiedEntry
 
 
 def configure_parser(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
@@ -723,9 +723,13 @@ def build_translation_queue(
     return queue
 
 
-def build_batches(work_items: List[Any], parallel_requests: int, batch_size: int) -> List[List[Any]]:
+def build_batches(
+    work_items: List[TranslationQueueItem],
+    parallel_requests: int,
+    batch_size: int,
+) -> List[List[TranslationQueueItem]]:
     total = len(work_items)
-    all_batches: List[List[Any]] = []
+    all_batches: List[List[TranslationQueueItem]] = []
     small_file_threshold = parallel_requests * batch_size
     if total < small_file_threshold:
         worker_count = parallel_requests if total >= parallel_requests * MIN_ITEMS_PER_WORKER else total // MIN_ITEMS_PER_WORKER
@@ -755,7 +759,7 @@ def build_batches(work_items: List[Any], parallel_requests: int, batch_size: int
 
 async def run_translation_batches(
     *,
-    provider,
+    provider: TranslationProvider,
     client: Any,
     model: str,
     translation_config: Any,

@@ -6,6 +6,7 @@ from enum import Enum
 from typing import Any, Callable, Dict, List, Tuple
 
 from core.entries import (
+    PluralKey,
     TranslationResult,
     apply_translation_to_entry,
     translation_has_content,
@@ -34,7 +35,7 @@ class UnifiedEntry:
     msgid: str
     msgid_plural: str = ""
     msgstr: str = ""
-    msgstr_plural: Dict[Any, str] = field(default_factory=dict)
+    msgstr_plural: Dict[PluralKey, str] = field(default_factory=dict)
     msgctxt: str = ""
     prompt_note_text: str = ""
     occurrences: List[Tuple[str, str]] = field(default_factory=list)
@@ -96,13 +97,14 @@ def build_output_path(file_path: str, file_kind: FileKind) -> str:
     return f"{root}.ai-translated.{file_kind.value}"
 
 
-def _copy_legacy_plural_map(entry: Any) -> Dict[Any, str]:
+def _copy_legacy_plural_map(entry: Any) -> Dict[PluralKey, str]:
     plural_map = getattr(entry, "msgstr_plural", None)
     if not isinstance(plural_map, dict):
         return {}
-    copied: Dict[Any, str] = {}
+    copied: Dict[PluralKey, str] = {}
     for key, value in plural_map.items():
-        copied[key] = value if isinstance(value, str) else str(value)
+        normalized_key: PluralKey = key if isinstance(key, (int, str)) else str(key)
+        copied[normalized_key] = value if isinstance(value, str) else str(value)
     return copied
 
 

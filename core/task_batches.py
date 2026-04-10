@@ -4,6 +4,8 @@ import asyncio
 import inspect
 from typing import Any, Awaitable, Callable, Mapping, Sequence, TypeVar
 
+from core.providers import TranslationProvider
+
 
 TBatch = TypeVar("TBatch")
 TResult = TypeVar("TResult")
@@ -11,7 +13,7 @@ TItem = TypeVar("TItem")
 TValue = TypeVar("TValue")
 
 
-def build_fixed_batches(items: Sequence[Any], batch_size: int) -> list[list[Any]]:
+def build_fixed_batches(items: Sequence[TItem], batch_size: int) -> list[list[TItem]]:
     if batch_size <= 0:
         raise ValueError("batch_size must be greater than 0")
     return [list(items[index : index + batch_size]) for index in range(0, len(items), batch_size)]
@@ -30,7 +32,7 @@ def build_indexed_batch_map(
     }
 
 
-def find_missing_index_keys(total_items: int, results_by_id: Mapping[str, Any]) -> list[int]:
+def find_missing_index_keys(total_items: int, results_by_id: Mapping[str, object]) -> list[int]:
     return [
         index
         for index in range(total_items)
@@ -47,7 +49,7 @@ def merge_mapping_results(
     return merged
 
 
-async def _maybe_await(value: Any) -> Any:
+async def _maybe_await(value: TValue | Awaitable[TValue]) -> TValue:
     if inspect.isawaitable(value):
         return await value
     return value
@@ -58,7 +60,7 @@ async def run_parallel_batches(
     batches: Sequence[TBatch],
     parallel_requests: int,
     process_batch: Callable[[int, TBatch], Awaitable[TResult]],
-    on_batch_completed: Callable[[int, TBatch, TResult], Any],
+    on_batch_completed: Callable[[int, TBatch, TResult], object | Awaitable[object]],
 ) -> None:
     if parallel_requests <= 0:
         raise ValueError("parallel_requests must be greater than 0")
@@ -85,22 +87,22 @@ async def run_model_batches(
     *,
     batches: Sequence[TBatch],
     parallel_requests: int,
-    provider: Any,
+    provider: TranslationProvider,
     client: Any,
     model: str,
     config: Any,
     max_attempts: int,
     build_contents: Callable[[int, TBatch], Any],
     parse_response: Callable[[Any], TResult],
-    on_batch_completed: Callable[[int, TBatch, TResult], Any],
+    on_batch_completed: Callable[[int, TBatch, TResult], object | Awaitable[object]],
     build_batch_label: Callable[[int], str],
     find_missing_indices: Callable[[TBatch, TResult], list[int]] | None = None,
     build_retry_contents: Callable[[int, TBatch, list[int]], Any] | None = None,
     build_retry_label: Callable[[int], str] | None = None,
     retry_max_attempts: int | Callable[[int], int] = 3,
     merge_retry_result: Callable[[TResult, TResult], TResult] | None = None,
-    on_missing_indices: Callable[[int, TBatch, list[int]], Any] | None = None,
-    on_retry_error: Callable[[int, TBatch, list[int], Exception], Any] | None = None,
+    on_missing_indices: Callable[[int, TBatch, list[int]], object | Awaitable[object]] | None = None,
+    on_retry_error: Callable[[int, TBatch, list[int], Exception], object | Awaitable[object]] | None = None,
 ) -> None:
     if find_missing_indices is not None:
         if build_retry_contents is None or build_retry_label is None or merge_retry_result is None:

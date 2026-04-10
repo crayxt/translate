@@ -6,16 +6,16 @@ import argparse
 import json
 import os
 import sys
-from typing import Any, List, Tuple
+from typing import List, Tuple
 
-from core.formats import FileKind, detect_file_kind, load_android_xml, load_po, load_resx, load_strings, load_ts, load_txt
+from core.formats import FileKind, UnifiedEntry, detect_file_kind, load_android_xml, load_po, load_resx, load_strings, load_ts, load_txt
 from core.resources import load_vocabulary_pairs, resolve_resource_path
 from core.task_cli import add_language_arguments, add_vocabulary_argument, build_task_parser, run_task_main
 from core.term_extraction import SourceMessage, collect_source_messages, extract_terms_locally
 from core.term_handoff import build_json_payload, build_output_path, convert_json_to_po
 
 
-def load_entries_for_file(file_path: str, file_kind: FileKind) -> List[Any]:
+def load_entries_for_file(file_path: str, file_kind: FileKind) -> List[UnifiedEntry]:
     """Load localization entries for any supported local-discovery source file kind."""
     if file_kind == FileKind.ANDROID_XML:
         entries, _, _ = load_android_xml(file_path)

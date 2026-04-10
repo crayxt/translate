@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Callable
 
-from core.providers import get_translation_provider
+from core.providers import TranslationProvider, get_translation_provider
 from core.resources import (
     load_vocabulary_pairs,
     read_optional_text_file,
@@ -15,7 +15,7 @@ from core.task_resources import TaskResourceContext, load_task_resource_context
 
 @dataclass(slots=True)
 class TaskRuntimeContext:
-    provider: Any
+    provider: TranslationProvider
     client: Any
     resources: TaskResourceContext
 
@@ -31,7 +31,7 @@ def build_task_runtime_context(
     include_vocab: bool = True,
     include_rules: bool = True,
     load_vocab_pairs_flag: bool = False,
-    get_translation_provider_fn: Callable[[str | None], Any] = get_translation_provider,
+    get_translation_provider_fn: Callable[[str | None], TranslationProvider] = get_translation_provider,
     load_task_resource_context_fn: Callable[..., TaskResourceContext] = load_task_resource_context,
     resolve_resource_path_fn: Callable[..., str | None] = resolve_resource_path,
     read_optional_vocabulary_file_fn: Callable[..., str | None] = read_optional_vocabulary_file,

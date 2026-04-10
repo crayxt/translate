@@ -4,7 +4,7 @@ import xml.etree.ElementTree as ET
 from typing import Any, Callable, List, Tuple
 
 from core.entries import plural_key_sort_key
-from core.formats.base import EntryStatus, FileKind, build_output_path, wrap_legacy_entries
+from core.formats.base import EntryStatus, FileKind, UnifiedEntry, build_output_path, wrap_legacy_entries
 
 
 class TSEntryAdapter:
@@ -162,7 +162,7 @@ def _entry_status_from_legacy(entry: Any) -> EntryStatus:
     return EntryStatus.TRANSLATED if entry.translated() else EntryStatus.UNTRANSLATED
 
 
-def load_ts(file_path: str) -> Tuple[list[Any], Callable[[], None], str]:
+def load_ts(file_path: str) -> Tuple[list[UnifiedEntry], Callable[[], None], str]:
     print(f"Processing TS file: {file_path}")
     tree = ET.parse(file_path)
     root = tree.getroot()

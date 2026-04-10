@@ -115,6 +115,17 @@ class ReviseTranslationsSmokeTests(unittest.TestCase):
         self.assertEqual(entry.msgstr, "Keep me")
         self.assertNotIn("fuzzy", entry.flags)
 
+    def test_get_plural_form_count_matches_existing_slots(self):
+        entry = UnifiedEntry(
+            file_kind=FileKind.PO,
+            msgid="Day",
+            msgid_plural="Days",
+            msgstr_plural={0: "Kun"},
+            status=EntryStatus.TRANSLATED,
+        )
+
+        self.assertEqual(revise_translations.get_plural_form_count(entry), 1)
+
     def test_load_review_bundle_for_po_uses_embedded_source(self):
         input_path = os.path.join(os.getcwd(), "_tmp_revision.po")
         generated_out = os.path.join(os.getcwd(), "_tmp_revision.ai-translated.po")

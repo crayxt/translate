@@ -20,6 +20,7 @@ TRANSLATION_WARNING_CODES: Tuple[str, ...] = (
 )
 DEFAULT_TRANSLATION_WARNING_CODE = "translate.unclear_source_meaning"
 TranslationWarning = TaskIssue
+PluralKey = int | str
 
 
 @dataclass
@@ -166,7 +167,7 @@ def get_plural_form_count(entry: Any) -> int:
         return 0
     plural_map = getattr(entry, "msgstr_plural", None)
     if isinstance(plural_map, dict) and plural_map:
-        return max(2, len(plural_map))
+        return len(plural_map)
     return 2
 
 
@@ -188,7 +189,7 @@ def translation_has_content(result: TranslationResult | None) -> bool:
     return any(is_non_empty_text(text) for text in result.plural_texts)
 
 
-def plural_key_sort_key(key: Any) -> Tuple[int, Any]:
+def plural_key_sort_key(key: object) -> Tuple[int, int | str]:
     try:
         return 0, int(key)
     except (TypeError, ValueError):
@@ -208,15 +209,15 @@ def apply_translation_to_entry(entry: Any, result: TranslationResult) -> bool:
         plural_map = getattr(entry, "msgstr_plural", None)
         if not isinstance(plural_map, dict):
             return False
-        plural_keys = sorted(plural_map.keys(), key=plural_key_sort_key)
-        if not plural_keys:
-            plural_keys = [0]
-
         usable_forms = [
             normalize_model_escaped_text(source_text, text)
             for text in result.plural_texts
             if is_non_empty_text(text)
         ]
+        plural_keys = sorted(plural_map.keys(), key=plural_key_sort_key)
+        if not plural_keys:
+            target_count = max(get_plural_form_count(entry), len(usable_forms), 1)
+            plural_keys = list(range(target_count))
         if usable_forms:
             for idx, key in enumerate(plural_keys):
                 plural_map[key] = usable_forms[idx] if idx < len(usable_forms) else usable_forms[-1]
@@ -328,6 +329,7 @@ def build_prompt_message_payload(entry: Any) -> Dict[str, Any]:
 
 
 __all__ = [
+    "PluralKey",
     "TranslationResult",
     "apply_translation_to_entry",
     "build_entry_source_text",

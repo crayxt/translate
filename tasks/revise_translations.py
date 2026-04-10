@@ -30,7 +30,7 @@ from core.formats import (
 )
 from core.formats.strings import _detect_text_encoding, _write_text_with_encoding_fallback
 from core.entries import normalize_model_escaped_text
-from core.providers import DEFAULT_PROVIDER, DEFAULT_PROVIDER_NAME, get_translation_provider
+from core.providers import DEFAULT_PROVIDER, DEFAULT_PROVIDER_NAME, TranslationProvider, get_translation_provider
 from core.request_contents import TaskRequestSpec, build_task_request_contents, render_text_fallback_prompt
 from core.task_cli import (
     add_language_arguments,
@@ -176,7 +176,7 @@ class ReviewBundle:
 def build_revision_generation_config(
     thinking_level: str | None = None,
     *,
-    provider: Any = DEFAULT_PROVIDER,
+    provider: TranslationProvider = DEFAULT_PROVIDER,
     system_instruction: str | None = None,
     flex_mode: bool = False,
 ) -> Any:
@@ -311,7 +311,7 @@ def get_plural_form_count(entry: UnifiedEntry) -> int:
     if not entry.msgid_plural:
         return 0
     if entry.msgstr_plural:
-        return max(2, len(entry.msgstr_plural))
+        return len(entry.msgstr_plural)
     return 2
 
 
@@ -400,7 +400,7 @@ def build_revision_request_contents(
     vocabulary: str | None,
     translation_rules: str | None,
     *,
-    provider: Any = DEFAULT_PROVIDER,
+    provider: TranslationProvider = DEFAULT_PROVIDER,
 ) -> Any:
     return build_task_request_contents(
         provider=provider,

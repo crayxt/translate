@@ -15,6 +15,7 @@ from core.review_common import build_target_script_guidance as build_shared_targ
 from core.formats import (
     FileKind,
     PO_WRAP_WIDTH,
+    UnifiedEntry,
     detect_file_kind,
     load_android_xml,
     load_po,
@@ -23,7 +24,7 @@ from core.formats import (
     load_txt,
     load_ts,
 )
-from core.providers import DEFAULT_PROVIDER, DEFAULT_PROVIDER_NAME, get_translation_provider
+from core.providers import DEFAULT_PROVIDER, DEFAULT_PROVIDER_NAME, TranslationProvider, get_translation_provider
 from core.request_contents import TaskRequestSpec, build_task_request_contents, render_text_fallback_prompt
 from core.task_cli import (
     add_language_arguments,
@@ -101,7 +102,7 @@ def build_term_output_path(
     return f"{root}.{suffix}.{output_format}"
 
 
-def collect_source_messages(entries: List[Any]) -> List[Dict[str, str]]:
+def collect_source_messages(entries: List[UnifiedEntry]) -> List[Dict[str, str]]:
     """Project entries through the shared extractor and preserve the existing payload shape."""
     results: List[Dict[str, str]] = []
     for item in collect_shared_source_messages(entries):
@@ -257,7 +258,7 @@ def merge_term_candidates(candidates: List[TermCandidate]) -> List[TermCandidate
 def build_term_generation_config(
     thinking_level: str | None = None,
     *,
-    provider: Any = DEFAULT_PROVIDER,
+    provider: TranslationProvider = DEFAULT_PROVIDER,
     system_instruction: str | None = None,
     flex_mode: bool = False,
 ) -> Any:
@@ -307,7 +308,7 @@ def build_term_request_contents(
     vocabulary: str | None,
     max_terms_per_batch: int,
     *,
-    provider: Any = DEFAULT_PROVIDER,
+    provider: TranslationProvider = DEFAULT_PROVIDER,
 ) -> Any:
     return build_task_request_contents(
         provider=provider,
@@ -383,7 +384,7 @@ def save_terms_as_po(
     po.save(out_path)
 
 
-def load_entries_for_file(file_path: str, file_kind: FileKind) -> List[Any]:
+def load_entries_for_file(file_path: str, file_kind: FileKind) -> List[UnifiedEntry]:
     if file_kind == FileKind.ANDROID_XML:
         entries, _, _ = load_android_xml(file_path)
         return entries
