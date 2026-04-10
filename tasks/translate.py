@@ -566,9 +566,20 @@ def build_translation_warning_item(
     scoped_vocabulary_entries: List[ScopedVocabularyEntry],
 ) -> Dict[str, Any]:
     payload = build_translation_message_payload(entry, scoped_vocabulary_entries)
+    source_text = payload.get("source")
+    if not isinstance(source_text, str) or not source_text.strip():
+        source_text = build_entry_source_text(entry)
+
+    translation_text = result.text
+    if not _is_non_empty_text(translation_text) and result.plural_texts:
+        translation_text = next(
+            (text for text in result.plural_texts if _is_non_empty_text(text)),
+            "",
+        )
+
     item: Dict[str, Any] = {
-        "source": payload.get("source", ""),
-        "translation": result.text,
+        "source": source_text,
+        "translation": translation_text,
         "warnings": [
             serialize_task_issue(warning)
             for warning in result.warnings
@@ -576,7 +587,15 @@ def build_translation_warning_item(
     }
     if result.plural_texts:
         item["plural_texts"] = list(result.plural_texts)
-    for field_name in ("context", "note", "relevant_vocabulary", "plural_forms"):
+    for field_name in (
+        "source_singular",
+        "source_plural",
+        "context",
+        "note",
+        "relevant_vocabulary",
+        "plural_forms",
+        "plural_slots",
+    ):
         if field_name in payload:
             item[field_name] = payload[field_name]
     return item

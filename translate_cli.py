@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import sys
 
+from core.task_cli import apply_provider_environment_from_args
 from tasks import check_translations, extract_terms, extract_terms_local, revise_translations, translate
 
 
@@ -65,6 +66,7 @@ def run_revise(args: argparse.Namespace) -> None:
 def main(argv: list[str] | None = None) -> None:
     parser = build_parser()
     args = parser.parse_args(argv)
+    apply_provider_environment_from_args(args)
     handler = getattr(args, "handler", None)
     if handler is None:
         parser.error(f"Unknown command: {args.command}")

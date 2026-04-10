@@ -989,6 +989,27 @@ class ProcessSmokeTests(unittest.TestCase):
             if os.path.exists(report_path):
                 os.remove(report_path)
 
+    def test_build_translation_warning_item_preserves_plural_source_fields(self):
+        entry = polib.POEntry(msgid="File", msgid_plural="Files")
+        entry.msgstr_plural = {0: "", 1: ""}
+
+        item = process.build_translation_warning_item(
+            entry,
+            process.TranslationResult(
+                text="",
+                plural_texts=["Файл", "Файлдар"],
+            ),
+            [],
+        )
+
+        self.assertEqual(item["source"], "Singular: File\nPlural: Files")
+        self.assertEqual(item["source_singular"], "File")
+        self.assertEqual(item["source_plural"], "Files")
+        self.assertEqual(item["translation"], "Файл")
+        self.assertEqual(item["plural_texts"], ["Файл", "Файлдар"])
+        self.assertEqual(item["plural_forms"], 2)
+        self.assertEqual(item["plural_slots"], ["0", "1"])
+
     def test_unified_entry_model_exposes_status_and_string_type(self):
         in_path = os.path.join(os.getcwd(), "_tmp_unified.strings")
         out_path = os.path.join(os.getcwd(), "_tmp_unified.ai-translated.strings")
