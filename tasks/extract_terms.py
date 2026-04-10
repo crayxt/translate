@@ -15,14 +15,16 @@ from core.review_common import build_target_script_guidance as build_shared_targ
 from core.formats import (
     FileKind,
     PO_WRAP_WIDTH,
+    UnifiedEntry,
     detect_file_kind,
+    load_android_xml,
     load_po,
     load_resx,
     load_strings,
     load_txt,
     load_ts,
 )
-from core.providers import DEFAULT_PROVIDER, DEFAULT_PROVIDER_NAME, get_translation_provider
+from core.providers import DEFAULT_PROVIDER, DEFAULT_PROVIDER_NAME, TranslationProvider, get_translation_provider
 from core.request_contents import TaskRequestSpec, build_task_request_contents, render_text_fallback_prompt
 from core.task_cli import (
     add_language_arguments,
@@ -38,6 +40,7 @@ from core.resources import load_vocabulary_pairs, read_optional_vocabulary_file,
 from core.runtime import resolve_runtime_limits
 from core.task_batches import build_fixed_batches, build_indexed_batch_map, run_model_batches
 from core.task_runtime import build_task_runtime_context, print_startup_configuration
+from core.term_extraction import collect_source_messages as collect_shared_source_messages
 
 
 DiscoveryMode = Literal["all", "missing"]
@@ -49,6 +52,11 @@ You are a software localization terminology analyst.
 MUST:
 - Extract canonical product, domain, and UI terms rather than full-sentence translations
 - Prefer concise glossary-ready source terms and concise target-language equivalents
+- Prefer atomic reusable terms over message-specific phrases
+- If a phrase is only a loose modifier+noun or verb+object combination, split it into standalone terms when each part is reusable on its own
+- Example: prefer `audio` and `channel` over `audio channel`; prefer `save` and `file` over `save file`
+- Keep a multi-word source term only when it is a fixed concept whose meaning would change if split
+- Example: keep `access token`, `command line`, or `dark mode` as whole terms
 - Skip generic stop words, obvious function words, and low-value noise
 - Keep term casing and number canonical unless the source clearly requires otherwise
 - When vocabulary is provided, use it for consistency and do not invent conflicting alternatives
@@ -78,6 +86,7 @@ TERM_DISCOVERY_SCHEMA: dict[str, Any] = {
 
 @dataclass
 class TermCandidate:
+    """One glossary candidate returned by the model-driven extractor."""
     source_term: str
     suggested_translation: str
     reason: str
@@ -89,52 +98,34 @@ def build_term_output_path(
     output_format: OutputFormat = "po",
     mode: DiscoveryMode = "all",
 ) -> str:
+    """Build the default glossary output path for the selected mode and format."""
     root, _ = os.path.splitext(file_path)
     suffix = "glossary" if mode == "all" else "missing-terms"
     return f"{root}.{suffix}.{output_format}"
 
 
-def should_include_text(text: str) -> bool:
-    stripped = text.strip()
-    if not stripped:
-        return False
-    return any(ch.isalpha() for ch in stripped)
-
-
-def collect_source_messages(entries: List[Any]) -> List[str]:
-    results: List[str] = []
-    seen: set[str] = set()
-
-    def add_message(text: str) -> None:
-        normalized = " ".join(text.split())
-        if not should_include_text(normalized):
-            return
-        key = normalized.lower()
-        if key in seen:
-            return
-        seen.add(key)
-        results.append(normalized)
-
-    for entry in entries:
-        if getattr(entry, "obsolete", False):
-            continue
-        if not getattr(entry, "include_in_term_extraction", True):
-            continue
-        add_message(getattr(entry, "msgid", "") or "")
-        plural_text = getattr(entry, "msgid_plural", None)
-        if plural_text:
-            add_message(plural_text)
-
+def collect_source_messages(entries: List[UnifiedEntry]) -> List[Dict[str, str]]:
+    """Project entries through the shared extractor and preserve the existing payload shape."""
+    results: List[Dict[str, str]] = []
+    for item in collect_shared_source_messages(entries):
+        payload: Dict[str, str] = {"source": item.source}
+        if item.context:
+            payload["context"] = item.context
+        if item.note:
+            payload["note"] = item.note
+        results.append(payload)
     return results
 
 
 def build_term_request_spec(mode: DiscoveryMode, max_terms_per_batch: int) -> TaskRequestSpec:
+    """Describe the model contract for glossary-term extraction batches."""
     task_lines: tuple[str, ...]
     if mode == "all":
         task_lines = (
             "Inspect source UI messages and extract a comprehensive project glossary.",
             "Focus on product, domain, and UI terms that should be standardized.",
             "Also extract generic IT terminology as we are updating the glossary.",
+            "Prefer atomic reusable terms over message-specific collocations.",
             "Exclude generic words and stop words.",
             "If vocabulary is provided, use it for consistency but do not limit extraction to only missing terms.",
         )
@@ -142,6 +133,7 @@ def build_term_request_spec(mode: DiscoveryMode, max_terms_per_batch: int) -> Ta
         task_lines = (
             "Inspect source UI messages and find terms that are missing from the provided project vocabulary.",
             "Focus on product, domain, and UI terms that should be standardized in a glossary.",
+            "Prefer atomic reusable terms over message-specific collocations.",
             "Exclude generic words, stop words, and terms already present in the vocabulary.",
         )
 
@@ -150,12 +142,16 @@ def build_term_request_spec(mode: DiscoveryMode, max_terms_per_batch: int) -> Ta
         task_lines=task_lines,
         payload_lines=(
             "The payload contains source language, target language, discovery mode, optional known vocabulary, per-batch term limit, and a `messages` map.",
+            "Each message item may include `source`, `context`, and `note`.",
             "Inspect only the provided source UI messages.",
         ),
         output_lines=(
             "Return only valid JSON, with no markdown or commentary.",
             "Return glossary-ready terms, not full-sentence translations.",
             "Keep `source_term` concise and canonical.",
+            "Default to the smallest standalone reusable term; prefer one-word entries when they preserve the meaning.",
+            "Do not return loose UI phrases like `audio channel` when `audio` and `channel` should be separate glossary entries.",
+            "Keep a multi-word term only for fixed concepts such as `access token`, `command line`, or `dark mode`.",
             "Keep source terms and suggested translations lowercase and singular where natural.",
             f"Provide at most {max_terms_per_batch} terms for this batch.",
             "If vocabulary is provided, use it for consistency and avoid conflicting alternatives.",
@@ -164,13 +160,14 @@ def build_term_request_spec(mode: DiscoveryMode, max_terms_per_batch: int) -> Ta
 
 
 def build_terms_prompt(
-    messages: Dict[str, str],
+    messages: Dict[str, Dict[str, Any]],
     source_lang: str,
     target_lang: str,
     mode: DiscoveryMode,
     vocabulary: str | None,
     max_terms_per_batch: int,
 ) -> str:
+    """Render the plain-text fallback prompt for one extraction batch."""
     return render_text_fallback_prompt(
         task_spec=build_term_request_spec(mode=mode, max_terms_per_batch=max_terms_per_batch),
         payload=build_term_request_payload(
@@ -185,6 +182,7 @@ def build_terms_prompt(
 
 
 def _json_load_maybe(text: str) -> Any:
+    """Parse raw or fenced JSON model output, returning None on failure."""
     payload = text.strip()
     if not payload:
         return None
@@ -201,6 +199,7 @@ def _json_load_maybe(text: str) -> Any:
 
 
 def parse_term_response(response_payload: Any) -> List[TermCandidate]:
+    """Normalize a provider response into validated term candidates."""
     if isinstance(response_payload, dict):
         payload = response_payload
     else:
@@ -239,6 +238,7 @@ def parse_term_response(response_payload: Any) -> List[TermCandidate]:
 
 
 def merge_term_candidates(candidates: List[TermCandidate]) -> List[TermCandidate]:
+    """Deduplicate extracted terms by normalized source text while keeping first-seen order."""
     merged: Dict[str, TermCandidate] = {}
     order: List[str] = []
 
@@ -265,10 +265,11 @@ def merge_term_candidates(candidates: List[TermCandidate]) -> List[TermCandidate
 def build_term_generation_config(
     thinking_level: str | None = None,
     *,
-    provider: Any = DEFAULT_PROVIDER,
+    provider: TranslationProvider = DEFAULT_PROVIDER,
     system_instruction: str | None = None,
     flex_mode: bool = False,
 ) -> Any:
+    """Build the provider generation config for glossary extraction."""
     return provider.build_generation_config(
         thinking_level=thinking_level,
         json_schema=TERM_DISCOVERY_SCHEMA,
@@ -278,6 +279,7 @@ def build_term_generation_config(
 
 
 def build_term_system_instruction(target_lang: str) -> str:
+    """Augment the base terminology instruction with target-script guidance."""
     parts = [TERM_SYSTEM_INSTRUCTION.strip()]
     script_guidance = build_shared_target_script_guidance(
         target_lang,
@@ -289,13 +291,14 @@ def build_term_system_instruction(target_lang: str) -> str:
 
 
 def build_term_request_payload(
-    messages: Dict[str, str],
+    messages: Dict[str, Dict[str, Any]],
     source_lang: str,
     target_lang: str,
     mode: DiscoveryMode,
     vocabulary: str | None,
     max_terms_per_batch: int,
 ) -> dict[str, Any]:
+    """Build the structured payload sent to the glossary extractor."""
     return {
         "project_type": "software_ui_term_extraction",
         "source_lang": source_lang,
@@ -308,15 +311,16 @@ def build_term_request_payload(
 
 
 def build_term_request_contents(
-    messages: Dict[str, str],
+    messages: Dict[str, Dict[str, Any]],
     source_lang: str,
     target_lang: str,
     mode: DiscoveryMode,
     vocabulary: str | None,
     max_terms_per_batch: int,
     *,
-    provider: Any = DEFAULT_PROVIDER,
+    provider: TranslationProvider = DEFAULT_PROVIDER,
 ) -> Any:
+    """Build provider-native request contents for a glossary extraction batch."""
     return build_task_request_contents(
         provider=provider,
         task_spec=build_term_request_spec(mode=mode, max_terms_per_batch=max_terms_per_batch),
@@ -339,6 +343,7 @@ def save_terms_as_po(
     target_lang: str,
     base_vocabulary_pairs: List[Tuple[str, str]] | None = None,
 ) -> None:
+    """Write extracted glossary candidates to a fuzzy PO handoff file."""
     po = polib.POFile()
     po.wrapwidth = PO_WRAP_WIDTH
     po.metadata = {
@@ -391,7 +396,11 @@ def save_terms_as_po(
     po.save(out_path)
 
 
-def load_entries_for_file(file_path: str, file_kind: FileKind) -> List[Any]:
+def load_entries_for_file(file_path: str, file_kind: FileKind) -> List[UnifiedEntry]:
+    """Load source entries for any format supported by model-based term extraction."""
+    if file_kind == FileKind.ANDROID_XML:
+        entries, _, _ = load_android_xml(file_path)
+        return entries
     if file_kind == FileKind.TS:
         entries, _, _ = load_ts(file_path)
         return entries
@@ -413,6 +422,7 @@ def normalize_limits(
     batch_size_arg: int | None,
     parallel_arg: int | None,
 ) -> Tuple[int, int, str]:
+    """Resolve extraction batch limits, applying task defaults when omitted."""
     if batch_size_arg is None and parallel_arg is None:
         batch_size, parallel, _ = resolve_runtime_limits(
             total_items=total_items,
@@ -429,11 +439,12 @@ def normalize_limits(
 
 
 def configure_parser(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
+    """Configure the standalone CLI for model-based glossary extraction."""
     parser.description = (
-        "Extract glossary term candidates from PO/TS/RESX/STRINGS/TXT files using the configured provider "
+        "Extract glossary term candidates from PO/TS/RESX/STRINGS/TXT/Android XML files using the configured provider "
         "and save as PO or JSON"
     )
-    parser.add_argument("file", help="Input .po, .ts, .resx, .strings, or .txt file")
+    parser.add_argument("file", help="Input .po, .ts, .resx, .strings, .txt, or Android .xml file")
     add_language_arguments(parser)
     add_provider_arguments(
         parser,
@@ -461,10 +472,12 @@ def configure_parser(parser: argparse.ArgumentParser) -> argparse.ArgumentParser
 
 
 def build_parser() -> argparse.ArgumentParser:
+    """Build the standalone parser for model-based glossary extraction."""
     return build_task_parser(configure_parser)
 
 
 def run_from_args(args: argparse.Namespace) -> None:
+    """Execute model-based glossary extraction from parsed CLI arguments."""
     model_name = resolve_provider_model(args.provider, args.model)
 
     if args.max_terms_per_batch <= 0:
@@ -543,9 +556,9 @@ def run_from_args(args: argparse.Namespace) -> None:
         all_candidates: List[TermCandidate] = []
         completed = 0
 
-        def build_contents(_batch_index: int, batch: List[str]) -> Any:
+        def build_contents(_batch_index: int, batch: List[Dict[str, str]]) -> Any:
             return build_term_request_contents(
-                messages=build_indexed_batch_map(batch, lambda text: text),
+                messages=build_indexed_batch_map(batch, lambda item: item),
                 source_lang=args.source_lang,
                 target_lang=args.target_lang,
                 mode=args.mode,
@@ -556,7 +569,7 @@ def run_from_args(args: argparse.Namespace) -> None:
 
         def on_batch_completed(
             batch_index: int,
-            batch: List[str],
+            batch: List[Dict[str, str]],
             terms: List[TermCandidate],
         ) -> None:
             nonlocal completed
@@ -627,6 +640,7 @@ def run_from_args(args: argparse.Namespace) -> None:
 
 
 def main(argv: list[str] | None = None) -> None:
+    """Run the glossary extraction CLI."""
     run_task_main(
         configure_parser_fn=configure_parser,
         run_from_args_fn=run_from_args,

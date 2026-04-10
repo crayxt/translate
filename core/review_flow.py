@@ -15,6 +15,7 @@ def normalize_limits(
     default_parallel: int,
     label: str,
 ) -> Tuple[int, int, str]:
+    """Resolve batch limits, applying task defaults when the user omitted both knobs."""
     if batch_size_arg is None and parallel_arg is None:
         batch_size, parallel, _ = resolve_runtime_limits(
             total_items=total_items,
@@ -36,6 +37,7 @@ def has_reviewable_translation(
     plural_texts: list[str] | None = None,
     allow_context_only: bool = False,
 ) -> bool:
+    """Return whether an entry has enough translated content to review."""
     if bool(getattr(entry, "obsolete", False)):
         return False
     if getattr(entry, "status", None) == EntryStatus.SKIPPED:
@@ -63,6 +65,7 @@ def has_reviewable_translation(
 
 
 def limit_items(items: list[Any], num_messages: int | None) -> list[Any]:
+    """Apply an optional positive prefix limit to a review item list."""
     if num_messages is None:
         return items
     if num_messages <= 0:

@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Callable
 
-from core.providers import get_translation_provider
+from core.providers import TranslationProvider, get_translation_provider
 from core.resources import (
     load_vocabulary_pairs,
     read_optional_text_file,
@@ -15,7 +15,8 @@ from core.task_resources import TaskResourceContext, load_task_resource_context
 
 @dataclass(slots=True)
 class TaskRuntimeContext:
-    provider: Any
+    """Provider client plus resolved task resources for one command run."""
+    provider: TranslationProvider
     client: Any
     resources: TaskResourceContext
 
@@ -31,13 +32,14 @@ def build_task_runtime_context(
     include_vocab: bool = True,
     include_rules: bool = True,
     load_vocab_pairs_flag: bool = False,
-    get_translation_provider_fn: Callable[[str | None], Any] = get_translation_provider,
+    get_translation_provider_fn: Callable[[str | None], TranslationProvider] = get_translation_provider,
     load_task_resource_context_fn: Callable[..., TaskResourceContext] = load_task_resource_context,
     resolve_resource_path_fn: Callable[..., str | None] = resolve_resource_path,
     read_optional_vocabulary_file_fn: Callable[..., str | None] = read_optional_vocabulary_file,
     read_optional_text_file_fn: Callable[..., str | None] = read_optional_text_file,
     load_vocabulary_pairs_fn: Callable[..., list[tuple[str, str]]] = load_vocabulary_pairs,
 ) -> TaskRuntimeContext:
+    """Create the provider client and load any task-level resource files."""
     provider = get_translation_provider_fn(provider_name)
     client = provider.create_client_from_env(flex_mode=flex_mode)
     resources = load_task_resource_context_fn(
@@ -61,6 +63,7 @@ def build_task_runtime_context(
 
 
 def print_startup_configuration(*entries: tuple[str, Any]) -> None:
+    """Print a stable label/value summary for task startup diagnostics."""
     print("Startup configuration:")
     for label, value in entries:
         print(f"  {label}: {value}")

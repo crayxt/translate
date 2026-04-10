@@ -17,6 +17,7 @@ def add_language_arguments(
     source_default: str = "en",
     target_default: str = "kk",
 ) -> None:
+    """Register the shared source/target language flags."""
     parser.add_argument("--source-lang", default=source_default, help=f"Default: {source_default}")
     parser.add_argument("--target-lang", default=target_default, help=f"Default: {target_default}")
 
@@ -29,6 +30,7 @@ def add_provider_arguments(
     include_thinking: bool = True,
     include_flex: bool = True,
 ) -> None:
+    """Register provider, model, and provider-specific runtime flags."""
     parser.add_argument(
         "--provider",
         default=default_provider_name,
@@ -67,6 +69,7 @@ def resolve_provider_model(
     *,
     get_translation_provider_fn: Callable[[str | None], object] = get_translation_provider,
 ) -> str:
+    """Return the explicit model name or fall back to the selected provider default."""
     cleaned_model = str(model_name or "").strip()
     if cleaned_model:
         return cleaned_model
@@ -75,15 +78,21 @@ def resolve_provider_model(
 
 
 def add_runtime_limit_arguments(parser: argparse.ArgumentParser) -> None:
+    """Register shared batching and parallelism flags."""
     parser.add_argument("--batch-size", type=int, default=None, help="Batch size (auto if omitted)")
     parser.add_argument("--parallel-requests", type=int, default=None, help="Concurrent requests (auto if omitted)")
 
 
 def add_vocabulary_argument(parser: argparse.ArgumentParser) -> None:
+    """Register the shared glossary/vocabulary resource flag."""
     parser.add_argument(
         "--vocab",
         default=None,
-        help="Optional vocabulary file (auto: data/<target-lang>/vocab.txt). Supports .txt and glossary .po",
+        help=(
+            "Optional vocabulary file or directory "
+            "(auto: data/locales/<target-lang>/vocab.txt or data/locales/<target-lang>/vocab). "
+            "Supports .txt, glossary .po, and .tbx"
+        ),
     )
 
 
@@ -93,6 +102,7 @@ def add_rules_arguments(
     rules_help: str,
     rules_str_help: str,
 ) -> None:
+    """Register file-based and inline translation rules arguments."""
     parser.add_argument(
         "--rules",
         default=None,
@@ -102,6 +112,7 @@ def add_rules_arguments(
 
 
 def add_probe_argument(parser: argparse.ArgumentParser, *, help_text: str) -> None:
+    """Register the shared review/probe count flag."""
     parser.add_argument(
         "--probe",
         "--num-messages",
@@ -118,12 +129,14 @@ def add_max_attempts_argument(
     default: int = 5,
     help_text: str = "Retry attempts per batch",
 ) -> None:
+    """Register the shared per-batch retry limit flag."""
     parser.add_argument("--max-attempts", type=int, default=default, help=help_text)
 
 
 def build_task_parser(
     configure_parser_fn: Callable[[argparse.ArgumentParser], argparse.ArgumentParser],
 ) -> argparse.ArgumentParser:
+    """Create a parser and let the task module configure it."""
     return configure_parser_fn(argparse.ArgumentParser())
 
 
@@ -133,6 +146,7 @@ def run_task_main(
     run_from_args_fn: Callable[[argparse.Namespace], None],
     argv: list[str] | None = None,
 ) -> None:
+    """Run a task CLI with shared parsing and provider-env setup."""
     parser = build_task_parser(configure_parser_fn)
     args = parser.parse_args(argv)
     apply_provider_environment_from_args(args)
@@ -143,6 +157,7 @@ def apply_provider_environment_from_args(
     args: argparse.Namespace,
     environ: dict[str, str] | None = None,
 ) -> None:
+    """Apply CLI-selected provider environment overrides before task execution."""
     env = environ if environ is not None else os.environ
     provider_name = str(getattr(args, "provider", "") or "").strip().lower()
     if provider_name != "gemini":

@@ -86,6 +86,90 @@ class RequestContentsSmokeTests(unittest.TestCase):
         self.assertEqual(payload["source_lang"], "en")
         self.assertEqual(payload["messages"]["0"]["source"], "Open file")
 
+    def test_translate_request_contents_can_include_message_scoped_vocabulary(self):
+        contents = translate.build_translation_request_contents(
+            messages={
+                "0": {
+                    "source": "Start playback",
+                    "relevant_vocabulary": [
+                        {
+                            "source_term": "start",
+                            "target_term": "бастау",
+                            "part_of_speech": "verb",
+                        }
+                    ],
+                }
+            },
+            source_lang="en",
+            target_lang="kk",
+            vocabulary="start|бастау|verb|Start playback",
+            translation_rules="Use imperative tone.",
+            provider=translate.DEFAULT_PROVIDER,
+        )
+
+        payload = contents[0].parts[1].function_response.response
+        self.assertEqual(
+            payload["messages"]["0"]["relevant_vocabulary"][0]["source_term"],
+            "start",
+        )
+
+    def test_translate_request_spec_explicitly_mentions_context_and_variant_selection(self):
+        spec = translate.build_translation_request_spec()
+
+        self.assertIn(
+            "Each plural message includes `source_singular`, `source_plural`, `plural_forms`, and `plural_slots`, and may also include `context`, `note`, and `relevant_vocabulary`.",
+            spec.payload_lines,
+        )
+        self.assertIn(
+            "Each non-plural message includes `source` and may also include `context`, `note`, and `relevant_vocabulary`.",
+            spec.payload_lines,
+        )
+        self.assertIn(
+            "Use `message.context` and `message.note` to disambiguate meaning and select the correct approved terminology for that message.",
+            spec.output_lines,
+        )
+        self.assertIn(
+            "If multiple `message.relevant_vocabulary` entries share the same `source_term`, choose the variant whose `part_of_speech` and `context_note` best match `message.context` and `message.note`.",
+            spec.output_lines,
+        )
+        self.assertIn(
+            "Use `warnings` only when a message has a real ambiguity, unclear meaning, risky glossary choice, or another review-worthy concern.",
+            spec.output_lines,
+        )
+        self.assertIn(
+            "Each warning must be an object with `code`, `message`, and `severity`.",
+            spec.output_lines,
+        )
+        self.assertIn(
+            "Allowed warning codes: translate.ambiguous_term, translate.unclear_source_meaning, translate.glossary_variant_choice, translate.possible_untranslated_token, translate.placeholder_attention, translate.length_or_ui_fit_risk.",
+            spec.output_lines,
+        )
+        self.assertIn(
+            "Use severity `warning` for real ambiguity, uncertainty, or human-review risk.",
+            spec.output_lines,
+        )
+        self.assertIn(
+            "Use severity `info` for notable but non-risk notes, such as preserved structure or a confident glossary choice worth surfacing.",
+            spec.output_lines,
+        )
+        self.assertIn(
+            "Treat `item.source_singular` and `item.source_plural` as separate source forms that must be translated consistently.",
+            spec.output_lines,
+        )
+        self.assertIn(
+            "Align `plural_texts` to the order of `item.plural_slots`.",
+            spec.output_lines,
+        )
+        self.assertIn(
+            "For plural entries, do not put labeled `Singular:`/`Plural:` output inside `text`; put the actual translated forms into `plural_texts` only.",
+            spec.output_lines,
+        )
+
+    def test_translate_system_instruction_uses_structured_plural_wording(self):
+        self.assertIn("source_singular", translate.SYSTEM_INSTRUCTION)
+        self.assertIn("plural_slots", translate.SYSTEM_INSTRUCTION)
+        self.assertNotIn("If the input contains 'Singular:' and 'Plural:'", translate.SYSTEM_INSTRUCTION)
+
     def test_check_request_contents_use_structured_batch_payload(self):
         contents = check_translations.build_check_request_contents(
             messages={"0": {"source": "Open", "translation": "Ashu"}},
@@ -100,9 +184,25 @@ class RequestContentsSmokeTests(unittest.TestCase):
         self.assertEqual(contents[0].parts[1].function_response.name, "translation_check_batch")
         self.assertEqual(payload["messages"]["0"]["translation"], "Ashu")
 
+    def test_check_request_spec_mentions_structured_plural_source_fields(self):
+        spec = check_translations.build_check_request_spec()
+
+        self.assertIn(
+            "Each non-plural message item includes `source` and `translation`, and may also include `context` and `note`.",
+            spec.payload_lines,
+        )
+        self.assertIn(
+            "Each plural message item includes `source_singular`, `source_plural`, `plural_forms`, `plural_slots`, `translation`, and may also include `translation_plural_forms`, `context`, and `note`.",
+            spec.payload_lines,
+        )
+        self.assertIn(
+            "For plural items, review `translation_plural_forms` against both `source_singular` and `source_plural`, not only the first translated form.",
+            spec.output_lines,
+        )
+
     def test_extract_request_contents_use_structured_batch_payload(self):
         contents = extract_terms.build_term_request_contents(
-            messages={"0": "Open file"},
+            messages={"0": {"source": "Open file", "context": "Toolbar"}},
             source_lang="en",
             target_lang="kk",
             mode="missing",
@@ -114,7 +214,8 @@ class RequestContentsSmokeTests(unittest.TestCase):
         payload = contents[0].parts[1].function_response.response
         self.assertEqual(contents[0].parts[1].function_response.name, "term_extraction_batch")
         self.assertEqual(payload["mode"], "missing")
-        self.assertEqual(payload["messages"]["0"], "Open file")
+        self.assertEqual(payload["messages"]["0"]["source"], "Open file")
+        self.assertEqual(payload["messages"]["0"]["context"], "Toolbar")
 
     def test_revision_request_contents_use_structured_batch_payload(self):
         contents = revise_translations.build_revision_request_contents(

@@ -13,6 +13,7 @@ import tkinter as tk
 from dataclasses import dataclass
 from tkinter import filedialog, messagebox, ttk
 from tkinter.scrolledtext import ScrolledText
+from types import SimpleNamespace
 from typing import TextIO
 
 from core.formats import FileKind, detect_file_kind
@@ -23,8 +24,15 @@ from core.providers import (
     get_translation_provider,
 )
 from core.resources import detect_default_text_resource
+from core.task_cli import (
+    GEMINI_BACKEND_CHOICES,
+    apply_provider_environment_from_args,
+    resolve_provider_model,
+)
+from core.term_extraction import validate_max_length
 from tasks import check_translations as check_task
 from tasks import extract_terms as extract_task
+from tasks import extract_terms_local as extract_local_task
 from tasks import revise_translations as revise_task
 from tasks import translate as translate_task
 
@@ -35,26 +43,28 @@ DEFAULT_PROVIDER = DEFAULT_PROVIDER_NAME
 SUPPORTED_PROVIDER_CHOICES = tuple(sorted(SUPPORTED_TRANSLATION_PROVIDERS))
 DEFAULT_MODEL = DEFAULT_PROVIDER_SPEC.default_model
 THINKING_LEVEL_CHOICES = ("", "minimal", "low", "medium", "high")
-GEMINI_BACKEND_CHOICES = ("studio", "vertex")
 EXTRACT_MODE_CHOICES = ("missing", "all")
 EXTRACT_OUTPUT_CHOICES = ("po", "json")
+LOCAL_EXTRACT_MAX_LENGTH_CHOICES = ("1", "2", "3")
 PROGRESS_PERCENT_RE = re.compile(r"Progress:\s*(?P<pct>\d+(?:\.\d+)?)%")
 BATCH_PROGRESS_RE = re.compile(
     r"Progress:\s*completed batches\s+(?P<done>\d+)/(?P<total>\d+)"
 )
 TRANSLATABLE_FILETYPES = [
-    ("Translatable files", "*.po *.ts *.resx *.strings *.txt"),
+    ("Translatable files", "*.po *.ts *.resx *.strings *.txt *.xml"),
     ("PO files", "*.po"),
     ("Qt TS files", "*.ts"),
     ("RESX files", "*.resx"),
     ("Apple strings files", "*.strings"),
     ("Plain text files", "*.txt"),
+    ("Android XML files", "*.xml"),
     ("All files", "*.*"),
 ]
 VOCAB_FILETYPES = [
-    ("Vocabulary files", "*.txt *.po"),
+    ("Vocabulary files", "*.txt *.po *.tbx"),
     ("Text files", "*.txt"),
     ("PO files", "*.po"),
+    ("TBX files", "*.tbx"),
     ("All files", "*.*"),
 ]
 RULES_FILETYPES = [
@@ -63,7 +73,26 @@ RULES_FILETYPES = [
     ("All files", "*.*"),
 ]
 CHECK_FILETYPES = [
+    ("Checkable files", "*.po *.ts"),
     ("PO files", "*.po"),
+    ("Qt TS files", "*.ts"),
+    ("All files", "*.*"),
+]
+LOCAL_EXTRACT_FILETYPES = [
+    ("Supported local extract files", "*.po *.ts *.resx *.strings *.txt *.xml *.json"),
+    ("Translatable files", "*.po *.ts *.resx *.strings *.txt *.xml"),
+    ("Android XML files", "*.xml"),
+    ("JSON files", "*.json"),
+    ("All files", "*.*"),
+]
+LOCAL_EXTRACT_SOURCE_FILETYPES = [
+    ("Supported local extract files", "*.po *.ts *.resx *.strings *.txt *.xml"),
+    ("Translatable files", "*.po *.ts *.resx *.strings *.txt *.xml"),
+    ("Android XML files", "*.xml"),
+    ("All files", "*.*"),
+]
+JSON_FILETYPES = [
+    ("JSON files", "*.json"),
     ("All files", "*.*"),
 ]
 LOG_DIR_NAME = "logs"
@@ -75,6 +104,7 @@ READONLY_STATES = frozenset({"disabled", "readonly"})
 class ProcessGuiConfig:
     input_file: str = ""
     input_files: tuple[str, ...] = ()
+    source_file: str = ""
     source_lang: str = DEFAULT_SOURCE_LANG
     target_lang: str = DEFAULT_TARGET_LANG
     provider: str = DEFAULT_PROVIDER
@@ -90,6 +120,7 @@ class ProcessGuiConfig:
     api_key: str = ""
     flex_mode: bool = False
     retranslate_all: bool = False
+    warnings_report: bool = False
 
 
 @dataclass(slots=True)
@@ -138,6 +169,21 @@ class CheckGuiConfig:
 
 
 @dataclass(slots=True)
+class LocalExtractGuiConfig:
+    input_file: str = ""
+    source_lang: str = DEFAULT_SOURCE_LANG
+    target_lang: str = DEFAULT_TARGET_LANG
+    vocab_path: str = ""
+    mode: str = "missing"
+    max_length: str = "1"
+    out_path: str = ""
+    include_rejected: bool = False
+    to_po: bool = False
+    also_po: bool = False
+    include_borderline: bool = False
+
+
+@dataclass(slots=True)
 class ReviseGuiConfig:
     input_file: str = ""
     source_file: str = ""
@@ -177,6 +223,11 @@ def widget_supports_clipboard(widget_class: str) -> bool:
 
 def widget_is_editable(widget_class: str, state: str) -> bool:
     return widget_supports_clipboard(widget_class) and str(state or "") not in READONLY_STATES
+
+
+def path_exists_as_file_or_dir(path: str) -> bool:
+    cleaned_path = _clean(path)
+    return bool(cleaned_path) and (os.path.isfile(cleaned_path) or os.path.isdir(cleaned_path))
 
 
 def _validate_optional_positive_int(value: str, flag_name: str) -> str | None:
@@ -248,6 +299,7 @@ def detect_default_resource_path(
             extension,
             target_lang,
             base_dir=build_resource_root(base_dir),
+            allow_directory=prefix == "vocab",
         )
         or ""
     )
@@ -271,6 +323,17 @@ def build_system_prompt_preview(tool_key: str, target_lang: str) -> str:
         return translate_task.SYSTEM_INSTRUCTION.strip()
     if normalized_tool == "extract":
         return extract_task.build_term_system_instruction(resolved_target_lang)
+    if normalized_tool == "extract_local":
+        return (
+            "No model system prompt is used for this task.\n\n"
+            "Local term discovery runs deterministic source-side extraction using:\n"
+            "- core/term_extraction.py for normalization, tokenization, filtering, evidence collection, and scoring\n"
+            "- core/term_handoff.py for JSON report shaping and JSON-to-PO conversion\n"
+            "- data/extract/... resource files for stopwords, low-value words, allowlists, and excluded terms\n"
+            "- the approved vocabulary to filter already-known terms in missing mode\n\n"
+            "The task can scan one source file or a whole source directory tree.\n"
+            "It can also convert a local extraction JSON report into a translation-ready PO glossary handoff."
+        )
     if normalized_tool == "check":
         return check_task.build_check_system_instruction(resolved_target_lang)
     if normalized_tool == "revise":
@@ -335,6 +398,20 @@ def summarize_input_files(file_paths: list[str] | tuple[str, ...]) -> str:
     return f"{cleaned_paths[0]} (+{len(cleaned_paths) - 1} more)"
 
 
+def summarize_recursive_input_folder(folder_path: str, file_count: int) -> str:
+    cleaned_folder = _clean(folder_path)
+    if not cleaned_folder:
+        return ""
+    suffix = "file" if file_count == 1 else "files"
+    return f"{cleaned_folder} ({file_count} recursive {suffix})"
+
+
+def get_local_extract_file_dialog_config(to_po_mode: bool) -> tuple[str, list[tuple[str, str]]]:
+    if to_po_mode:
+        return "Select local extraction JSON file", JSON_FILETYPES
+    return "Select source file for local extraction", LOCAL_EXTRACT_SOURCE_FILETYPES
+
+
 def resolve_process_input_files(config: ProcessGuiConfig) -> list[str]:
     explicit_files = [_clean(path) for path in config.input_files if _clean(path)]
     if explicit_files:
@@ -360,6 +437,7 @@ def _validate_base_config(
     api_key: str,
     environ: dict[str, str] | None = None,
     rules_path: str = "",
+    allow_input_directories: bool = False,
 ) -> list[str]:
     env = environ if environ is not None else os.environ
     errors: list[str] = []
@@ -371,17 +449,22 @@ def _validate_base_config(
     cleaned_provider = _clean(provider)
     cleaned_gemini_backend = _clean(gemini_backend).lower()
     cleaned_google_cloud_location = _clean(google_cloud_location)
-    cleaned_model = _clean(model)
     cleaned_vocab = _clean(vocab_path)
     cleaned_rules = _clean(rules_path)
     cleaned_api_key = _clean(api_key)
 
     if cleaned_input_files:
         for file_path in cleaned_input_files:
-            if not os.path.isfile(file_path):
+            if allow_input_directories:
+                if not path_exists_as_file_or_dir(file_path):
+                    errors.append(f"Input file or directory does not exist: {file_path}")
+            elif not os.path.isfile(file_path):
                 errors.append(f"Input file does not exist: {file_path}")
     elif not cleaned_input:
         errors.append("Input file is required.")
+    elif allow_input_directories:
+        if not path_exists_as_file_or_dir(cleaned_input):
+            errors.append(f"Input file or directory does not exist: {cleaned_input}")
     elif not os.path.isfile(cleaned_input):
         errors.append(f"Input file does not exist: {cleaned_input}")
 
@@ -415,9 +498,6 @@ def _validate_base_config(
         ):
             errors.append("Set Gemini backend to 'vertex' to use a custom Google Cloud location.")
 
-    if not cleaned_model:
-        errors.append("Model is required.")
-
     try:
         _validate_choice(thinking_level, THINKING_LEVEL_CHOICES, "Thinking level")
     except ValueError as exc:
@@ -432,8 +512,8 @@ def _validate_base_config(
         except ValueError as exc:
             errors.append(str(exc))
 
-    if cleaned_vocab and not os.path.isfile(cleaned_vocab):
-        errors.append(f"Vocabulary file does not exist: {cleaned_vocab}")
+    if cleaned_vocab and not path_exists_as_file_or_dir(cleaned_vocab):
+        errors.append(f"Vocabulary file or directory does not exist: {cleaned_vocab}")
 
     if cleaned_rules and not os.path.isfile(cleaned_rules):
         errors.append(f"Rules file does not exist: {cleaned_rules}")
@@ -479,11 +559,26 @@ def validate_process_gui_config(
         rules_path=config.rules_path,
         api_key=config.api_key,
         environ=environ,
+        allow_input_directories=True,
     )
-    try:
-        translate_task.validate_translation_files(input_files)
-    except ValueError as exc:
-        errors.append(str(exc))
+
+    cleaned_source_file = _clean(config.source_file)
+    if translation_requires_source_file(input_files):
+        if not cleaned_source_file:
+            errors.append("Source file is required for Android .xml translation runs.")
+        elif not os.path.isfile(cleaned_source_file):
+            errors.append(f"Source file does not exist: {cleaned_source_file}")
+    elif cleaned_source_file and not os.path.isfile(cleaned_source_file):
+        errors.append(f"Source file does not exist: {cleaned_source_file}")
+
+    if not any(message.startswith("Source file ") for message in errors):
+        try:
+            translate_task.validate_translation_files(
+                input_files,
+                source_file=cleaned_source_file or None,
+            )
+        except ValueError as exc:
+            errors.append(str(exc))
     return errors
 
 
@@ -525,6 +620,58 @@ def validate_extract_gui_config(
             _validate_optional_positive_int(value, label)
         except ValueError as exc:
             errors.append(str(exc))
+
+    return errors
+
+
+def validate_local_extract_gui_config(config: LocalExtractGuiConfig) -> list[str]:
+    errors: list[str] = []
+
+    cleaned_input = _clean(config.input_file)
+    cleaned_vocab = _clean(config.vocab_path)
+    cleaned_out = _clean(config.out_path)
+    cleaned_source = _clean(config.source_lang)
+    cleaned_target = _clean(config.target_lang)
+    cleaned_mode = _clean(config.mode)
+    cleaned_max_length = _clean(config.max_length)
+
+    if not cleaned_input:
+        errors.append("Input file is required.")
+    elif config.to_po:
+        if not os.path.isfile(cleaned_input):
+            errors.append(f"Input file does not exist: {cleaned_input}")
+    elif not os.path.isfile(cleaned_input) and not os.path.isdir(cleaned_input):
+        errors.append(f"Input file or directory does not exist: {cleaned_input}")
+
+    if not config.to_po:
+        if not cleaned_source:
+            errors.append("Source language is required.")
+        if not cleaned_target:
+            errors.append("Target language is required.")
+        try:
+            _validate_choice(cleaned_mode, EXTRACT_MODE_CHOICES, "Mode")
+        except ValueError as exc:
+            errors.append(str(exc))
+        try:
+            max_length_value = int(cleaned_max_length)
+        except ValueError:
+            errors.append("Max length must be 1, 2, or 3.")
+        else:
+            try:
+                validate_max_length(max_length_value)
+            except ValueError:
+                errors.append("Max length must be 1, 2, or 3.")
+        if cleaned_vocab and not path_exists_as_file_or_dir(cleaned_vocab):
+            errors.append(f"Vocabulary file or directory does not exist: {cleaned_vocab}")
+        if cleaned_out and not cleaned_out.lower().endswith(".json"):
+            errors.append("Local extraction output path should end with .json.")
+    else:
+        if config.also_po:
+            errors.append("JSON to PO mode cannot also request one-shot PO output.")
+        if cleaned_input and not cleaned_input.lower().endswith(".json"):
+            errors.append("JSON to PO mode requires a .json input file.")
+        if cleaned_out and not cleaned_out.lower().endswith(".po"):
+            errors.append("PO output path should end with .po in JSON to PO mode.")
 
     return errors
 
@@ -573,9 +720,15 @@ def _detect_revision_file_kind(input_file: str) -> FileKind | None:
         return None
 
 
+def translation_requires_source_file(input_files: list[str] | tuple[str, ...]) -> bool:
+    if len(input_files) != 1:
+        return False
+    return _detect_revision_file_kind(input_files[0]) == FileKind.ANDROID_XML
+
+
 def revision_requires_source_file(input_file: str) -> bool:
     file_kind = _detect_revision_file_kind(input_file)
-    return file_kind in (FileKind.STRINGS, FileKind.RESX, FileKind.TXT)
+    return file_kind in (FileKind.ANDROID_XML, FileKind.STRINGS, FileKind.RESX, FileKind.TXT)
 
 
 def validate_revise_gui_config(
@@ -601,12 +754,12 @@ def validate_revise_gui_config(
 
     file_kind = _detect_revision_file_kind(config.input_file)
     if _clean(config.input_file) and file_kind is None:
-        errors.append("Input file must be a supported .po, .ts, .resx, .strings, or .txt file.")
+        errors.append("Input file must be a supported .po, .ts, .resx, .strings, .txt, or Android .xml file.")
 
     cleaned_source_file = _clean(config.source_file)
     if revision_requires_source_file(config.input_file):
         if not cleaned_source_file:
-            errors.append("Source file is required for .strings, .resx, and .txt revision runs.")
+            errors.append("Source file is required for Android .xml, .strings, .resx, and .txt revision runs.")
         elif not os.path.isfile(cleaned_source_file):
             errors.append(f"Source file does not exist: {cleaned_source_file}")
     elif cleaned_source_file and not os.path.isfile(cleaned_source_file):
@@ -647,6 +800,7 @@ def _append_common_cli_args(
     vocab_path: str = "",
 ) -> None:
     provider_name = _clean(provider) or DEFAULT_PROVIDER
+    model_name = resolve_provider_model(provider_name, _clean(model) or None)
     command.extend(
         [
             "--source-lang",
@@ -656,7 +810,7 @@ def _append_common_cli_args(
             "--provider",
             provider_name,
             "--model",
-            _clean(model),
+            model_name,
         ]
     )
 
@@ -738,8 +892,14 @@ def build_process_command(
     if rules_str:
         command.extend(["--rules-str", rules_str])
 
+    source_file = _clean(config.source_file)
+    if source_file:
+        command.extend(["--source-file", source_file])
+
     if config.retranslate_all:
         command.append("--retranslate-all")
+    if config.warnings_report:
+        command.append("--warnings-report")
 
     return command
 
@@ -798,6 +958,61 @@ def build_extract_command(
             or "5",
         ]
     )
+    return command
+
+
+def build_local_extract_command(
+    config: LocalExtractGuiConfig,
+    python_executable: str | None = None,
+    script_path: str | None = None,
+) -> list[str]:
+    errors = validate_local_extract_gui_config(config)
+    if errors:
+        raise ValueError("\n".join(errors))
+
+    resolved_script = os.path.abspath(script_path or build_cli_script_path())
+    if not os.path.isfile(resolved_script):
+        raise ValueError(f"translate_cli.py not found at: {resolved_script}")
+
+    command = [
+        python_executable or sys.executable,
+        "-u",
+        resolved_script,
+        "extract-terms-local",
+        _clean(config.input_file),
+    ]
+
+    if config.to_po:
+        command.append("--to-po")
+        if config.include_borderline:
+            command.append("--include-borderline")
+    else:
+        command.extend(
+            [
+                "--source-lang",
+                _clean(config.source_lang),
+                "--target-lang",
+                _clean(config.target_lang),
+                "--mode",
+                _clean(config.mode) or "missing",
+                "--max-length",
+                _clean(config.max_length) or "1",
+            ]
+        )
+        vocab_path = _clean(config.vocab_path)
+        if vocab_path:
+            command.extend(["--vocab", vocab_path])
+        if config.include_rejected:
+            command.append("--include-rejected")
+        if config.also_po:
+            command.append("--also-po")
+            if config.include_borderline:
+                command.append("--include-borderline")
+
+    out_path = _clean(config.out_path)
+    if out_path:
+        command.extend(["--out", out_path])
+
     return command
 
 
@@ -957,13 +1172,14 @@ def build_script_env(
     api_key_env = provider_spec.api_key_env
     if cleaned_api_key and api_key_env:
         env[api_key_env] = cleaned_api_key
-    if _clean(provider).lower() == "gemini":
-        backend_value = _clean(gemini_backend).lower() or "studio"
-        env["GOOGLE_GENAI_USE_VERTEXAI"] = "true" if backend_value == "vertex" else "false"
-        if backend_value == "vertex":
-            location_value = _clean(google_cloud_location)
-            if location_value:
-                env["GOOGLE_CLOUD_LOCATION"] = location_value
+    apply_provider_environment_from_args(
+        SimpleNamespace(
+            provider=provider,
+            gemini_backend=gemini_backend,
+            google_cloud_location=google_cloud_location,
+        ),
+        environ=env,
+    )
     return env
 
 
@@ -993,6 +1209,8 @@ class BaseToolTab(ttk.Frame):
         supports_vocab: bool = True,
         supports_rules: bool = False,
         input_label: str = "Input file",
+        supports_provider_controls: bool = True,
+        preview_label: str = "System prompt",
     ) -> None:
         super().__init__(notebook)
         self.app = app
@@ -1003,6 +1221,8 @@ class BaseToolTab(ttk.Frame):
         self.supports_vocab = supports_vocab
         self.supports_rules = supports_rules
         self.input_label = input_label
+        self.supports_provider_controls = supports_provider_controls
+        self.preview_label = preview_label
         self.resource_root = app.resource_root
         self._auto_vocab_path = ""
         self._auto_rules_path = ""
@@ -1068,67 +1288,61 @@ class BaseToolTab(ttk.Frame):
         ttk.Label(form, text=self.title).grid(row=0, column=0, columnspan=3, sticky="w")
 
         row = 1
-        self._add_entry_row(
-            form,
-            row=row,
-            label=self.input_label,
-            variable=self.input_file_var,
-            browse_command=self._browse_input_file,
-        )
-        row += 1
+        row += self._build_input_row(form, row)
         self._add_entry_row(form, row=row, label="Source lang", variable=self.source_lang_var)
         row += 1
         self._add_entry_row(form, row=row, label="Target lang", variable=self.target_lang_var)
         row += 1
-        self._add_combo_row(
-            form,
-            row=row,
-            label="Provider",
-            variable=self.provider_var,
-            values=SUPPORTED_PROVIDER_CHOICES,
-        )
-        row += 1
-        ttk.Label(form, text="Gemini backend").grid(row=row, column=0, sticky="w", pady=4)
-        self.gemini_backend_combo = ttk.Combobox(
-            form,
-            textvariable=self.gemini_backend_var,
-            values=GEMINI_BACKEND_CHOICES,
-        )
-        self.gemini_backend_combo.grid(row=row, column=1, sticky="ew", pady=4)
-        row += 1
-        ttk.Label(form, text="GCP location").grid(row=row, column=0, sticky="w", pady=4)
-        self.google_cloud_location_entry = ttk.Entry(
-            form,
-            textvariable=self.google_cloud_location_var,
-        )
-        self.google_cloud_location_entry.grid(row=row, column=1, sticky="ew", pady=4)
-        row += 1
-        self._add_entry_row(form, row=row, label="Model", variable=self.model_var)
-        row += 1
-        ttk.Label(form, text="Thinking level").grid(row=row, column=0, sticky="w", pady=4)
-        self.thinking_level_combo = ttk.Combobox(
-            form,
-            textvariable=self.thinking_level_var,
-            values=THINKING_LEVEL_CHOICES,
-        )
-        self.thinking_level_combo.grid(row=row, column=1, sticky="ew", pady=4)
-        row += 1
-        self.flex_mode_button = ttk.Checkbutton(
-            form,
-            text="Flex mode",
-            variable=self.flex_mode_var,
-        )
-        self.flex_mode_button.grid(row=row, column=0, columnspan=3, sticky="w", pady=(0, 4))
-        row += 1
-        self._add_entry_row(form, row=row, label="Batch size", variable=self.batch_size_var)
-        row += 1
-        self._add_entry_row(
-            form,
-            row=row,
-            label="Parallel requests",
-            variable=self.parallel_requests_var,
-        )
-        row += 1
+        if self.supports_provider_controls:
+            self._add_combo_row(
+                form,
+                row=row,
+                label="Provider",
+                variable=self.provider_var,
+                values=SUPPORTED_PROVIDER_CHOICES,
+            )
+            row += 1
+            ttk.Label(form, text="Gemini backend").grid(row=row, column=0, sticky="w", pady=4)
+            self.gemini_backend_combo = ttk.Combobox(
+                form,
+                textvariable=self.gemini_backend_var,
+                values=GEMINI_BACKEND_CHOICES,
+            )
+            self.gemini_backend_combo.grid(row=row, column=1, sticky="ew", pady=4)
+            row += 1
+            ttk.Label(form, text="GCP location").grid(row=row, column=0, sticky="w", pady=4)
+            self.google_cloud_location_entry = ttk.Entry(
+                form,
+                textvariable=self.google_cloud_location_var,
+            )
+            self.google_cloud_location_entry.grid(row=row, column=1, sticky="ew", pady=4)
+            row += 1
+            self._add_entry_row(form, row=row, label="Model", variable=self.model_var)
+            row += 1
+            ttk.Label(form, text="Thinking level").grid(row=row, column=0, sticky="w", pady=4)
+            self.thinking_level_combo = ttk.Combobox(
+                form,
+                textvariable=self.thinking_level_var,
+                values=THINKING_LEVEL_CHOICES,
+            )
+            self.thinking_level_combo.grid(row=row, column=1, sticky="ew", pady=4)
+            row += 1
+            self.flex_mode_button = ttk.Checkbutton(
+                form,
+                text="Flex mode",
+                variable=self.flex_mode_var,
+            )
+            self.flex_mode_button.grid(row=row, column=0, columnspan=3, sticky="w", pady=(0, 4))
+            row += 1
+            self._add_entry_row(form, row=row, label="Batch size", variable=self.batch_size_var)
+            row += 1
+            self._add_entry_row(
+                form,
+                row=row,
+                label="Parallel requests",
+                variable=self.parallel_requests_var,
+            )
+            row += 1
 
         if self.supports_vocab:
             self._add_entry_row(
@@ -1150,23 +1364,24 @@ class BaseToolTab(ttk.Frame):
             )
             row += 1
 
-        self._add_entry_row(
-            form,
-            row=row,
-            label="API key",
-            variable=self.api_key_var,
-            show="*",
-        )
-        row += 1
+        if self.supports_provider_controls:
+            self._add_entry_row(
+                form,
+                row=row,
+                label="API key",
+                variable=self.api_key_var,
+                show="*",
+            )
+            row += 1
 
-        ttk.Label(form, textvariable=self.api_status_var).grid(
-            row=row,
-            column=0,
-            columnspan=3,
-            sticky="w",
-            pady=(2, 8),
-        )
-        row += 1
+            ttk.Label(form, textvariable=self.api_status_var).grid(
+                row=row,
+                column=0,
+                columnspan=3,
+                sticky="w",
+                pady=(2, 8),
+            )
+            row += 1
 
         row = self._build_tool_specific_fields(form, row)
 
@@ -1190,7 +1405,7 @@ class BaseToolTab(ttk.Frame):
             state="disabled",
         )
         self.system_prompt_text.grid(row=0, column=0, sticky="nsew")
-        instructions_notebook.add(system_tab, text="System prompt")
+        instructions_notebook.add(system_tab, text=self.preview_label)
 
         if self.supports_rules:
             preview_tab = ttk.Frame(instructions_notebook, padding=6)
@@ -1258,6 +1473,16 @@ class BaseToolTab(ttk.Frame):
     def _build_tool_specific_fields(self, parent: ttk.Frame, start_row: int) -> int:
         return start_row
 
+    def _build_input_row(self, parent: ttk.Frame, row: int) -> int:
+        self._add_entry_row(
+            parent,
+            row=row,
+            label=self.input_label,
+            variable=self.input_file_var,
+            browse_command=self._browse_input_file,
+        )
+        return 1
+
     def _add_entry_row(
         self,
         parent: ttk.Frame,
@@ -1292,14 +1517,16 @@ class BaseToolTab(ttk.Frame):
         label: str,
         variable: tk.StringVar,
         values: tuple[str, ...],
-    ) -> None:
+    ) -> ttk.Combobox:
         ttk.Label(parent, text=label).grid(row=row, column=0, sticky="w", pady=4)
-        ttk.Combobox(
+        combo = ttk.Combobox(
             parent,
             textvariable=variable,
             state="readonly",
             values=values,
-        ).grid(row=row, column=1, sticky="ew", pady=4)
+        )
+        combo.grid(row=row, column=1, sticky="ew", pady=4)
+        return combo
 
     def _browse_input_file(self) -> None:
         selected = filedialog.askopenfilename(
@@ -1341,6 +1568,9 @@ class BaseToolTab(ttk.Frame):
         self._load_rules_preview()
 
     def _refresh_api_status(self) -> None:
+        if not self.supports_provider_controls:
+            self.api_status_var.set("")
+            return
         provider_name = _clean(self.provider_var.get()) or DEFAULT_PROVIDER
         try:
             provider_spec = get_translation_provider(provider_name)
@@ -1376,6 +1606,8 @@ class BaseToolTab(ttk.Frame):
         self.api_status_var.set(f"API key source: missing ({api_key_env})")
 
     def _refresh_provider_specific_controls(self) -> None:
+        if not self.supports_provider_controls:
+            return
         if (
             self.flex_mode_button is None
             and self.thinking_level_combo is None
@@ -1410,13 +1642,13 @@ class BaseToolTab(ttk.Frame):
                 widget.configure(state=gemini_state)
 
     def _apply_default_model(self, force: bool = False) -> None:
+        if not self.supports_provider_controls:
+            return
         provider_name = _clean(self.provider_var.get()) or DEFAULT_PROVIDER
         try:
-            provider_spec = get_translation_provider(provider_name)
+            new_default_model = resolve_provider_model(provider_name, None)
         except ValueError:
             new_default_model = DEFAULT_MODEL
-        else:
-            new_default_model = _clean(provider_spec.default_model) or DEFAULT_MODEL
 
         model_value, self._auto_model = choose_resource_field_value(
             current_value=self.model_var.get(),
@@ -1512,6 +1744,8 @@ class BaseToolTab(ttk.Frame):
         self.log_text.configure(state="disabled")
 
     def build_env(self) -> dict[str, str]:
+        if not self.supports_provider_controls:
+            return dict(os.environ)
         return build_script_env(
             self.api_key_var.get(),
             provider=self.provider_var.get(),
@@ -1525,9 +1759,13 @@ class BaseToolTab(ttk.Frame):
 
 class ProcessToolTab(BaseToolTab):
     def __init__(self, app: "ProcessGuiApp", notebook: ttk.Notebook) -> None:
+        self.source_file_var = tk.StringVar()
         self.retranslate_all_var = tk.BooleanVar(value=False)
+        self.warnings_report_var = tk.BooleanVar(value=True)
         self.selected_input_files: tuple[str, ...] = ()
         self._selected_input_files_display = ""
+        self.input_files_button: ttk.Button | None = None
+        self.input_folder_button: ttk.Button | None = None
         super().__init__(
             app,
             notebook,
@@ -1537,8 +1775,32 @@ class ProcessToolTab(BaseToolTab):
             input_filetypes=TRANSLATABLE_FILETYPES,
             supports_vocab=True,
             supports_rules=True,
-            input_label="Input file(s)",
+            input_label="Input file(s) / folder",
         )
+
+    def _build_input_row(self, parent: ttk.Frame, row: int) -> int:
+        ttk.Label(parent, text=self.input_label).grid(row=row, column=0, sticky="w", pady=4)
+        ttk.Entry(parent, textvariable=self.input_file_var).grid(
+            row=row,
+            column=1,
+            sticky="ew",
+            pady=4,
+        )
+        button_frame = ttk.Frame(parent)
+        button_frame.grid(row=row, column=2, sticky="nw", padx=(8, 0), pady=4)
+        self.input_files_button = ttk.Button(
+            button_frame,
+            text="Input files",
+            command=self._browse_input_file,
+        )
+        self.input_files_button.grid(row=0, column=0, sticky="ew")
+        self.input_folder_button = ttk.Button(
+            button_frame,
+            text="Input folder",
+            command=self._browse_input_folder,
+        )
+        self.input_folder_button.grid(row=1, column=0, sticky="ew", pady=(4, 0))
+        return 1
 
     def _browse_input_file(self) -> None:
         selected = tuple(
@@ -1553,6 +1815,25 @@ class ProcessToolTab(BaseToolTab):
         self._selected_input_files_display = summarize_input_files(selected)
         self.input_file_var.set(self._selected_input_files_display)
 
+    def _browse_input_folder(self) -> None:
+        selected = filedialog.askdirectory(
+            title=f"Select input folder for {self.title}",
+            mustexist=True,
+        )
+        if not selected:
+            return
+        try:
+            resolved_files = translate_task.resolve_translation_input_paths([selected])
+        except ValueError as exc:
+            messagebox.showwarning("No supported files", str(exc))
+            return
+        self.selected_input_files = (selected,)
+        self._selected_input_files_display = summarize_recursive_input_folder(
+            selected,
+            len(resolved_files),
+        )
+        self.input_file_var.set(self._selected_input_files_display)
+
     def _resolve_selected_input_files(self) -> tuple[str, ...]:
         display_value = _clean(self.input_file_var.get())
         if self.selected_input_files and display_value == self._selected_input_files_display:
@@ -1560,18 +1841,43 @@ class ProcessToolTab(BaseToolTab):
         return (display_value,) if display_value else ()
 
     def _build_tool_specific_fields(self, parent: ttk.Frame, start_row: int) -> int:
+        self._add_entry_row(
+            parent,
+            row=start_row,
+            label="Source file",
+            variable=self.source_file_var,
+            browse_command=self._browse_source_file,
+        )
+        ttk.Label(
+            parent,
+            text="Required for Android .xml translation runs.",
+        ).grid(row=start_row + 1, column=0, columnspan=3, sticky="w", pady=(0, 8))
         ttk.Checkbutton(
             parent,
             text="Retranslate all entries",
             variable=self.retranslate_all_var,
-        ).grid(row=start_row, column=0, columnspan=3, sticky="w", pady=(4, 8))
-        return start_row + 1
+        ).grid(row=start_row + 2, column=0, columnspan=3, sticky="w", pady=(4, 8))
+        ttk.Checkbutton(
+            parent,
+            text="Write translation warnings JSON report",
+            variable=self.warnings_report_var,
+        ).grid(row=start_row + 3, column=0, columnspan=3, sticky="w", pady=(0, 8))
+        return start_row + 4
+
+    def _browse_source_file(self) -> None:
+        selected = filedialog.askopenfilename(
+            title="Select source file",
+            filetypes=TRANSLATABLE_FILETYPES,
+        )
+        if selected:
+            self.source_file_var.set(selected)
 
     def build_config(self) -> ProcessGuiConfig:
         input_files = self._resolve_selected_input_files()
         return ProcessGuiConfig(
             input_file=input_files[0] if len(input_files) == 1 else self.input_file_var.get(),
             input_files=input_files,
+            source_file=self.source_file_var.get(),
             source_lang=self.source_lang_var.get(),
             target_lang=self.target_lang_var.get(),
             provider=self.provider_var.get(),
@@ -1587,6 +1893,7 @@ class ProcessToolTab(BaseToolTab):
             api_key=self.api_key_var.get(),
             flex_mode=self.flex_mode_var.get(),
             retranslate_all=self.retranslate_all_var.get(),
+            warnings_report=self.warnings_report_var.get(),
         )
 
     def build_command(self) -> list[str]:
@@ -1682,6 +1989,180 @@ class ExtractToolTab(BaseToolTab):
 
     def build_command(self) -> list[str]:
         return build_extract_command(self.build_config())
+
+
+class LocalExtractToolTab(BaseToolTab):
+    def __init__(self, app: "ProcessGuiApp", notebook: ttk.Notebook) -> None:
+        self.mode_var = tk.StringVar(value="missing")
+        self.max_length_var = tk.StringVar(value="1")
+        self.out_path_var = tk.StringVar()
+        self.include_rejected_var = tk.BooleanVar(value=False)
+        self.to_po_var = tk.BooleanVar(value=False)
+        self.include_borderline_var = tk.BooleanVar(value=False)
+        self.mode_combo: ttk.Combobox | None = None
+        self.max_length_combo: ttk.Combobox | None = None
+        self.include_rejected_button: ttk.Checkbutton | None = None
+        self.include_borderline_button: ttk.Checkbutton | None = None
+        self.input_file_button: ttk.Button | None = None
+        self.input_folder_button: ttk.Button | None = None
+        super().__init__(
+            app,
+            notebook,
+            tool_key="extract_local",
+            title="Local Extract",
+            script_name="translate_cli.py",
+            input_filetypes=LOCAL_EXTRACT_FILETYPES,
+            supports_vocab=True,
+            supports_rules=False,
+            input_label="Input file / folder / JSON",
+            supports_provider_controls=False,
+            preview_label="Task info",
+        )
+        self.to_po_var.trace_add("write", self._on_to_po_changed)
+        self._refresh_local_mode_controls()
+
+    def _build_input_row(self, parent: ttk.Frame, row: int) -> int:
+        ttk.Label(parent, text=self.input_label).grid(row=row, column=0, sticky="w", pady=4)
+        ttk.Entry(parent, textvariable=self.input_file_var).grid(
+            row=row,
+            column=1,
+            sticky="ew",
+            pady=4,
+        )
+        button_frame = ttk.Frame(parent)
+        button_frame.grid(row=row, column=2, sticky="nw", padx=(8, 0), pady=4)
+        self.input_file_button = ttk.Button(
+            button_frame,
+            text="Source file",
+            command=self._browse_local_extract_file,
+        )
+        self.input_file_button.grid(row=0, column=0, sticky="ew")
+        self.input_folder_button = ttk.Button(
+            button_frame,
+            text="Source folder",
+            command=self._browse_local_extract_folder,
+        )
+        self.input_folder_button.grid(row=1, column=0, sticky="ew", pady=(4, 0))
+        return 1
+
+    def _build_tool_specific_fields(self, parent: ttk.Frame, start_row: int) -> int:
+        ttk.Checkbutton(
+            parent,
+            text="Convert local JSON to PO handoff",
+            variable=self.to_po_var,
+        ).grid(row=start_row, column=0, columnspan=3, sticky="w", pady=(4, 4))
+
+        self.mode_combo = self._add_combo_row(
+            parent,
+            row=start_row + 1,
+            label="Mode",
+            variable=self.mode_var,
+            values=EXTRACT_MODE_CHOICES,
+        )
+
+        self.max_length_combo = self._add_combo_row(
+            parent,
+            row=start_row + 2,
+            label="Max length",
+            variable=self.max_length_var,
+            values=LOCAL_EXTRACT_MAX_LENGTH_CHOICES,
+        )
+
+        self._add_entry_row(
+            parent,
+            row=start_row + 3,
+            label="Output path",
+            variable=self.out_path_var,
+            browse_command=self._browse_output_file,
+        )
+        self.include_rejected_button = ttk.Checkbutton(
+            parent,
+            text="Include rejected terms in JSON output",
+            variable=self.include_rejected_var,
+        )
+        self.include_rejected_button.grid(row=start_row + 4, column=0, columnspan=3, sticky="w", pady=(4, 0))
+        self.include_borderline_button = ttk.Checkbutton(
+            parent,
+            text="Include borderline terms in generated PO handoff",
+            variable=self.include_borderline_var,
+        )
+        self.include_borderline_button.grid(row=start_row + 5, column=0, columnspan=3, sticky="w", pady=(0, 8))
+        return start_row + 6
+
+    def _on_to_po_changed(self, *_args: object) -> None:
+        self._refresh_local_mode_controls()
+
+    def _refresh_local_mode_controls(self) -> None:
+        to_po_mode = self.to_po_var.get()
+        if self.mode_combo is not None:
+            self.mode_combo.configure(state="disabled" if to_po_mode else "readonly")
+        if self.max_length_combo is not None:
+            self.max_length_combo.configure(state="disabled" if to_po_mode else "readonly")
+        if self.include_rejected_button is not None:
+            self.include_rejected_button.configure(state="disabled" if to_po_mode else "normal")
+        po_enabled = True
+        if self.include_borderline_button is not None:
+            self.include_borderline_button.configure(state="normal" if po_enabled else "disabled")
+        if self.input_file_button is not None:
+            self.input_file_button.configure(text="JSON file" if to_po_mode else "Source file")
+        if self.input_folder_button is not None:
+            self.input_folder_button.configure(state="disabled" if to_po_mode else "normal")
+        if to_po_mode:
+            self.include_rejected_var.set(False)
+
+    def _browse_output_file(self) -> None:
+        to_po_mode = self.to_po_var.get()
+        extension = ".po" if to_po_mode else ".json"
+        selected = filedialog.asksaveasfilename(
+            title="Select output file",
+            defaultextension=extension,
+            filetypes=[("Output files", f"*{extension}"), ("All files", "*.*")],
+        )
+        if selected:
+            self.out_path_var.set(selected)
+
+    def _browse_input_file(self) -> None:
+        self._browse_local_extract_file()
+
+    def _browse_local_extract_file(self) -> None:
+        title, filetypes = get_local_extract_file_dialog_config(self.to_po_var.get())
+        selected = filedialog.askopenfilename(
+            title=title,
+            filetypes=filetypes,
+        )
+        if selected:
+            self.input_file_var.set(selected)
+
+    def _browse_local_extract_folder(self) -> None:
+        if self.to_po_var.get():
+            return
+        selected = filedialog.askdirectory(
+            title="Select source folder for local extraction",
+            mustexist=True,
+        )
+        if selected:
+            self.input_file_var.set(selected)
+
+    def build_config(self) -> LocalExtractGuiConfig:
+        return LocalExtractGuiConfig(
+            input_file=self.input_file_var.get(),
+            source_lang=self.source_lang_var.get(),
+            target_lang=self.target_lang_var.get(),
+            vocab_path=self.vocab_path_var.get(),
+            mode=self.mode_var.get(),
+            max_length=self.max_length_var.get(),
+            out_path=self.out_path_var.get(),
+            include_rejected=self.include_rejected_var.get(),
+            to_po=self.to_po_var.get(),
+            also_po=not self.to_po_var.get(),
+            include_borderline=self.include_borderline_var.get(),
+        )
+
+    def build_command(self) -> list[str]:
+        return build_local_extract_command(self.build_config())
+
+    def build_env(self) -> dict[str, str]:
+        return dict(os.environ)
 
 
 class CheckToolTab(BaseToolTab):
@@ -1794,7 +2275,7 @@ class ReviseToolTab(BaseToolTab):
         )
         ttk.Label(
             parent,
-            text="Required for .strings, .resx, and .txt revision runs.",
+            text="Required for Android .xml, .strings, .resx, and .txt revision runs.",
         ).grid(row=start_row + 1, column=0, columnspan=3, sticky="w", pady=(0, 8))
 
         self._add_entry_row(
@@ -1941,18 +2422,21 @@ class ProcessGuiApp(ttk.Frame):
         process_tab = ProcessToolTab(self, notebook)
         revise_tab = ReviseToolTab(self, notebook)
         extract_tab = ExtractToolTab(self, notebook)
+        extract_local_tab = LocalExtractToolTab(self, notebook)
         check_tab = CheckToolTab(self, notebook)
 
         self.tabs = {
             process_tab.tool_key: process_tab,
             revise_tab.tool_key: revise_tab,
             extract_tab.tool_key: extract_tab,
+            extract_local_tab.tool_key: extract_local_tab,
             check_tab.tool_key: check_tab,
         }
 
         notebook.add(process_tab, text="Translate")
         notebook.add(revise_tab, text="Revise")
         notebook.add(extract_tab, text="Extract")
+        notebook.add(extract_local_tab, text="Local Extract")
         notebook.add(check_tab, text="Check")
 
         status_frame = ttk.Frame(self)

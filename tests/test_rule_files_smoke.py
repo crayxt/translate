@@ -4,7 +4,7 @@ from pathlib import Path
 
 class RuleFilesSmokeTests(unittest.TestCase):
     def test_kazakh_rules_file_is_utf8_and_not_mojibake(self):
-        text = Path("data/kk/rules.md").read_text(encoding="utf-8")
+        text = Path("data/locales/kk/rules.md").read_text(encoding="utf-8")
 
         self.assertIn("Kazakh UI Translation Rules", text)
         self.assertIn("real Kazakh Cyrillic", text)

@@ -42,11 +42,18 @@ class _DummyEntry:
         msgid_plural: str | None = None,
         obsolete: bool = False,
         include_in_term_extraction: bool = True,
+        msgctxt: str = "",
+        comment: str = "",
+        tcomment: str = "",
     ):
         self.msgid = msgid
         self.msgid_plural = msgid_plural
         self.obsolete = obsolete
         self.include_in_term_extraction = include_in_term_extraction
+        self.msgctxt = msgctxt
+        self.comment = comment
+        self.tcomment = tcomment
+        self.occurrences = []
 
 
 class ExtractTermsSmokeTests(unittest.TestCase):
@@ -69,7 +76,14 @@ class ExtractTermsSmokeTests(unittest.TestCase):
             _DummyEntry("Obsolete term", obsolete=True),
         ]
         messages = extract_terms.collect_source_messages(entries)
-        self.assertEqual(messages, ["Open file", "Files", "Files plural"])
+        self.assertEqual(
+            messages,
+            [
+                {"source": "Open file"},
+                {"source": "Files"},
+                {"source": "Files plural"},
+            ],
+        )
 
     def test_collect_source_messages_skips_entries_marked_for_exclusion(self):
         entries = [
@@ -77,7 +91,27 @@ class ExtractTermsSmokeTests(unittest.TestCase):
             _DummyEntry("Skip me", include_in_term_extraction=False),
         ]
         messages = extract_terms.collect_source_messages(entries)
-        self.assertEqual(messages, ["Include me"])
+        self.assertEqual(messages, [{"source": "Include me"}])
+
+    def test_collect_source_messages_includes_context_and_note(self):
+        entries = [
+            _DummyEntry(
+                "Open",
+                msgctxt="toolbar",
+                comment="Primary action",
+            )
+        ]
+        messages = extract_terms.collect_source_messages(entries)
+        self.assertEqual(
+            messages,
+            [
+                {
+                    "source": "Open",
+                    "context": "toolbar",
+                    "note": "Primary action",
+                }
+            ],
+        )
 
     def test_build_term_generation_config_includes_thinking_level(self):
         config = extract_terms.build_term_generation_config("medium")
@@ -86,6 +120,27 @@ class ExtractTermsSmokeTests(unittest.TestCase):
             genai_types.ThinkingLevel.MEDIUM,
         )
         self.assertIn("software localization terminology analyst", config.system_instruction)
+
+    def test_build_term_system_instruction_prefers_atomic_terms(self):
+        instruction = extract_terms.build_term_system_instruction("kk")
+        self.assertIn("Prefer atomic reusable terms", instruction)
+        self.assertIn("audio` and `channel`", instruction)
+        self.assertIn("access token", instruction)
+
+    def test_build_terms_prompt_requires_atomic_term_extraction(self):
+        prompt = extract_terms.build_terms_prompt(
+            messages={"0": {"source": "Choose audio channel", "context": "Audio output"}},
+            source_lang="en",
+            target_lang="kk",
+            mode="all",
+            vocabulary=None,
+            max_terms_per_batch=25,
+        )
+        self.assertIn("Prefer atomic reusable terms over message-specific collocations.", prompt)
+        self.assertIn("Default to the smallest standalone reusable term", prompt)
+        self.assertIn("Do not return loose UI phrases like `audio channel`", prompt)
+        self.assertIn("Keep a multi-word term only for fixed concepts", prompt)
+        self.assertIn('"context": "Audio output"', prompt)
 
     def test_parse_term_response_from_parsed_payload(self):
         payload = {
@@ -134,7 +189,7 @@ class ExtractTermsSmokeTests(unittest.TestCase):
     def test_collect_messages_from_polib_entry(self):
         entry = polib.POEntry(msgid="Save", msgid_plural="Saves")
         messages = extract_terms.collect_source_messages([entry])
-        self.assertEqual(messages, ["Save", "Saves"])
+        self.assertEqual(messages, [{"source": "Save"}, {"source": "Saves"}])
 
     def test_load_entries_for_txt_file(self):
         in_path = os.path.join(os.getcwd(), "_tmp_terms.txt")
@@ -145,7 +200,13 @@ class ExtractTermsSmokeTests(unittest.TestCase):
 
             entries = extract_terms.load_entries_for_file(in_path, process.FileKind.TXT)
             messages = extract_terms.collect_source_messages(entries)
-            self.assertEqual(messages, ["Open file", "Save file"])
+            self.assertEqual(
+                messages,
+                [
+                    {"source": "Open file", "context": "line:1"},
+                    {"source": "Save file", "context": "line:3"},
+                ],
+            )
         finally:
             for path in (in_path, out_path):
                 if os.path.exists(path):
@@ -258,7 +319,7 @@ class ExtractTermsSmokeTests(unittest.TestCase):
             patch("tasks.extract_terms.get_translation_provider", return_value=_DummyProvider()),
             patch(
                 "tasks.extract_terms.resolve_resource_path",
-                return_value=os.path.join("data", "kk", "vocab.txt"),
+                return_value=os.path.join("data", "locales", "kk", "vocab.txt"),
             ) as resolve_mock,
             patch("tasks.extract_terms.read_optional_vocabulary_file", return_value=None),
             patch("tasks.extract_terms.detect_file_kind", return_value=process.FileKind.TXT),
@@ -273,6 +334,7 @@ class ExtractTermsSmokeTests(unittest.TestCase):
             prefix="vocab",
             extension="txt",
             target_lang="kk",
+            allow_directory=True,
         )
 
     def test_main_missing_po_output_loads_vocabulary_pairs_for_merged_po(self):
@@ -282,7 +344,7 @@ class ExtractTermsSmokeTests(unittest.TestCase):
             patch("tasks.extract_terms.get_translation_provider", return_value=provider),
             patch(
                 "tasks.extract_terms.resolve_resource_path",
-                return_value=os.path.join("data", "kk", "vocab.txt"),
+                return_value=os.path.join("data", "locales", "kk", "vocab.txt"),
             ),
             patch("tasks.extract_terms.read_optional_vocabulary_file", return_value="save - saqtau"),
             patch("tasks.extract_terms.load_vocabulary_pairs", return_value=[("save", "saqtau")]) as load_pairs_mock,
@@ -294,7 +356,11 @@ class ExtractTermsSmokeTests(unittest.TestCase):
         ):
             extract_terms.main()
 
-        load_pairs_mock.assert_called_once_with(os.path.join("data", "kk", "vocab.txt"), "Vocabulary")
+        load_pairs_mock.assert_called_once_with(
+            os.path.join("data", "locales", "kk", "vocab.txt"),
+            "Vocabulary",
+            target_lang="kk",
+        )
 
 
 if __name__ == "__main__":

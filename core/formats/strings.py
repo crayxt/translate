@@ -150,7 +150,7 @@ def _entry_status_from_legacy(entry: Any) -> EntryStatus:
     return EntryStatus.TRANSLATED if entry.translated() else EntryStatus.UNTRANSLATED
 
 
-def load_strings(file_path: str) -> Tuple[list[Any], Callable[[], None], str]:
+def load_strings(file_path: str) -> Tuple[list[UnifiedEntry], Callable[[], None], str]:
     print(f"Processing STRINGS file: {file_path}")
     encoding = _detect_text_encoding(file_path)
     with open(file_path, "r", encoding=encoding) as handle:

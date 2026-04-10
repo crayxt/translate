@@ -5,7 +5,7 @@ import asyncio
 import json
 import os
 import sys
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Tuple
 
@@ -14,14 +14,16 @@ from core.review_common import (
     json_load_maybe,
     plural_key_sort_key,
 )
+from core.entries import build_source_message_payload
 from core.formats import (
     FileKind,
+    UnifiedEntry,
     build_entry_source_text,
     detect_file_kind,
-    get_entry_prompt_context_and_note,
     load_po,
+    load_ts,
 )
-from core.providers import DEFAULT_PROVIDER, DEFAULT_PROVIDER_NAME, get_translation_provider
+from core.providers import DEFAULT_PROVIDER, DEFAULT_PROVIDER_NAME, TranslationProvider, get_translation_provider
 from core.request_contents import TaskRequestSpec, build_task_request_contents, render_text_fallback_prompt
 from core.task_cli import (
     add_language_arguments,
@@ -41,27 +43,84 @@ from core.review_flow import (
     limit_items,
     normalize_limits as normalize_review_limits,
 )
+from core.system_instructions import (
+    SHARED_GLOSSARY_SENSE_RULES,
+    SHARED_LOCALIZATION_INVARIANTS,
+    join_instruction_sections,
+)
 from core.task_batches import build_fixed_batches, build_indexed_batch_map, run_model_batches
 from core.task_runtime import build_task_runtime_context, print_startup_configuration
+from core.task_issues import (
+    TaskIssue,
+    build_task_issue_schema,
+    dedupe_task_issues,
+    normalize_task_issue,
+    serialize_task_issue,
+)
 
 
 DEFAULT_CHECK_BATCH_SIZE = 150
 DEFAULT_CHECK_PARALLEL = 6
 
-CHECK_SYSTEM_INSTRUCTION = """
-You are a software localization QA reviewer.
+CHECK_SYSTEM_INSTRUCTION = join_instruction_sections(
+    """
+    You are a software localization QA reviewer.
 
-STRICT MUST-CHECK:
-- Placeholders must be preserved exactly (%s, %d, %(name)s, %1, %n, {var}, {{var}})
-- HTML/XML tags must be preserved exactly and remain well-formed
-- Keyboard accelerators/hotkeys must be preserved and usable (`_`, `&`)
-- Approved vocabulary is mandatory when supplied
-- Inflection and derivation are acceptable when they preserve the approved lexical choice
-- Flag missing meaning, added meaning, mistranslation, wrong tone, or broken grammar only when they are real QA issues
-- Ignore purely stylistic alternatives unless they violate terminology, rules, or UI constraints
-- Prefer fewer but higher-confidence findings over speculative nitpicks
-- When project rules are provided, apply them as mandatory QA criteria
-"""
+    QA REQUIREMENTS:
+    - Inflection and derivation are acceptable when they preserve the approved lexical choice
+    - Flag missing meaning, added meaning, mistranslation, wrong tone, or broken grammar only when they are real QA issues
+    - Ignore purely stylistic alternatives unless they violate terminology, rules, or UI constraints
+    - Prefer fewer but higher-confidence findings over speculative nitpicks
+    """,
+    SHARED_LOCALIZATION_INVARIANTS,
+    SHARED_GLOSSARY_SENSE_RULES,
+)
+
+CHECK_ISSUE_CODES: tuple[str, ...] = (
+    "check.meaning",
+    "check.grammar",
+    "check.tone",
+    "check.terminology",
+    "check.placeholder",
+    "check.tag",
+    "check.accelerator",
+    "check.plural",
+    "check.fluency",
+    "check.script",
+    "check.other",
+)
+
+CHECK_ISSUE_CODE_GUIDANCE: Dict[str, str] = {
+    "check.meaning": "the translation changes, adds, or omits source meaning",
+    "check.grammar": "the translation is grammatically broken or clearly malformed",
+    "check.tone": "the translation uses the wrong tone or register for the UI text",
+    "check.terminology": "the translation violates approved terminology or glossary sense",
+    "check.placeholder": "placeholders, variables, or protected tokens are broken",
+    "check.tag": "markup or tag structure is broken or altered",
+    "check.accelerator": "keyboard accelerators or mnemonic markers are broken",
+    "check.plural": "plural handling is incorrect or incomplete",
+    "check.fluency": "the translation is unnatural or hard to understand",
+    "check.script": "the translation or suggested fix uses the wrong script/alphabet",
+    "check.other": "the issue does not fit a more specific code",
+}
+
+CHECK_LEGACY_CATEGORY_TO_CODE: Dict[str, str] = {
+    "meaning": "check.meaning",
+    "grammar": "check.grammar",
+    "tone": "check.tone",
+    "terminology": "check.terminology",
+    "placeholder": "check.placeholder",
+    "placeholders": "check.placeholder",
+    "tag": "check.tag",
+    "tags": "check.tag",
+    "accelerator": "check.accelerator",
+    "accelerators": "check.accelerator",
+    "plural": "check.plural",
+    "plurals": "check.plural",
+    "fluency": "check.fluency",
+    "script": "check.script",
+    "other": "check.other",
+}
 
 
 CHECK_RESPONSE_SCHEMA: dict[str, Any] = {
@@ -75,46 +134,33 @@ CHECK_RESPONSE_SCHEMA: dict[str, Any] = {
                     "id": {"type": "string"},
                     "issues": {
                         "type": "array",
-                        "items": {
-                            "type": "object",
-                            "properties": {
-                                "category": {"type": "string"},
-                                "severity": {"type": "string"},
-                                "message": {"type": "string"},
-                                "source_fragment": {"type": "string"},
-                                "translation_fragment": {"type": "string"},
-                                "suggested_translation": {"type": "string"},
-                            },
-                            "required": ["category", "severity", "message"],
-                        },
+                        "items": build_task_issue_schema(
+                            CHECK_ISSUE_CODES,
+                            allowed_severities=("error", "warning"),
+                            include_fragments=True,
+                        ),
                     },
                 },
                 "required": ["id", "issues"],
+                "additionalProperties": False,
             },
         },
     },
     "required": ["results"],
+    "additionalProperties": False,
 }
 
-
-@dataclass
-class CheckIssue:
-    origin: str
-    category: str
-    severity: str
-    message: str
-    source_fragment: str = ""
-    translation_fragment: str = ""
-    suggested_translation: str = ""
+CheckIssue = TaskIssue
 
 
 def build_check_generation_config(
     thinking_level: str | None = None,
     *,
-    provider: Any = DEFAULT_PROVIDER,
+    provider: TranslationProvider = DEFAULT_PROVIDER,
     system_instruction: str | None = None,
     flex_mode: bool = False,
 ) -> Any:
+    """Build the provider generation config for translation QA batches."""
     return provider.build_generation_config(
         thinking_level=thinking_level,
         json_schema=CHECK_RESPONSE_SCHEMA,
@@ -124,8 +170,18 @@ def build_check_generation_config(
 
 
 def build_check_output_path(file_path: str) -> str:
+    """Build the default JSON report path for a translation QA run."""
     root, _ = os.path.splitext(file_path)
     return f"{root}.translation-check.json"
+
+
+def load_entries_for_check(file_path: str, file_kind: FileKind) -> List[UnifiedEntry]:
+    """Load translated entries for supported QA file kinds."""
+    if file_kind == FileKind.TS:
+        entries, _, _ = load_ts(file_path)
+        return entries
+    entries, _, _ = load_po(file_path)
+    return entries
 
 
 def normalize_limits(
@@ -133,6 +189,7 @@ def normalize_limits(
     batch_size_arg: int | None,
     parallel_arg: int | None,
 ) -> Tuple[int, int, str]:
+    """Resolve QA batch limits, applying check-task defaults when omitted."""
     return normalize_review_limits(
         total_items=total_items,
         batch_size_arg=batch_size_arg,
@@ -144,10 +201,12 @@ def normalize_limits(
 
 
 def _normalize_space(text: str) -> str:
+    """Collapse whitespace for stable QA comparisons."""
     return " ".join(str(text or "").split())
 
 
 def get_translation_plural_forms(entry: Any) -> List[str]:
+    """Return plural translation forms in stable plural-slot order."""
     plural_map = getattr(entry, "msgstr_plural", None)
     if not isinstance(plural_map, dict) or not plural_map:
         return []
@@ -158,6 +217,7 @@ def get_translation_plural_forms(entry: Any) -> List[str]:
 
 
 def get_entry_translation_text(entry: Any) -> str:
+    """Return the primary translated text for an entry."""
     plural_forms = get_translation_plural_forms(entry)
     if plural_forms:
         return plural_forms[0]
@@ -165,6 +225,7 @@ def get_entry_translation_text(entry: Any) -> str:
 
 
 def get_joined_translation_text(entry: Any) -> str:
+    """Return all translated text joined for logging and reporting."""
     plural_forms = get_translation_plural_forms(entry)
     if plural_forms:
         return "\n".join(plural_forms)
@@ -172,22 +233,26 @@ def get_joined_translation_text(entry: Any) -> str:
 
 
 def has_reviewable_translation(entry: Any) -> bool:
+    """Return whether an entry has translated content worth sending to QA."""
     return has_shared_reviewable_translation(
         entry,
         plural_texts=get_translation_plural_forms(entry),
     )
 
 
-def select_review_entries(entries: List[Any]) -> List[Any]:
+def select_review_entries(entries: List[UnifiedEntry]) -> List[UnifiedEntry]:
+    """Filter a file down to entries that have reviewable translations."""
     return [entry for entry in entries if has_reviewable_translation(entry)]
 
 
-def limit_review_entries(entries: List[Any], num_messages: int | None) -> List[Any]:
+def limit_review_entries(entries: List[UnifiedEntry], num_messages: int | None) -> List[UnifiedEntry]:
+    """Apply an optional prefix limit to the QA candidate list."""
     return limit_items(entries, num_messages)
 
 
 
 def build_target_script_guidance(target_lang: str) -> str | None:
+    """Return target-script guidance tailored for QA suggested fixes."""
     guidance = build_shared_target_script_guidance(
         target_lang,
         update_wording=lambda: "suggested target text",
@@ -205,6 +270,7 @@ def build_target_script_guidance(target_lang: str) -> str | None:
 
 
 def build_check_system_instruction(target_lang: str) -> str:
+    """Build the final QA system instruction for the selected target language."""
     parts = [CHECK_SYSTEM_INSTRUCTION.strip()]
     script_guidance = build_target_script_guidance(target_lang)
     if script_guidance:
@@ -216,6 +282,7 @@ def build_check_system_instruction(target_lang: str) -> str:
 
 
 def build_check_request_spec() -> TaskRequestSpec:
+    """Describe the structured input/output contract for QA batches."""
     return TaskRequestSpec(
         task_intro="Review each software localization translation item.",
         task_lines=(
@@ -223,16 +290,24 @@ def build_check_request_spec() -> TaskRequestSpec:
         ),
         payload_lines=(
             "The payload contains source language, target language, optional approved vocabulary/glossary, optional project translation rules/instructions, and a `messages` map.",
-            "Each message item may include `source`, `translation`, optional `translation_plural_forms`, `context`, and `note`.",
+            "Each non-plural message item includes `source` and `translation`, and may also include `context` and `note`.",
+            "Each plural message item includes `source_singular`, `source_plural`, `plural_forms`, `plural_slots`, `translation`, and may also include `translation_plural_forms`, `context`, and `note`.",
         ),
         output_lines=(
             "Return only valid JSON, with no markdown or commentary.",
             "Keep each result `id` exactly the same as the input key.",
             "Return an empty `issues` list when the translation is acceptable.",
+            "Each issue must be an object with `code`, `message`, and `severity`.",
+            f"Allowed issue codes: {', '.join(CHECK_ISSUE_CODES)}.",
+            *tuple(
+                f"Use `{code}` when {description}."
+                for code, description in CHECK_ISSUE_CODE_GUIDANCE.items()
+            ),
             "Use severity `error` for broken placeholders, tags, accelerators, terminology violations, or incorrect meaning.",
             "Use severity `warning` for likely but less certain QA issues.",
             "`suggested_translation` is optional and should be included only when you can provide a clear fix.",
             "If you provide `suggested_translation`, it must use the real target-language alphabet/script.",
+            "For plural items, review `translation_plural_forms` against both `source_singular` and `source_plural`, not only the first translated form.",
             "Do not duplicate the same issue in multiple phrasings.",
             "Do not flag a terminology issue solely because the translation uses an inflected or derived form instead of the exact glossary dictionary form.",
         ),
@@ -246,6 +321,7 @@ def build_check_request_payload(
     vocabulary: str | None,
     translation_rules: str | None,
 ) -> dict[str, Any]:
+    """Build the structured payload for a QA batch."""
     return {
         "project_type": "software_ui_localization_qa",
         "source_lang": source_lang,
@@ -263,8 +339,9 @@ def build_check_request_contents(
     vocabulary: str | None,
     translation_rules: str | None,
     *,
-    provider: Any = DEFAULT_PROVIDER,
+    provider: TranslationProvider = DEFAULT_PROVIDER,
 ) -> Any:
+    """Build provider-native request contents for a QA batch."""
     return build_task_request_contents(
         provider=provider,
         task_spec=build_check_request_spec(),
@@ -286,6 +363,7 @@ def build_check_prompt(
     vocabulary: str | None,
     translation_rules: str | None,
 ) -> str:
+    """Render the plain-text fallback prompt for one QA batch."""
     return render_text_fallback_prompt(
         task_spec=build_check_request_spec(),
         payload=build_check_request_payload(
@@ -299,22 +377,17 @@ def build_check_prompt(
 
 
 def build_check_message_payload(entry: Any) -> Dict[str, Any]:
-    payload: Dict[str, Any] = {
-        "source": build_entry_source_text(entry),
-        "translation": get_entry_translation_text(entry),
-    }
+    """Build one QA message payload from a translated entry."""
+    payload = build_source_message_payload(entry)
+    payload["translation"] = get_entry_translation_text(entry)
     plural_forms = get_translation_plural_forms(entry)
     if plural_forms:
         payload["translation_plural_forms"] = plural_forms
-    context, note = get_entry_prompt_context_and_note(entry)
-    if context:
-        payload["context"] = context
-    if note:
-        payload["note"] = note
     return payload
 
 
 def parse_check_response(response_payload: Any) -> Dict[str, List[CheckIssue]]:
+    """Normalize a provider response into issue lists keyed by item id."""
     if isinstance(response_payload, dict):
         payload = response_payload
     elif isinstance(response_payload, str):
@@ -344,61 +417,42 @@ def parse_check_response(response_payload: Any) -> Dict[str, List[CheckIssue]]:
 
         issues: List[CheckIssue] = []
         for raw_issue in raw_issues:
-            if not isinstance(raw_issue, dict):
-                continue
-            category = str(raw_issue.get("category", "")).strip() or "other"
-            severity = str(raw_issue.get("severity", "")).strip().lower() or "warning"
-            if severity not in {"error", "warning"}:
-                severity = "warning"
-            message = str(raw_issue.get("message", "")).strip()
-            if not message:
-                continue
-            issues.append(
-                CheckIssue(
-                    origin="model",
-                    category=category,
-                    severity=severity,
-                    message=message,
-                    source_fragment=str(raw_issue.get("source_fragment", "")).strip(),
-                    translation_fragment=str(raw_issue.get("translation_fragment", "")).strip(),
-                    suggested_translation=str(raw_issue.get("suggested_translation", "")).strip(),
-                )
+            issue = normalize_task_issue(
+                raw_issue,
+                allowed_codes=CHECK_ISSUE_CODES,
+                default_code="check.other",
+                allowed_severities=("error", "warning"),
+                default_severity="warning",
+                default_origin="model",
+                legacy_code_builder=_build_legacy_check_issue_code,
             )
+            if issue is not None:
+                issues.append(issue)
         parsed[item_id] = dedupe_issues(issues)
 
     return parsed
 
 
 def dedupe_issues(issues: List[CheckIssue]) -> List[CheckIssue]:
-    seen: set[Tuple[str, str, str, str, str]] = set()
-    unique: List[CheckIssue] = []
-    for issue in issues:
-        key = (
-            issue.origin,
-            issue.category.lower(),
-            issue.severity.lower(),
-            _normalize_space(issue.message).lower(),
-            _normalize_space(issue.suggested_translation).lower(),
-        )
-        if key in seen:
-            continue
-        seen.add(key)
-        unique.append(issue)
+    """Deduplicate normalized QA issues while preserving useful detail."""
+    return dedupe_task_issues(issues)
 
-    severity_rank = {"error": 0, "warning": 1}
-    unique.sort(
-        key=lambda issue: (
-            severity_rank.get(issue.severity, 9),
-            issue.category.lower(),
-            issue.message.lower(),
-        )
-    )
-    return unique
+
+def _build_legacy_check_issue_code(raw_issue: Dict[str, Any]) -> str:
+    """Map legacy issue categories onto the current QA issue code set."""
+    raw_category = str(raw_issue.get("category", "")).strip().lower().replace(" ", "_")
+    if raw_category in CHECK_LEGACY_CATEGORY_TO_CODE:
+        return CHECK_LEGACY_CATEGORY_TO_CODE[raw_category]
+    prefixed = f"check.{raw_category}" if raw_category else ""
+    if prefixed in CHECK_ISSUE_CODES:
+        return prefixed
+    return "check.other"
 
 
 def configure_parser(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
-    parser.description = "Check translated PO files using the configured provider"
-    parser.add_argument("file", help="Input translated .po file")
+    """Configure the standalone CLI for translation QA."""
+    parser.description = "Check translated PO or TS files using the configured provider"
+    parser.add_argument("file", help="Input translated .po or .ts file")
     add_language_arguments(parser)
     add_provider_arguments(
         parser,
@@ -409,7 +463,7 @@ def configure_parser(parser: argparse.ArgumentParser) -> argparse.ArgumentParser
     add_vocabulary_argument(parser)
     add_rules_arguments(
         parser,
-        rules_help="Optional translation rules/instructions file (auto: data/<target-lang>/rules.md)",
+        rules_help="Optional translation rules/instructions file (auto: data/locales/<target-lang>/rules.md)",
         rules_str_help="Optional inline translation rules/instructions",
     )
     add_probe_argument(
@@ -423,10 +477,12 @@ def configure_parser(parser: argparse.ArgumentParser) -> argparse.ArgumentParser
 
 
 def build_parser() -> argparse.ArgumentParser:
+    """Build the standalone parser for translation QA."""
     return build_task_parser(configure_parser)
 
 
 def run_from_args(args: argparse.Namespace) -> None:
+    """Execute translation QA from parsed CLI arguments."""
     model_name = resolve_provider_model(args.provider, args.model)
 
     if args.max_attempts <= 0:
@@ -437,8 +493,8 @@ def run_from_args(args: argparse.Namespace) -> None:
     except ValueError as e:
         sys.exit(f"ERROR: {e}")
 
-    if file_kind != FileKind.PO:
-        sys.exit("ERROR: the check command currently supports only .po files")
+    if file_kind not in (FileKind.PO, FileKind.TS):
+        sys.exit("ERROR: the check command currently supports only .po and .ts files")
 
     runtime_context = build_task_runtime_context(
         provider_name=args.provider,
@@ -456,7 +512,7 @@ def run_from_args(args: argparse.Namespace) -> None:
     client = runtime_context.client
     resource_context = runtime_context.resources
 
-    entries, _, _ = load_po(args.file)
+    entries = load_entries_for_check(args.file, file_kind)
     try:
         review_entries = limit_review_entries(
             select_review_entries(entries),
@@ -467,7 +523,7 @@ def run_from_args(args: argparse.Namespace) -> None:
 
     total = len(review_entries)
     if total == 0:
-        print("No translated PO entries found to review.")
+        print(f"No translated {file_kind.value.upper()} entries found to review.")
         return
 
     try:
@@ -512,7 +568,7 @@ def run_from_args(args: argparse.Namespace) -> None:
             batch_start_indices[idx] = base_index
             base_index += len(batch)
 
-        def build_contents(_batch_index: int, batch: List[Any]) -> Any:
+        def build_contents(_batch_index: int, batch: List[UnifiedEntry]) -> Any:
             return build_check_request_contents(
                 messages=build_indexed_batch_map(batch, build_check_message_payload),
                 source_lang=args.source_lang,
@@ -524,7 +580,7 @@ def run_from_args(args: argparse.Namespace) -> None:
 
         def on_batch_completed(
             batch_index: int,
-            batch: List[Any],
+            batch: List[UnifiedEntry],
             model_issues_by_id: Dict[str, List[CheckIssue]],
         ) -> None:
             nonlocal completed
@@ -544,7 +600,14 @@ def run_from_args(args: argparse.Namespace) -> None:
                     "translation_plural_forms": get_translation_plural_forms(entry),
                     "flags": list(getattr(entry, "flags", []) or []),
                     "verdict": "issues" if issues else "ok",
-                    "issues": [asdict(issue) for issue in issues],
+                    "issues": [
+                        serialize_task_issue(
+                            issue,
+                            include_origin=True,
+                            include_fragments=True,
+                        )
+                        for issue in issues
+                    ],
                 }
                 results.append(result_payload)
 
@@ -606,6 +669,7 @@ def run_from_args(args: argparse.Namespace) -> None:
 
 
 def main(argv: list[str] | None = None) -> None:
+    """Run the translation QA CLI."""
     run_task_main(
         configure_parser_fn=configure_parser,
         run_from_args_fn=run_from_args,

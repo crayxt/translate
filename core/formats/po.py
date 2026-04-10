@@ -5,7 +5,7 @@ from typing import Any, Callable, Tuple
 import polib
 
 from core.entries import plural_key_sort_key
-from core.formats.base import EntryStatus, FileKind, build_output_path, wrap_legacy_entries
+from core.formats.base import EntryStatus, FileKind, UnifiedEntry, build_output_path, wrap_legacy_entries
 
 PO_WRAP_WIDTH = 78
 
@@ -21,7 +21,7 @@ def load_po(
     file_path: str,
     *,
     pofile_loader: Callable[..., Any] | None = None,
-) -> Tuple[list[Any], Callable[[], None], str]:
+) -> Tuple[list[UnifiedEntry], Callable[[], None], str]:
     print(f"Processing PO file: {file_path}")
     loader = pofile_loader or polib.pofile
     po = loader(file_path, wrapwidth=PO_WRAP_WIDTH)

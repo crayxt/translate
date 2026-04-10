@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass, field
 from typing import Callable, List, Tuple
 
@@ -15,6 +16,7 @@ from core.resources import (
 
 @dataclass(slots=True)
 class TaskResourceContext:
+    """Resolved vocabulary and rules resources for a task run."""
     vocabulary_path: str | None = None
     vocabulary_text: str | None = None
     vocabulary_source: str = "none"
@@ -41,6 +43,7 @@ def load_task_resource_context(
     detect_rules_source_fn: Callable[[str | None, str | None, str | None], str | None] = detect_rules_source,
     load_vocabulary_pairs_fn: Callable[..., List[Tuple[str, str]]] = load_vocabulary_pairs,
 ) -> TaskResourceContext:
+    """Resolve glossary and rules resources, including auto-detected defaults."""
     context = TaskResourceContext()
 
     if include_vocab:
@@ -49,17 +52,21 @@ def load_task_resource_context(
             prefix="vocab",
             extension="txt",
             target_lang=target_lang,
+            allow_directory=True,
         )
         context.vocabulary_text = read_optional_vocabulary_file_fn(
             context.vocabulary_path,
             "Vocabulary",
+            target_lang=target_lang,
         )
         if context.vocabulary_text and context.vocabulary_path:
-            context.vocabulary_source = f"file:{context.vocabulary_path}"
+            source_prefix = "dir" if os.path.isdir(context.vocabulary_path) else "file"
+            context.vocabulary_source = f"{source_prefix}:{context.vocabulary_path}"
         if load_vocab_pairs_flag and context.vocabulary_path:
             context.vocabulary_pairs = load_vocabulary_pairs_fn(
                 context.vocabulary_path,
                 "Vocabulary",
+                target_lang=target_lang,
             )
 
     if include_rules:

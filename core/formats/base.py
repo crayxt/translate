@@ -6,6 +6,7 @@ from enum import Enum
 from typing import Any, Callable, Dict, List, Tuple
 
 from core.entries import (
+    PluralKey,
     TranslationResult,
     apply_translation_to_entry,
     translation_has_content,
@@ -18,6 +19,7 @@ class FileKind(str, Enum):
     RESX = "resx"
     STRINGS = "strings"
     TXT = "txt"
+    ANDROID_XML = "xml"
 
 
 class EntryStatus(str, Enum):
@@ -33,7 +35,7 @@ class UnifiedEntry:
     msgid: str
     msgid_plural: str = ""
     msgstr: str = ""
-    msgstr_plural: Dict[Any, str] = field(default_factory=dict)
+    msgstr_plural: Dict[PluralKey, str] = field(default_factory=dict)
     msgctxt: str = ""
     prompt_note_text: str = ""
     occurrences: List[Tuple[str, str]] = field(default_factory=list)
@@ -82,7 +84,12 @@ def detect_file_kind(file_path: str) -> FileKind:
         return FileKind.STRINGS
     if lower_path.endswith(".txt"):
         return FileKind.TXT
-    raise ValueError("Unsupported file type. Use .po, .ts, .resx, .strings, or .txt")
+    if lower_path.endswith(".xml"):
+        from core.formats.android_xml import is_android_resources_xml
+
+        if is_android_resources_xml(file_path):
+            return FileKind.ANDROID_XML
+    raise ValueError("Unsupported file type. Use .po, .ts, .resx, .strings, .txt, or Android .xml")
 
 
 def build_output_path(file_path: str, file_kind: FileKind) -> str:
@@ -90,13 +97,14 @@ def build_output_path(file_path: str, file_kind: FileKind) -> str:
     return f"{root}.ai-translated.{file_kind.value}"
 
 
-def _copy_legacy_plural_map(entry: Any) -> Dict[Any, str]:
+def _copy_legacy_plural_map(entry: Any) -> Dict[PluralKey, str]:
     plural_map = getattr(entry, "msgstr_plural", None)
     if not isinstance(plural_map, dict):
         return {}
-    copied: Dict[Any, str] = {}
+    copied: Dict[PluralKey, str] = {}
     for key, value in plural_map.items():
-        copied[key] = value if isinstance(value, str) else str(value)
+        normalized_key: PluralKey = key if isinstance(key, (int, str)) else str(key)
+        copied[normalized_key] = value if isinstance(value, str) else str(value)
     return copied
 
 
