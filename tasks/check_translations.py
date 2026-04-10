@@ -17,12 +17,13 @@ from core.review_common import (
 from core.entries import build_source_message_payload
 from core.formats import (
     FileKind,
+    UnifiedEntry,
     build_entry_source_text,
     detect_file_kind,
     load_po,
     load_ts,
 )
-from core.providers import DEFAULT_PROVIDER, DEFAULT_PROVIDER_NAME, get_translation_provider
+from core.providers import DEFAULT_PROVIDER, DEFAULT_PROVIDER_NAME, TranslationProvider, get_translation_provider
 from core.request_contents import TaskRequestSpec, build_task_request_contents, render_text_fallback_prompt
 from core.task_cli import (
     add_language_arguments,
@@ -155,7 +156,7 @@ CheckIssue = TaskIssue
 def build_check_generation_config(
     thinking_level: str | None = None,
     *,
-    provider: Any = DEFAULT_PROVIDER,
+    provider: TranslationProvider = DEFAULT_PROVIDER,
     system_instruction: str | None = None,
     flex_mode: bool = False,
 ) -> Any:
@@ -172,7 +173,7 @@ def build_check_output_path(file_path: str) -> str:
     return f"{root}.translation-check.json"
 
 
-def load_entries_for_check(file_path: str, file_kind: FileKind) -> List[Any]:
+def load_entries_for_check(file_path: str, file_kind: FileKind) -> List[UnifiedEntry]:
     """Load translated entries for supported QA file kinds."""
     if file_kind == FileKind.TS:
         entries, _, _ = load_ts(file_path)
@@ -231,11 +232,11 @@ def has_reviewable_translation(entry: Any) -> bool:
     )
 
 
-def select_review_entries(entries: List[Any]) -> List[Any]:
+def select_review_entries(entries: List[UnifiedEntry]) -> List[UnifiedEntry]:
     return [entry for entry in entries if has_reviewable_translation(entry)]
 
 
-def limit_review_entries(entries: List[Any], num_messages: int | None) -> List[Any]:
+def limit_review_entries(entries: List[UnifiedEntry], num_messages: int | None) -> List[UnifiedEntry]:
     return limit_items(entries, num_messages)
 
 
@@ -324,7 +325,7 @@ def build_check_request_contents(
     vocabulary: str | None,
     translation_rules: str | None,
     *,
-    provider: Any = DEFAULT_PROVIDER,
+    provider: TranslationProvider = DEFAULT_PROVIDER,
 ) -> Any:
     return build_task_request_contents(
         provider=provider,
@@ -544,7 +545,7 @@ def run_from_args(args: argparse.Namespace) -> None:
             batch_start_indices[idx] = base_index
             base_index += len(batch)
 
-        def build_contents(_batch_index: int, batch: List[Any]) -> Any:
+        def build_contents(_batch_index: int, batch: List[UnifiedEntry]) -> Any:
             return build_check_request_contents(
                 messages=build_indexed_batch_map(batch, build_check_message_payload),
                 source_lang=args.source_lang,
@@ -556,7 +557,7 @@ def run_from_args(args: argparse.Namespace) -> None:
 
         def on_batch_completed(
             batch_index: int,
-            batch: List[Any],
+            batch: List[UnifiedEntry],
             model_issues_by_id: Dict[str, List[CheckIssue]],
         ) -> None:
             nonlocal completed

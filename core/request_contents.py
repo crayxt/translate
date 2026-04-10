@@ -63,7 +63,7 @@ def render_text_fallback_prompt(
 
 def build_task_request_contents(
     *,
-    provider: Any,
+    provider: object,
     task_spec: TaskRequestSpec,
     function_name: str,
     payload: dict[str, Any],
