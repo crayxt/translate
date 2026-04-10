@@ -144,6 +144,7 @@ REVISION_RESPONSE_SCHEMA: dict[str, Any] = {
 
 @dataclass(slots=True)
 class RevisionResult:
+    """Normalized model output for one reviewed translation item."""
     action: str
     text: str = ""
     plural_texts: List[str] = field(default_factory=list)
@@ -153,6 +154,7 @@ class RevisionResult:
 
 @dataclass(slots=True)
 class ReviewItem:
+    """Revision-ready view of one translated entry plus its review context."""
     entry: UnifiedEntry
     source_text: str
     current_text: str
@@ -165,6 +167,7 @@ class ReviewItem:
 
 @dataclass(slots=True)
 class ReviewBundle:
+    """Loaded file state and review items for one revision run."""
     file_kind: FileKind
     entries: List[UnifiedEntry]
     save_callback: Callable[[], None]
@@ -180,6 +183,7 @@ def build_revision_generation_config(
     system_instruction: str | None = None,
     flex_mode: bool = False,
 ) -> Any:
+    """Build the provider generation config for revision batches."""
     return provider.build_generation_config(
         thinking_level=thinking_level,
         json_schema=REVISION_RESPONSE_SCHEMA,
@@ -189,6 +193,7 @@ def build_revision_generation_config(
 
 
 def configure_stdio() -> None:
+    """Force UTF-8 console output when the runtime supports reconfiguration."""
     for stream_name in ("stdout", "stderr"):
         stream = getattr(sys, stream_name, None)
         reconfigure = getattr(stream, "reconfigure", None)
@@ -197,6 +202,7 @@ def configure_stdio() -> None:
 
 
 def build_revision_output_path(file_path: str) -> str:
+    """Build the default output path for a revised file."""
     root, ext = os.path.splitext(file_path)
     return f"{root}-revised{ext}"
 
@@ -206,6 +212,7 @@ def normalize_limits(
     batch_size_arg: int | None,
     parallel_arg: int | None,
 ) -> Tuple[int, int, str]:
+    """Resolve revision batch limits, applying task defaults when omitted."""
     return normalize_review_limits(
         total_items=total_items,
         batch_size_arg=batch_size_arg,
@@ -217,10 +224,12 @@ def normalize_limits(
 
 
 def _clean(text: str | None) -> str:
+    """Trim a possibly missing string value."""
     return str(text or "").strip()
 
 
 def _normalize_revision_payload(payload: Any) -> Dict[str, RevisionResult]:
+    """Normalize raw revision JSON into typed per-item results."""
     results: Dict[str, RevisionResult] = {}
     if not isinstance(payload, dict):
         return results
@@ -284,6 +293,7 @@ def _normalize_revision_payload(payload: Any) -> Dict[str, RevisionResult]:
 
 
 def parse_revision_response(response_payload: Any) -> Dict[str, RevisionResult]:
+    """Parse provider output into revision results keyed by item id."""
     if isinstance(response_payload, dict):
         return _normalize_revision_payload(response_payload)
 
@@ -299,6 +309,7 @@ def parse_revision_response(response_payload: Any) -> Dict[str, RevisionResult]:
 
 
 def get_plural_texts(entry: UnifiedEntry) -> List[str]:
+    """Return existing plural translations in stable plural-slot order."""
     if not entry.msgstr_plural:
         return []
     return [
@@ -308,6 +319,7 @@ def get_plural_texts(entry: UnifiedEntry) -> List[str]:
 
 
 def get_plural_form_count(entry: UnifiedEntry) -> int:
+    """Estimate how many plural slots a revised entry should fill."""
     if not entry.msgid_plural:
         return 0
     if entry.msgstr_plural:
@@ -316,6 +328,7 @@ def get_plural_form_count(entry: UnifiedEntry) -> int:
 
 
 def has_reviewable_translation(entry: UnifiedEntry) -> bool:
+    """Return whether an entry has translated content worth revising."""
     return has_shared_reviewable_translation(
         entry,
         plural_texts=get_plural_texts(entry),
@@ -324,10 +337,12 @@ def has_reviewable_translation(entry: UnifiedEntry) -> bool:
 
 
 def limit_review_items(items: List[ReviewItem], num_messages: int | None) -> List[ReviewItem]:
+    """Apply an optional prefix limit to the revision item list."""
     return limit_items(items, num_messages)
 
 
 def build_target_script_guidance(target_lang: str) -> str | None:
+    """Return target-script guidance for revised translations."""
     return build_shared_target_script_guidance(
         target_lang,
         update_wording=lambda: "updated target text",
@@ -335,6 +350,7 @@ def build_target_script_guidance(target_lang: str) -> str | None:
 
 
 def build_revision_system_instruction(target_lang: str) -> str:
+    """Build the final revision system instruction for the selected language."""
     parts = [REVISION_SYSTEM_INSTRUCTION.strip()]
     script_guidance = build_target_script_guidance(target_lang)
     if script_guidance:
@@ -343,6 +359,7 @@ def build_revision_system_instruction(target_lang: str) -> str:
 
 
 def build_revision_request_spec() -> TaskRequestSpec:
+    """Describe the structured contract for revision batches."""
     return TaskRequestSpec(
         task_intro="Revise each software localization translation item.",
         task_lines=(
@@ -381,6 +398,7 @@ def build_revision_request_payload(
     vocabulary: str | None,
     translation_rules: str | None,
 ) -> dict[str, Any]:
+    """Build the structured payload for a revision batch."""
     return {
         "project_type": "software_ui_revision",
         "source_lang": source_lang,
@@ -402,6 +420,7 @@ def build_revision_request_contents(
     *,
     provider: TranslationProvider = DEFAULT_PROVIDER,
 ) -> Any:
+    """Build provider-native request contents for a revision batch."""
     return build_task_request_contents(
         provider=provider,
         task_spec=build_revision_request_spec(),
@@ -425,6 +444,7 @@ def build_revision_prompt(
     vocabulary: str | None,
     translation_rules: str | None,
 ) -> str:
+    """Render the plain-text fallback prompt for one revision batch."""
     return render_text_fallback_prompt(
         task_spec=build_revision_request_spec(),
         payload=build_revision_request_payload(
@@ -439,6 +459,7 @@ def build_revision_prompt(
 
 
 def build_review_message_payload(item: ReviewItem) -> Dict[str, Any]:
+    """Build one revision payload item from a prepared review record."""
     payload: Dict[str, Any] = {
         "source": item.source_text,
         "current_translation": item.current_text,
@@ -455,6 +476,7 @@ def build_review_message_payload(item: ReviewItem) -> Dict[str, Any]:
 
 
 def _join_non_empty(parts: List[str]) -> str:
+    """Join unique non-empty note fragments with a stable separator."""
     seen: set[str] = set()
     result: List[str] = []
     for value in parts:
@@ -467,6 +489,7 @@ def _join_non_empty(parts: List[str]) -> str:
 
 
 def build_review_item(entry: UnifiedEntry) -> ReviewItem:
+    """Project a translated entry into the normalized revision item shape."""
     context, note = get_entry_prompt_context_and_note(entry)
     current_plural_texts = get_plural_texts(entry)
     current_text = current_plural_texts[0] if current_plural_texts else str(entry.msgstr or "")
@@ -484,6 +507,7 @@ def build_review_item(entry: UnifiedEntry) -> ReviewItem:
 
 
 def _load_file_entries(file_path: str, file_kind: FileKind) -> Tuple[List[UnifiedEntry], Callable[[], None], str]:
+    """Load one revisable file kind and return entries plus save metadata."""
     if file_kind == FileKind.PO:
         return load_po(file_path)
     if file_kind == FileKind.TS:
@@ -499,6 +523,7 @@ def _load_file_entries(file_path: str, file_kind: FileKind) -> Tuple[List[Unifie
 
 
 def build_single_file_bundle(file_path: str, file_kind: FileKind) -> ReviewBundle:
+    """Build a review bundle for formats that embed their own source text."""
     entries, save_callback, generated_output_path = _load_file_entries(file_path, file_kind)
     items = [build_review_item(entry) for entry in entries if has_reviewable_translation(entry)]
     return ReviewBundle(
@@ -511,6 +536,7 @@ def build_single_file_bundle(file_path: str, file_kind: FileKind) -> ReviewBundl
 
 
 def _build_pair_key(entry: UnifiedEntry, index: int) -> str:
+    """Build a stable pairing key for source/translated entry alignment."""
     context = _clean(entry.msgctxt)
     if context:
         return context
@@ -522,6 +548,7 @@ def build_paired_bundle(
     translated_file: str,
     file_kind: FileKind,
 ) -> ReviewBundle:
+    """Build a review bundle by pairing translated entries with a source file."""
     source_entries, _, _ = _load_file_entries(source_file, file_kind)
     translated_entries, save_callback, generated_output_path = _load_file_entries(translated_file, file_kind)
 
@@ -579,6 +606,7 @@ def build_paired_bundle(
 
 
 def load_paired_txt_bundle(source_file: str, translated_file: str) -> ReviewBundle:
+    """Build a paired revision bundle for line-oriented text files."""
     source_encoding = _detect_text_encoding(source_file)
     translated_encoding = _detect_text_encoding(translated_file)
 
@@ -669,6 +697,7 @@ def load_review_bundle(
     translated_file: str,
     source_file: str | None = None,
 ) -> ReviewBundle:
+    """Load the appropriate revision bundle for the translated file and optional source file."""
     file_kind = detect_file_kind(translated_file)
 
     if source_file:
@@ -720,6 +749,7 @@ def load_review_bundle(
 
 
 def build_candidate_plural_forms(item: ReviewItem, result: RevisionResult) -> List[str]:
+    """Normalize and pad model-supplied plural revisions to the required slot count."""
     usable_forms = [
             normalize_model_escaped_text(item.source_text, text)
         for text in result.plural_texts
@@ -738,6 +768,7 @@ def build_candidate_plural_forms(item: ReviewItem, result: RevisionResult) -> Li
 
 
 def apply_revision_to_item(item: ReviewItem, result: RevisionResult) -> bool:
+    """Apply one normalized revision result back onto its entry."""
     if result.action != "update":
         return False
 
@@ -769,6 +800,7 @@ def apply_revision_to_item(item: ReviewItem, result: RevisionResult) -> bool:
 
 
 def move_output_file(generated_output_path: str, final_output_path: str) -> None:
+    """Move a generated revision output into its final destination when needed."""
     if generated_output_path == final_output_path:
         return
     os.replace(generated_output_path, final_output_path)
@@ -779,6 +811,7 @@ def build_final_output_path(
     explicit_out: str | None = None,
     in_place: bool = False,
 ) -> str:
+    """Resolve the final output location for a revision run."""
     if explicit_out:
         return explicit_out
     if in_place:
@@ -787,6 +820,7 @@ def build_final_output_path(
 
 
 def print_change_samples(changes: List[Tuple[ReviewItem, RevisionResult]], limit: int = 10) -> None:
+    """Print a short sample of updated entries for operator visibility."""
     if not changes:
         return
 
@@ -806,6 +840,7 @@ def print_change_samples(changes: List[Tuple[ReviewItem, RevisionResult]], limit
 
 
 def print_issue_samples(issues: List[Tuple[ReviewItem, RevisionResult]], limit: int = 10) -> None:
+    """Print a short sample of revision issues returned by the model."""
     if not issues:
         return
 
@@ -818,6 +853,7 @@ def print_issue_samples(issues: List[Tuple[ReviewItem, RevisionResult]], limit: 
 
 
 def configure_parser(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
+    """Configure the standalone CLI for translation revision."""
     parser.description = (
         "Review existing translations against a natural-language instruction and "
         "update only the entries that need a change."
@@ -861,10 +897,12 @@ def configure_parser(parser: argparse.ArgumentParser) -> argparse.ArgumentParser
 
 
 def build_parser() -> argparse.ArgumentParser:
+    """Build the standalone parser for translation revision."""
     return build_task_parser(configure_parser)
 
 
 def run_from_args(args: argparse.Namespace) -> None:
+    """Execute translation revision from parsed CLI arguments."""
     configure_stdio()
     model_name = resolve_provider_model(args.provider, args.model)
 
@@ -1064,6 +1102,7 @@ def run_from_args(args: argparse.Namespace) -> None:
 
 
 def main(argv: list[str] | None = None) -> None:
+    """Run the translation revision CLI."""
     run_task_main(
         configure_parser_fn=configure_parser,
         run_from_args_fn=run_from_args,

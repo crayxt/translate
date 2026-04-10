@@ -207,6 +207,7 @@ def build_translation_message_payload(
     entry: Any,
     scoped_vocabulary_entries: List[ScopedVocabularyEntry],
 ) -> Dict[str, Any]:
+    """Build one translation payload item with message-scoped glossary hints."""
     payload = build_prompt_message_payload(entry)
     source_for_vocabulary = payload.get("source")
     if source_for_vocabulary is None:
@@ -230,6 +231,7 @@ def build_translation_generation_config(
     system_instruction: str | None = None,
     flex_mode: bool = False,
 ) -> Any:
+    """Build the provider generation config for translation batches."""
     return provider.build_generation_config(
         thinking_level=thinking_level,
         json_schema=TRANSLATION_RESPONSE_SCHEMA,
@@ -239,6 +241,7 @@ def build_translation_generation_config(
 
 
 def build_translation_request_spec(force_non_empty: bool = False) -> TaskRequestSpec:
+    """Describe the structured contract for translation batches."""
     non_empty_block = (
         (
             "Every translation must be non-empty.",
@@ -298,6 +301,7 @@ def build_translation_request_payload(
     translation_rules: str | None,
     force_non_empty: bool = False,
 ) -> dict[str, Any]:
+    """Build the structured payload for one translation batch."""
     return {
         "project_type": "software_ui_localization",
         "source_lang": source_lang,
@@ -319,6 +323,7 @@ def build_translation_request_contents(
     provider: TranslationProvider = DEFAULT_PROVIDER,
     force_non_empty: bool = False,
 ) -> Any:
+    """Build provider-native request contents for a translation batch."""
     task_spec = build_translation_request_spec(force_non_empty=force_non_empty)
     payload = build_translation_request_payload(
         messages=messages,
@@ -344,6 +349,7 @@ def build_prompt(
     translation_rules: str | None,
     force_non_empty: bool = False,
 ) -> str:
+    """Render the plain-text fallback prompt for one translation batch."""
     return render_text_fallback_prompt(
         task_spec=build_translation_request_spec(force_non_empty=force_non_empty),
         payload=build_translation_request_payload(
@@ -358,6 +364,7 @@ def build_prompt(
 
 
 def load_po(file_path: str):
+    """Load a PO file through the shared format adapter."""
     return _core_load_po(file_path, pofile_loader=polib.pofile)
 
 
@@ -367,6 +374,7 @@ def load_vocabulary_pairs(
     *,
     target_lang: str | None = None,
 ):
+    """Load normalized vocabulary pairs from text, PO, or TBX resources."""
     return _core_load_vocabulary_pairs(
         path,
         label,
@@ -381,6 +389,7 @@ def read_optional_vocabulary_file(
     *,
     target_lang: str | None = None,
 ):
+    """Read the full optional vocabulary resource as text for prompting."""
     return _core_read_optional_vocabulary_file(
         path,
         label,
@@ -390,6 +399,7 @@ def read_optional_vocabulary_file(
 
 
 def build_language_code_candidates(target_lang: str) -> List[str]:
+    """Return likely language-code variants for resource auto-discovery."""
     return _core_build_language_code_candidates(target_lang)
 
 
@@ -400,6 +410,7 @@ def detect_default_text_resource(
     *,
     allow_directory: bool = False,
 ) -> str | None:
+    """Auto-detect a locale resource path under the project conventions."""
     return _core_detect_default_text_resource(
         prefix,
         extension,
@@ -416,6 +427,7 @@ def resolve_resource_path(
     *,
     allow_directory: bool = False,
 ) -> str | None:
+    """Prefer an explicit resource path, otherwise fall back to auto-discovery."""
     return _core_resolve_resource_path(
         explicit_path,
         prefix,
@@ -426,6 +438,7 @@ def resolve_resource_path(
 
 
 def _entry_status_from_legacy(entry: Any) -> EntryStatus:
+    """Infer unified translation status from a legacy entry adapter."""
     if isinstance(entry, ResxEntryAdapter) and not getattr(entry, "_translate", True):
         return EntryStatus.SKIPPED
     flags = getattr(entry, "flags", None)
@@ -439,6 +452,7 @@ def _build_unified_entry(
     file_kind: FileKind,
     commit_callback,
 ) -> UnifiedEntry:
+    """Wrap one legacy entry object in the shared unified-entry model."""
     return _core_build_unified_entry(
         entry=entry,
         file_kind=file_kind,
@@ -449,6 +463,7 @@ def _build_unified_entry(
 
 @dataclass(frozen=True)
 class TranslationRunConfig:
+    """All runtime options required to execute a translation command."""
     files: List[str]
     source_file: str | None
     source_lang: str
@@ -468,6 +483,7 @@ class TranslationRunConfig:
 
 @dataclass
 class TranslationFileJob:
+    """Loaded file state plus output metadata for one translation target."""
     file_path: str
     file_kind: FileKind
     entries: List[UnifiedEntry]
@@ -477,11 +493,13 @@ class TranslationFileJob:
 
 @dataclass(frozen=True)
 class TranslationQueueItem:
+    """One entry scheduled for translation together with its owning file job."""
     job: TranslationFileJob
     entry: UnifiedEntry
 
 
 def configure_parser(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
+    """Configure the standalone CLI for translation runs."""
     parser.description = (
         "Pre-process and translate PO, TS, RESX, STRINGS, TXT, or Android XML files using a provider adapter"
     )
@@ -522,10 +540,12 @@ def configure_parser(parser: argparse.ArgumentParser) -> argparse.ArgumentParser
 
 
 def build_parser() -> argparse.ArgumentParser:
+    """Build the standalone parser for translation runs."""
     return build_task_parser(configure_parser)
 
 
 def config_from_args(args: argparse.Namespace) -> TranslationRunConfig:
+    """Convert parsed CLI arguments into the normalized runtime config."""
     return TranslationRunConfig(
         files=list(args.files),
         source_file=args.source_file,
@@ -546,19 +566,23 @@ def config_from_args(args: argparse.Namespace) -> TranslationRunConfig:
 
 
 def build_translation_warnings_output_path(output_path: str) -> str:
+    """Build the sidecar JSON path for translation warning reports."""
     root, _ = os.path.splitext(output_path)
     return f"{root}.translation-warnings.json"
 
 
 def _is_supported_translation_input_file(path: str) -> bool:
+    """Return whether a path has a supported translation input extension."""
     return os.path.splitext(path)[1].lower() in TRANSLATABLE_INPUT_EXTENSIONS
 
 
 def _normalize_scan_path(path: str) -> str:
+    """Normalize a path for stable case-insensitive comparisons."""
     return os.path.normcase(os.path.abspath(path))
 
 
 def _looks_like_generated_translation_artifact(path: str) -> bool:
+    """Return whether a path looks like a generated translation-side artifact."""
     root, _ext = os.path.splitext(path)
     normalized_root = str(root or "").strip().lower()
     return any(
@@ -568,6 +592,7 @@ def _looks_like_generated_translation_artifact(path: str) -> bool:
 
 
 def _should_skip_toolkit_root_scan_file(scan_root: str, candidate: str) -> bool:
+    """Return whether a candidate should be pruned when scanning the toolkit repo root."""
     if _normalize_scan_path(scan_root) != TOOLKIT_PROJECT_ROOT:
         return False
     candidate_parent = _normalize_scan_path(os.path.dirname(candidate))
@@ -577,6 +602,7 @@ def _should_skip_toolkit_root_scan_file(scan_root: str, candidate: str) -> bool:
 
 
 def _collect_translation_files_from_directory(root_dir: str) -> List[str]:
+    """Recursively collect supported translation inputs from a directory tree."""
     collected: List[str] = []
     normalized_root_dir = _normalize_scan_path(root_dir)
     scanning_toolkit_root = normalized_root_dir == TOOLKIT_PROJECT_ROOT
@@ -600,6 +626,7 @@ def _collect_translation_files_from_directory(root_dir: str) -> List[str]:
 
 
 def resolve_translation_input_paths(input_paths: List[str]) -> List[str]:
+    """Expand file and directory inputs into a validated translation file list."""
     resolved: List[str] = []
     for raw_path in input_paths:
         cleaned_path = str(raw_path or "").strip()
@@ -627,6 +654,7 @@ def build_translation_warning_item(
     result: TranslationResult,
     scoped_vocabulary_entries: List[ScopedVocabularyEntry],
 ) -> Dict[str, Any]:
+    """Serialize one translated entry and its warnings for the sidecar report."""
     payload = build_translation_message_payload(entry, scoped_vocabulary_entries)
     source_text = payload.get("source")
     if not isinstance(source_text, str) or not source_text.strip():
@@ -673,6 +701,7 @@ def write_translation_warning_report(
     target_lang: str,
     source_file: str | None = None,
 ) -> str:
+    """Write the warning sidecar JSON for one translated output file."""
     out_path = build_translation_warnings_output_path(job.output_path)
     payload: Dict[str, Any] = {
         "source_file": job.file_path,
@@ -694,6 +723,7 @@ def write_translation_warning_report(
 
 
 def load_entries_for_translation(file_path: str, source_file: str | None = None):
+    """Load entries, save hooks, and warnings for one translation input file."""
     try:
         file_kind = detect_file_kind(file_path)
     except ValueError as exc:
@@ -722,10 +752,12 @@ def load_entries_for_translation(file_path: str, source_file: str | None = None)
 
 
 def _normalize_path(path: str) -> str:
+    """Normalize a path for duplicate and conflict detection."""
     return os.path.normcase(os.path.abspath(path))
 
 
 def validate_translation_files(file_paths: List[str], source_file: str | None = None) -> FileKind:
+    """Validate translation inputs and ensure the run uses one compatible file kind."""
     file_paths = resolve_translation_input_paths(file_paths)
     expected_kind: FileKind | None = None
     seen_inputs: set[str] = set()
@@ -779,6 +811,7 @@ def validate_translation_files(file_paths: List[str], source_file: str | None = 
 
 
 def load_translation_jobs(file_paths: List[str], source_file: str | None = None) -> List[TranslationFileJob]:
+    """Load all translation inputs into file jobs with output metadata."""
     jobs: List[TranslationFileJob] = []
     for file_path in file_paths:
         file_kind, entries, save_callback, output_path, warnings = load_entries_for_translation(
@@ -804,6 +837,7 @@ def build_translation_queue(
     *,
     retranslate_all: bool,
 ) -> List[TranslationQueueItem]:
+    """Flatten loaded file jobs into the actual per-entry translation queue."""
     queue: List[TranslationQueueItem] = []
     for job in jobs:
         for entry in select_work_items(job.entries, retranslate_all=retranslate_all):
@@ -816,6 +850,7 @@ def build_batches(
     parallel_requests: int,
     batch_size: int,
 ) -> List[List[TranslationQueueItem]]:
+    """Split translation work into batches, including a small-file balancing mode."""
     total = len(work_items)
     all_batches: List[List[TranslationQueueItem]] = []
     small_file_threshold = parallel_requests * batch_size
@@ -861,6 +896,7 @@ async def run_translation_batches(
     scoped_vocabulary_entries: List[ScopedVocabularyEntry],
     warning_items_by_output_path: Dict[str, List[Dict[str, Any]]] | None = None,
 ) -> tuple[int, set[str]]:
+    """Run translation batches, apply results, and track touched outputs."""
     batches = len(all_batches)
 
     translated_count = 0
@@ -966,6 +1002,7 @@ async def run_translation_batches(
 
 
 def run_translation(config: TranslationRunConfig) -> None:
+    """Execute a full translation run from normalized runtime config."""
     try:
         resolved_files = resolve_translation_input_paths(config.files)
         file_kind = validate_translation_files(resolved_files, source_file=config.source_file)
@@ -1099,6 +1136,7 @@ def run_translation(config: TranslationRunConfig) -> None:
 
 
 def run_from_args(args: argparse.Namespace) -> None:
+    """Execute translation from parsed CLI arguments."""
     try:
         config = config_from_args(args)
     except ValueError as exc:
@@ -1107,6 +1145,7 @@ def run_from_args(args: argparse.Namespace) -> None:
 
 
 def main(argv: list[str] | None = None) -> None:
+    """Run the translation CLI."""
     run_task_main(
         configure_parser_fn=configure_parser,
         run_from_args_fn=run_from_args,

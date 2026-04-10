@@ -160,6 +160,7 @@ def build_check_generation_config(
     system_instruction: str | None = None,
     flex_mode: bool = False,
 ) -> Any:
+    """Build the provider generation config for translation QA batches."""
     return provider.build_generation_config(
         thinking_level=thinking_level,
         json_schema=CHECK_RESPONSE_SCHEMA,
@@ -169,6 +170,7 @@ def build_check_generation_config(
 
 
 def build_check_output_path(file_path: str) -> str:
+    """Build the default JSON report path for a translation QA run."""
     root, _ = os.path.splitext(file_path)
     return f"{root}.translation-check.json"
 
@@ -187,6 +189,7 @@ def normalize_limits(
     batch_size_arg: int | None,
     parallel_arg: int | None,
 ) -> Tuple[int, int, str]:
+    """Resolve QA batch limits, applying check-task defaults when omitted."""
     return normalize_review_limits(
         total_items=total_items,
         batch_size_arg=batch_size_arg,
@@ -198,10 +201,12 @@ def normalize_limits(
 
 
 def _normalize_space(text: str) -> str:
+    """Collapse whitespace for stable QA comparisons."""
     return " ".join(str(text or "").split())
 
 
 def get_translation_plural_forms(entry: Any) -> List[str]:
+    """Return plural translation forms in stable plural-slot order."""
     plural_map = getattr(entry, "msgstr_plural", None)
     if not isinstance(plural_map, dict) or not plural_map:
         return []
@@ -212,6 +217,7 @@ def get_translation_plural_forms(entry: Any) -> List[str]:
 
 
 def get_entry_translation_text(entry: Any) -> str:
+    """Return the primary translated text for an entry."""
     plural_forms = get_translation_plural_forms(entry)
     if plural_forms:
         return plural_forms[0]
@@ -219,6 +225,7 @@ def get_entry_translation_text(entry: Any) -> str:
 
 
 def get_joined_translation_text(entry: Any) -> str:
+    """Return all translated text joined for logging and reporting."""
     plural_forms = get_translation_plural_forms(entry)
     if plural_forms:
         return "\n".join(plural_forms)
@@ -226,6 +233,7 @@ def get_joined_translation_text(entry: Any) -> str:
 
 
 def has_reviewable_translation(entry: Any) -> bool:
+    """Return whether an entry has translated content worth sending to QA."""
     return has_shared_reviewable_translation(
         entry,
         plural_texts=get_translation_plural_forms(entry),
@@ -233,15 +241,18 @@ def has_reviewable_translation(entry: Any) -> bool:
 
 
 def select_review_entries(entries: List[UnifiedEntry]) -> List[UnifiedEntry]:
+    """Filter a file down to entries that have reviewable translations."""
     return [entry for entry in entries if has_reviewable_translation(entry)]
 
 
 def limit_review_entries(entries: List[UnifiedEntry], num_messages: int | None) -> List[UnifiedEntry]:
+    """Apply an optional prefix limit to the QA candidate list."""
     return limit_items(entries, num_messages)
 
 
 
 def build_target_script_guidance(target_lang: str) -> str | None:
+    """Return target-script guidance tailored for QA suggested fixes."""
     guidance = build_shared_target_script_guidance(
         target_lang,
         update_wording=lambda: "suggested target text",
@@ -259,6 +270,7 @@ def build_target_script_guidance(target_lang: str) -> str | None:
 
 
 def build_check_system_instruction(target_lang: str) -> str:
+    """Build the final QA system instruction for the selected target language."""
     parts = [CHECK_SYSTEM_INSTRUCTION.strip()]
     script_guidance = build_target_script_guidance(target_lang)
     if script_guidance:
@@ -270,6 +282,7 @@ def build_check_system_instruction(target_lang: str) -> str:
 
 
 def build_check_request_spec() -> TaskRequestSpec:
+    """Describe the structured input/output contract for QA batches."""
     return TaskRequestSpec(
         task_intro="Review each software localization translation item.",
         task_lines=(
@@ -308,6 +321,7 @@ def build_check_request_payload(
     vocabulary: str | None,
     translation_rules: str | None,
 ) -> dict[str, Any]:
+    """Build the structured payload for a QA batch."""
     return {
         "project_type": "software_ui_localization_qa",
         "source_lang": source_lang,
@@ -327,6 +341,7 @@ def build_check_request_contents(
     *,
     provider: TranslationProvider = DEFAULT_PROVIDER,
 ) -> Any:
+    """Build provider-native request contents for a QA batch."""
     return build_task_request_contents(
         provider=provider,
         task_spec=build_check_request_spec(),
@@ -348,6 +363,7 @@ def build_check_prompt(
     vocabulary: str | None,
     translation_rules: str | None,
 ) -> str:
+    """Render the plain-text fallback prompt for one QA batch."""
     return render_text_fallback_prompt(
         task_spec=build_check_request_spec(),
         payload=build_check_request_payload(
@@ -361,6 +377,7 @@ def build_check_prompt(
 
 
 def build_check_message_payload(entry: Any) -> Dict[str, Any]:
+    """Build one QA message payload from a translated entry."""
     payload = build_source_message_payload(entry)
     payload["translation"] = get_entry_translation_text(entry)
     plural_forms = get_translation_plural_forms(entry)
@@ -370,6 +387,7 @@ def build_check_message_payload(entry: Any) -> Dict[str, Any]:
 
 
 def parse_check_response(response_payload: Any) -> Dict[str, List[CheckIssue]]:
+    """Normalize a provider response into issue lists keyed by item id."""
     if isinstance(response_payload, dict):
         payload = response_payload
     elif isinstance(response_payload, str):
@@ -416,10 +434,12 @@ def parse_check_response(response_payload: Any) -> Dict[str, List[CheckIssue]]:
 
 
 def dedupe_issues(issues: List[CheckIssue]) -> List[CheckIssue]:
+    """Deduplicate normalized QA issues while preserving useful detail."""
     return dedupe_task_issues(issues)
 
 
 def _build_legacy_check_issue_code(raw_issue: Dict[str, Any]) -> str:
+    """Map legacy issue categories onto the current QA issue code set."""
     raw_category = str(raw_issue.get("category", "")).strip().lower().replace(" ", "_")
     if raw_category in CHECK_LEGACY_CATEGORY_TO_CODE:
         return CHECK_LEGACY_CATEGORY_TO_CODE[raw_category]
@@ -430,6 +450,7 @@ def _build_legacy_check_issue_code(raw_issue: Dict[str, Any]) -> str:
 
 
 def configure_parser(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
+    """Configure the standalone CLI for translation QA."""
     parser.description = "Check translated PO or TS files using the configured provider"
     parser.add_argument("file", help="Input translated .po or .ts file")
     add_language_arguments(parser)
@@ -456,10 +477,12 @@ def configure_parser(parser: argparse.ArgumentParser) -> argparse.ArgumentParser
 
 
 def build_parser() -> argparse.ArgumentParser:
+    """Build the standalone parser for translation QA."""
     return build_task_parser(configure_parser)
 
 
 def run_from_args(args: argparse.Namespace) -> None:
+    """Execute translation QA from parsed CLI arguments."""
     model_name = resolve_provider_model(args.provider, args.model)
 
     if args.max_attempts <= 0:
@@ -646,6 +669,7 @@ def run_from_args(args: argparse.Namespace) -> None:
 
 
 def main(argv: list[str] | None = None) -> None:
+    """Run the translation QA CLI."""
     run_task_main(
         configure_parser_fn=configure_parser,
         run_from_args_fn=run_from_args,

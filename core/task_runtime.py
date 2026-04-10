@@ -15,6 +15,7 @@ from core.task_resources import TaskResourceContext, load_task_resource_context
 
 @dataclass(slots=True)
 class TaskRuntimeContext:
+    """Provider client plus resolved task resources for one command run."""
     provider: TranslationProvider
     client: Any
     resources: TaskResourceContext
@@ -38,6 +39,7 @@ def build_task_runtime_context(
     read_optional_text_file_fn: Callable[..., str | None] = read_optional_text_file,
     load_vocabulary_pairs_fn: Callable[..., list[tuple[str, str]]] = load_vocabulary_pairs,
 ) -> TaskRuntimeContext:
+    """Create the provider client and load any task-level resource files."""
     provider = get_translation_provider_fn(provider_name)
     client = provider.create_client_from_env(flex_mode=flex_mode)
     resources = load_task_resource_context_fn(
@@ -61,6 +63,7 @@ def build_task_runtime_context(
 
 
 def print_startup_configuration(*entries: tuple[str, Any]) -> None:
+    """Print a stable label/value summary for task startup diagnostics."""
     print("Startup configuration:")
     for label, value in entries:
         print(f"  {label}: {value}")

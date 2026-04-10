@@ -86,6 +86,7 @@ TERM_DISCOVERY_SCHEMA: dict[str, Any] = {
 
 @dataclass
 class TermCandidate:
+    """One glossary candidate returned by the model-driven extractor."""
     source_term: str
     suggested_translation: str
     reason: str
@@ -97,6 +98,7 @@ def build_term_output_path(
     output_format: OutputFormat = "po",
     mode: DiscoveryMode = "all",
 ) -> str:
+    """Build the default glossary output path for the selected mode and format."""
     root, _ = os.path.splitext(file_path)
     suffix = "glossary" if mode == "all" else "missing-terms"
     return f"{root}.{suffix}.{output_format}"
@@ -116,6 +118,7 @@ def collect_source_messages(entries: List[UnifiedEntry]) -> List[Dict[str, str]]
 
 
 def build_term_request_spec(mode: DiscoveryMode, max_terms_per_batch: int) -> TaskRequestSpec:
+    """Describe the model contract for glossary-term extraction batches."""
     task_lines: tuple[str, ...]
     if mode == "all":
         task_lines = (
@@ -164,6 +167,7 @@ def build_terms_prompt(
     vocabulary: str | None,
     max_terms_per_batch: int,
 ) -> str:
+    """Render the plain-text fallback prompt for one extraction batch."""
     return render_text_fallback_prompt(
         task_spec=build_term_request_spec(mode=mode, max_terms_per_batch=max_terms_per_batch),
         payload=build_term_request_payload(
@@ -178,6 +182,7 @@ def build_terms_prompt(
 
 
 def _json_load_maybe(text: str) -> Any:
+    """Parse raw or fenced JSON model output, returning None on failure."""
     payload = text.strip()
     if not payload:
         return None
@@ -194,6 +199,7 @@ def _json_load_maybe(text: str) -> Any:
 
 
 def parse_term_response(response_payload: Any) -> List[TermCandidate]:
+    """Normalize a provider response into validated term candidates."""
     if isinstance(response_payload, dict):
         payload = response_payload
     else:
@@ -232,6 +238,7 @@ def parse_term_response(response_payload: Any) -> List[TermCandidate]:
 
 
 def merge_term_candidates(candidates: List[TermCandidate]) -> List[TermCandidate]:
+    """Deduplicate extracted terms by normalized source text while keeping first-seen order."""
     merged: Dict[str, TermCandidate] = {}
     order: List[str] = []
 
@@ -262,6 +269,7 @@ def build_term_generation_config(
     system_instruction: str | None = None,
     flex_mode: bool = False,
 ) -> Any:
+    """Build the provider generation config for glossary extraction."""
     return provider.build_generation_config(
         thinking_level=thinking_level,
         json_schema=TERM_DISCOVERY_SCHEMA,
@@ -271,6 +279,7 @@ def build_term_generation_config(
 
 
 def build_term_system_instruction(target_lang: str) -> str:
+    """Augment the base terminology instruction with target-script guidance."""
     parts = [TERM_SYSTEM_INSTRUCTION.strip()]
     script_guidance = build_shared_target_script_guidance(
         target_lang,
@@ -289,6 +298,7 @@ def build_term_request_payload(
     vocabulary: str | None,
     max_terms_per_batch: int,
 ) -> dict[str, Any]:
+    """Build the structured payload sent to the glossary extractor."""
     return {
         "project_type": "software_ui_term_extraction",
         "source_lang": source_lang,
@@ -310,6 +320,7 @@ def build_term_request_contents(
     *,
     provider: TranslationProvider = DEFAULT_PROVIDER,
 ) -> Any:
+    """Build provider-native request contents for a glossary extraction batch."""
     return build_task_request_contents(
         provider=provider,
         task_spec=build_term_request_spec(mode=mode, max_terms_per_batch=max_terms_per_batch),
@@ -332,6 +343,7 @@ def save_terms_as_po(
     target_lang: str,
     base_vocabulary_pairs: List[Tuple[str, str]] | None = None,
 ) -> None:
+    """Write extracted glossary candidates to a fuzzy PO handoff file."""
     po = polib.POFile()
     po.wrapwidth = PO_WRAP_WIDTH
     po.metadata = {
@@ -385,6 +397,7 @@ def save_terms_as_po(
 
 
 def load_entries_for_file(file_path: str, file_kind: FileKind) -> List[UnifiedEntry]:
+    """Load source entries for any format supported by model-based term extraction."""
     if file_kind == FileKind.ANDROID_XML:
         entries, _, _ = load_android_xml(file_path)
         return entries
@@ -409,6 +422,7 @@ def normalize_limits(
     batch_size_arg: int | None,
     parallel_arg: int | None,
 ) -> Tuple[int, int, str]:
+    """Resolve extraction batch limits, applying task defaults when omitted."""
     if batch_size_arg is None and parallel_arg is None:
         batch_size, parallel, _ = resolve_runtime_limits(
             total_items=total_items,
@@ -425,6 +439,7 @@ def normalize_limits(
 
 
 def configure_parser(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
+    """Configure the standalone CLI for model-based glossary extraction."""
     parser.description = (
         "Extract glossary term candidates from PO/TS/RESX/STRINGS/TXT/Android XML files using the configured provider "
         "and save as PO or JSON"
@@ -457,10 +472,12 @@ def configure_parser(parser: argparse.ArgumentParser) -> argparse.ArgumentParser
 
 
 def build_parser() -> argparse.ArgumentParser:
+    """Build the standalone parser for model-based glossary extraction."""
     return build_task_parser(configure_parser)
 
 
 def run_from_args(args: argparse.Namespace) -> None:
+    """Execute model-based glossary extraction from parsed CLI arguments."""
     model_name = resolve_provider_model(args.provider, args.model)
 
     if args.max_terms_per_batch <= 0:
@@ -623,6 +640,7 @@ def run_from_args(args: argparse.Namespace) -> None:
 
 
 def main(argv: list[str] | None = None) -> None:
+    """Run the glossary extraction CLI."""
     run_task_main(
         configure_parser_fn=configure_parser,
         run_from_args_fn=run_from_args,
