@@ -1,12 +1,49 @@
 import os
 import unittest
 
-from process import EntryStatus, FileKind, UnifiedEntry
+from google.genai import types as genai_types
 
-import revise_translations
+from tasks.translate import EntryStatus, FileKind, UnifiedEntry
+from tasks import revise_translations
 
 
 class ReviseTranslationsSmokeTests(unittest.TestCase):
+    def test_build_revision_generation_config_includes_system_instruction(self):
+        config = revise_translations.build_revision_generation_config("low")
+        self.assertEqual(config.thinking_config.thinking_level, genai_types.ThinkingLevel.LOW)
+        self.assertIn("revising existing software localization translations", config.system_instruction)
+
+    def test_build_revision_system_instruction_mentions_target_script(self):
+        system_instruction = revise_translations.build_revision_system_instruction("kk")
+        self.assertIn("revising existing software localization translations", system_instruction)
+        self.assertIn("MANDATORY LOCALIZATION INVARIANTS", system_instruction)
+        self.assertIn("Determine the intended sense of the source text", system_instruction)
+        self.assertIn("Do not rely on source-token overlap alone", system_instruction)
+        self.assertIn("real Kazakh Cyrillic alphabet", system_instruction)
+
+    def test_parse_revision_response_preserves_structured_issues(self):
+        payload = {
+            "revisions": [
+                {
+                    "id": "0",
+                    "action": "keep",
+                    "reason": "Instruction does not clearly apply.",
+                    "issues": [
+                        {
+                            "code": "revise.instruction_ambiguous",
+                            "message": "Instruction could apply to multiple UI labels.",
+                            "severity": "warning",
+                        }
+                    ],
+                }
+            ]
+        }
+
+        parsed = revise_translations.parse_revision_response(payload)
+
+        self.assertEqual(parsed["0"].issues[0].code, "revise.instruction_ambiguous")
+        self.assertEqual(parsed["0"].issues[0].severity, "warning")
+
     def test_build_revision_output_path_appends_revised_suffix(self):
         self.assertEqual(
             revise_translations.build_revision_output_path(r"C:\tmp\sample.po"),
@@ -77,6 +114,17 @@ class ReviseTranslationsSmokeTests(unittest.TestCase):
         self.assertFalse(changed)
         self.assertEqual(entry.msgstr, "Keep me")
         self.assertNotIn("fuzzy", entry.flags)
+
+    def test_get_plural_form_count_matches_existing_slots(self):
+        entry = UnifiedEntry(
+            file_kind=FileKind.PO,
+            msgid="Day",
+            msgid_plural="Days",
+            msgstr_plural={0: "Kun"},
+            status=EntryStatus.TRANSLATED,
+        )
+
+        self.assertEqual(revise_translations.get_plural_form_count(entry), 1)
 
     def test_load_review_bundle_for_po_uses_embedded_source(self):
         input_path = os.path.join(os.getcwd(), "_tmp_revision.po")

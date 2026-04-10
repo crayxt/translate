@@ -13,34 +13,58 @@ import tkinter as tk
 from dataclasses import dataclass
 from tkinter import filedialog, messagebox, ttk
 from tkinter.scrolledtext import ScrolledText
+from types import SimpleNamespace
 from typing import TextIO
 
-from process import FileKind, build_language_code_candidates, detect_file_kind
+from core.formats import FileKind, detect_file_kind
+from core.providers import (
+    DEFAULT_PROVIDER as DEFAULT_PROVIDER_SPEC,
+    DEFAULT_PROVIDER_NAME,
+    SUPPORTED_TRANSLATION_PROVIDERS,
+    get_translation_provider,
+)
+from core.resources import detect_default_text_resource
+from core.task_cli import (
+    GEMINI_BACKEND_CHOICES,
+    apply_provider_environment_from_args,
+    resolve_provider_model,
+)
+from core.term_extraction import validate_max_length
+from tasks import check_translations as check_task
+from tasks import extract_terms as extract_task
+from tasks import extract_terms_local as extract_local_task
+from tasks import revise_translations as revise_task
+from tasks import translate as translate_task
 
 
 DEFAULT_SOURCE_LANG = "en"
 DEFAULT_TARGET_LANG = "kk"
-DEFAULT_MODEL = "gemini-3-flash-preview"
+DEFAULT_PROVIDER = DEFAULT_PROVIDER_NAME
+SUPPORTED_PROVIDER_CHOICES = tuple(sorted(SUPPORTED_TRANSLATION_PROVIDERS))
+DEFAULT_MODEL = DEFAULT_PROVIDER_SPEC.default_model
 THINKING_LEVEL_CHOICES = ("", "minimal", "low", "medium", "high")
 EXTRACT_MODE_CHOICES = ("missing", "all")
 EXTRACT_OUTPUT_CHOICES = ("po", "json")
+LOCAL_EXTRACT_MAX_LENGTH_CHOICES = ("1", "2", "3")
 PROGRESS_PERCENT_RE = re.compile(r"Progress:\s*(?P<pct>\d+(?:\.\d+)?)%")
 BATCH_PROGRESS_RE = re.compile(
     r"Progress:\s*completed batches\s+(?P<done>\d+)/(?P<total>\d+)"
 )
 TRANSLATABLE_FILETYPES = [
-    ("Translatable files", "*.po *.ts *.resx *.strings *.txt"),
+    ("Translatable files", "*.po *.ts *.resx *.strings *.txt *.xml"),
     ("PO files", "*.po"),
     ("Qt TS files", "*.ts"),
     ("RESX files", "*.resx"),
     ("Apple strings files", "*.strings"),
     ("Plain text files", "*.txt"),
+    ("Android XML files", "*.xml"),
     ("All files", "*.*"),
 ]
 VOCAB_FILETYPES = [
-    ("Vocabulary files", "*.txt *.po"),
+    ("Vocabulary files", "*.txt *.po *.tbx"),
     ("Text files", "*.txt"),
     ("PO files", "*.po"),
+    ("TBX files", "*.tbx"),
     ("All files", "*.*"),
 ]
 RULES_FILETYPES = [
@@ -49,7 +73,26 @@ RULES_FILETYPES = [
     ("All files", "*.*"),
 ]
 CHECK_FILETYPES = [
+    ("Checkable files", "*.po *.ts"),
     ("PO files", "*.po"),
+    ("Qt TS files", "*.ts"),
+    ("All files", "*.*"),
+]
+LOCAL_EXTRACT_FILETYPES = [
+    ("Supported local extract files", "*.po *.ts *.resx *.strings *.txt *.xml *.json"),
+    ("Translatable files", "*.po *.ts *.resx *.strings *.txt *.xml"),
+    ("Android XML files", "*.xml"),
+    ("JSON files", "*.json"),
+    ("All files", "*.*"),
+]
+LOCAL_EXTRACT_SOURCE_FILETYPES = [
+    ("Supported local extract files", "*.po *.ts *.resx *.strings *.txt *.xml"),
+    ("Translatable files", "*.po *.ts *.resx *.strings *.txt *.xml"),
+    ("Android XML files", "*.xml"),
+    ("All files", "*.*"),
+]
+JSON_FILETYPES = [
+    ("JSON files", "*.json"),
     ("All files", "*.*"),
 ]
 LOG_DIR_NAME = "logs"
@@ -60,8 +103,13 @@ READONLY_STATES = frozenset({"disabled", "readonly"})
 @dataclass(slots=True)
 class ProcessGuiConfig:
     input_file: str = ""
+    input_files: tuple[str, ...] = ()
+    source_file: str = ""
     source_lang: str = DEFAULT_SOURCE_LANG
     target_lang: str = DEFAULT_TARGET_LANG
+    provider: str = DEFAULT_PROVIDER
+    gemini_backend: str = "studio"
+    google_cloud_location: str = "global"
     model: str = DEFAULT_MODEL
     thinking_level: str = ""
     batch_size: str = ""
@@ -70,7 +118,9 @@ class ProcessGuiConfig:
     rules_path: str = ""
     rules_str: str = ""
     api_key: str = ""
+    flex_mode: bool = False
     retranslate_all: bool = False
+    warnings_report: bool = False
 
 
 @dataclass(slots=True)
@@ -78,12 +128,16 @@ class ExtractGuiConfig:
     input_file: str = ""
     source_lang: str = DEFAULT_SOURCE_LANG
     target_lang: str = DEFAULT_TARGET_LANG
+    provider: str = DEFAULT_PROVIDER
+    gemini_backend: str = "studio"
+    google_cloud_location: str = "global"
     model: str = DEFAULT_MODEL
     thinking_level: str = ""
     batch_size: str = ""
     parallel_requests: str = ""
     vocab_path: str = ""
     api_key: str = ""
+    flex_mode: bool = False
     mode: str = "missing"
     out_format: str = "po"
     out_path: str = ""
@@ -96,6 +150,9 @@ class CheckGuiConfig:
     input_file: str = ""
     source_lang: str = DEFAULT_SOURCE_LANG
     target_lang: str = DEFAULT_TARGET_LANG
+    provider: str = DEFAULT_PROVIDER
+    gemini_backend: str = "studio"
+    google_cloud_location: str = "global"
     model: str = DEFAULT_MODEL
     thinking_level: str = ""
     batch_size: str = ""
@@ -104,10 +161,26 @@ class CheckGuiConfig:
     rules_path: str = ""
     rules_str: str = ""
     api_key: str = ""
+    flex_mode: bool = False
     num_messages: str = ""
     out_path: str = ""
     include_ok: bool = False
     max_attempts: str = "5"
+
+
+@dataclass(slots=True)
+class LocalExtractGuiConfig:
+    input_file: str = ""
+    source_lang: str = DEFAULT_SOURCE_LANG
+    target_lang: str = DEFAULT_TARGET_LANG
+    vocab_path: str = ""
+    mode: str = "missing"
+    max_length: str = "1"
+    out_path: str = ""
+    include_rejected: bool = False
+    to_po: bool = False
+    also_po: bool = False
+    include_borderline: bool = False
 
 
 @dataclass(slots=True)
@@ -116,6 +189,9 @@ class ReviseGuiConfig:
     source_file: str = ""
     source_lang: str = DEFAULT_SOURCE_LANG
     target_lang: str = DEFAULT_TARGET_LANG
+    provider: str = DEFAULT_PROVIDER
+    gemini_backend: str = "studio"
+    google_cloud_location: str = "global"
     model: str = DEFAULT_MODEL
     thinking_level: str = ""
     batch_size: str = ""
@@ -124,6 +200,7 @@ class ReviseGuiConfig:
     rules_path: str = ""
     rules_str: str = ""
     api_key: str = ""
+    flex_mode: bool = False
     instruction: str = ""
     num_messages: str = ""
     out_path: str = ""
@@ -146,6 +223,11 @@ def widget_supports_clipboard(widget_class: str) -> bool:
 
 def widget_is_editable(widget_class: str, state: str) -> bool:
     return widget_supports_clipboard(widget_class) and str(state or "") not in READONLY_STATES
+
+
+def path_exists_as_file_or_dir(path: str) -> bool:
+    cleaned_path = _clean(path)
+    return bool(cleaned_path) and (os.path.isfile(cleaned_path) or os.path.isdir(cleaned_path))
 
 
 def _validate_optional_positive_int(value: str, flag_name: str) -> str | None:
@@ -179,20 +261,8 @@ def build_script_path(script_name: str, base_dir: str | None = None) -> str:
     return os.path.join(build_resource_root(base_dir), script_name)
 
 
-def build_process_script_path(base_dir: str | None = None) -> str:
-    return build_script_path("process.py", base_dir=base_dir)
-
-
-def build_extract_script_path(base_dir: str | None = None) -> str:
-    return build_script_path("extract_terms.py", base_dir=base_dir)
-
-
-def build_check_script_path(base_dir: str | None = None) -> str:
-    return build_script_path("check_translations.py", base_dir=base_dir)
-
-
-def build_revise_script_path(base_dir: str | None = None) -> str:
-    return build_script_path("revise_translations.py", base_dir=base_dir)
+def build_cli_script_path(base_dir: str | None = None) -> str:
+    return build_script_path("translate_cli.py", base_dir=base_dir)
 
 
 def _sanitize_log_name(value: str) -> str:
@@ -223,23 +293,16 @@ def detect_default_resource_path(
     target_lang: str,
     base_dir: str | None = None,
 ) -> str:
-    resource_root = build_resource_root(base_dir)
-    for lang_code in build_language_code_candidates(target_lang):
-        candidate_path = os.path.join(
-            resource_root,
-            "data",
-            lang_code,
-            f"{prefix}.{extension}",
+    return (
+        detect_default_text_resource(
+            prefix,
+            extension,
+            target_lang,
+            base_dir=build_resource_root(base_dir),
+            allow_directory=prefix == "vocab",
         )
-        if os.path.isfile(candidate_path):
-            return candidate_path
-
-    for lang_code in build_language_code_candidates(target_lang):
-        legacy_path = os.path.join(resource_root, f"{prefix}-{lang_code}.{extension}")
-        if os.path.isfile(legacy_path):
-            return legacy_path
-
-    return ""
+        or ""
+    )
 
 
 def detect_default_resource_paths(
@@ -250,6 +313,32 @@ def detect_default_resource_paths(
         detect_default_resource_path("vocab", "txt", target_lang, base_dir=base_dir),
         detect_default_resource_path("rules", "md", target_lang, base_dir=base_dir),
     )
+
+
+def build_system_prompt_preview(tool_key: str, target_lang: str) -> str:
+    normalized_tool = _clean(tool_key).lower()
+    resolved_target_lang = _clean(target_lang) or DEFAULT_TARGET_LANG
+
+    if normalized_tool in {"process", "translate"}:
+        return translate_task.SYSTEM_INSTRUCTION.strip()
+    if normalized_tool == "extract":
+        return extract_task.build_term_system_instruction(resolved_target_lang)
+    if normalized_tool == "extract_local":
+        return (
+            "No model system prompt is used for this task.\n\n"
+            "Local term discovery runs deterministic source-side extraction using:\n"
+            "- core/term_extraction.py for normalization, tokenization, filtering, evidence collection, and scoring\n"
+            "- core/term_handoff.py for JSON report shaping and JSON-to-PO conversion\n"
+            "- data/extract/... resource files for stopwords, low-value words, allowlists, and excluded terms\n"
+            "- the approved vocabulary to filter already-known terms in missing mode\n\n"
+            "The task can scan one source file or a whole source directory tree.\n"
+            "It can also convert a local extraction JSON report into a translation-ready PO glossary handoff."
+        )
+    if normalized_tool == "check":
+        return check_task.build_check_system_instruction(resolved_target_lang)
+    if normalized_tool == "revise":
+        return revise_task.build_revision_system_instruction(resolved_target_lang)
+    return "System prompt preview unavailable."
 
 
 def choose_resource_field_value(
@@ -300,11 +389,46 @@ def parse_progress_percent(line: str) -> float | None:
     return None
 
 
+def summarize_input_files(file_paths: list[str] | tuple[str, ...]) -> str:
+    cleaned_paths = [_clean(path) for path in file_paths if _clean(path)]
+    if not cleaned_paths:
+        return ""
+    if len(cleaned_paths) == 1:
+        return cleaned_paths[0]
+    return f"{cleaned_paths[0]} (+{len(cleaned_paths) - 1} more)"
+
+
+def summarize_recursive_input_folder(folder_path: str, file_count: int) -> str:
+    cleaned_folder = _clean(folder_path)
+    if not cleaned_folder:
+        return ""
+    suffix = "file" if file_count == 1 else "files"
+    return f"{cleaned_folder} ({file_count} recursive {suffix})"
+
+
+def get_local_extract_file_dialog_config(to_po_mode: bool) -> tuple[str, list[tuple[str, str]]]:
+    if to_po_mode:
+        return "Select local extraction JSON file", JSON_FILETYPES
+    return "Select source file for local extraction", LOCAL_EXTRACT_SOURCE_FILETYPES
+
+
+def resolve_process_input_files(config: ProcessGuiConfig) -> list[str]:
+    explicit_files = [_clean(path) for path in config.input_files if _clean(path)]
+    if explicit_files:
+        return explicit_files
+    cleaned_input = _clean(config.input_file)
+    return [cleaned_input] if cleaned_input else []
+
+
 def _validate_base_config(
     *,
     input_file: str,
+    input_files: list[str] | None = None,
     source_lang: str,
     target_lang: str,
+    provider: str,
+    gemini_backend: str,
+    google_cloud_location: str,
     model: str,
     thinking_level: str,
     batch_size: str,
@@ -313,20 +437,34 @@ def _validate_base_config(
     api_key: str,
     environ: dict[str, str] | None = None,
     rules_path: str = "",
+    allow_input_directories: bool = False,
 ) -> list[str]:
     env = environ if environ is not None else os.environ
     errors: list[str] = []
 
     cleaned_input = _clean(input_file)
+    cleaned_input_files = [_clean(path) for path in (input_files or []) if _clean(path)]
     cleaned_source = _clean(source_lang)
     cleaned_target = _clean(target_lang)
-    cleaned_model = _clean(model)
+    cleaned_provider = _clean(provider)
+    cleaned_gemini_backend = _clean(gemini_backend).lower()
+    cleaned_google_cloud_location = _clean(google_cloud_location)
     cleaned_vocab = _clean(vocab_path)
     cleaned_rules = _clean(rules_path)
     cleaned_api_key = _clean(api_key)
 
-    if not cleaned_input:
+    if cleaned_input_files:
+        for file_path in cleaned_input_files:
+            if allow_input_directories:
+                if not path_exists_as_file_or_dir(file_path):
+                    errors.append(f"Input file or directory does not exist: {file_path}")
+            elif not os.path.isfile(file_path):
+                errors.append(f"Input file does not exist: {file_path}")
+    elif not cleaned_input:
         errors.append("Input file is required.")
+    elif allow_input_directories:
+        if not path_exists_as_file_or_dir(cleaned_input):
+            errors.append(f"Input file or directory does not exist: {cleaned_input}")
     elif not os.path.isfile(cleaned_input):
         errors.append(f"Input file does not exist: {cleaned_input}")
 
@@ -336,8 +474,29 @@ def _validate_base_config(
     if not cleaned_target:
         errors.append("Target language is required.")
 
-    if not cleaned_model:
-        errors.append("Model is required.")
+    if not cleaned_provider:
+        errors.append("Provider is required.")
+    else:
+        try:
+            get_translation_provider(cleaned_provider)
+        except ValueError as exc:
+            errors.append(str(exc))
+
+    if cleaned_provider == "gemini":
+        try:
+            _validate_choice(cleaned_gemini_backend, GEMINI_BACKEND_CHOICES, "Gemini backend")
+        except ValueError as exc:
+            errors.append(str(exc))
+        if cleaned_gemini_backend == "vertex" and (
+            cleaned_google_cloud_location and cleaned_google_cloud_location.lower() != "global"
+        ):
+            errors.append(
+                "Gemini Vertex API-key mode currently supports only the global endpoint."
+            )
+        if cleaned_gemini_backend != "vertex" and (
+            cleaned_google_cloud_location and cleaned_google_cloud_location.lower() != "global"
+        ):
+            errors.append("Set Gemini backend to 'vertex' to use a custom Google Cloud location.")
 
     try:
         _validate_choice(thinking_level, THINKING_LEVEL_CHOICES, "Thinking level")
@@ -353,16 +512,28 @@ def _validate_base_config(
         except ValueError as exc:
             errors.append(str(exc))
 
-    if cleaned_vocab and not os.path.isfile(cleaned_vocab):
-        errors.append(f"Vocabulary file does not exist: {cleaned_vocab}")
+    if cleaned_vocab and not path_exists_as_file_or_dir(cleaned_vocab):
+        errors.append(f"Vocabulary file or directory does not exist: {cleaned_vocab}")
 
     if cleaned_rules and not os.path.isfile(cleaned_rules):
         errors.append(f"Rules file does not exist: {cleaned_rules}")
 
-    if not cleaned_api_key and not env.get("GOOGLE_API_KEY"):
-        errors.append(
-            "GOOGLE_API_KEY is not set. Provide an API key in the GUI or the environment."
-        )
+    if cleaned_provider:
+        try:
+            provider_spec = get_translation_provider(cleaned_provider)
+        except ValueError:
+            provider_spec = None
+        if provider_spec is not None:
+            api_key_env = provider_spec.api_key_env
+            if cleaned_provider == "gemini" and cleaned_gemini_backend == "vertex":
+                if api_key_env and not cleaned_api_key and not env.get(api_key_env):
+                    errors.append(
+                        f"{api_key_env} is not set. Provide an API key in the GUI or the environment."
+                    )
+            elif api_key_env and not cleaned_api_key and not env.get(api_key_env):
+                errors.append(
+                    f"{api_key_env} is not set. Provide an API key in the GUI or the environment."
+                )
 
     return errors
 
@@ -371,10 +542,15 @@ def validate_process_gui_config(
     config: ProcessGuiConfig,
     environ: dict[str, str] | None = None,
 ) -> list[str]:
-    return _validate_base_config(
-        input_file=config.input_file,
+    input_files = resolve_process_input_files(config)
+    errors = _validate_base_config(
+        input_file=input_files[0] if input_files else config.input_file,
+        input_files=input_files,
         source_lang=config.source_lang,
         target_lang=config.target_lang,
+        provider=config.provider,
+        gemini_backend=config.gemini_backend,
+        google_cloud_location=config.google_cloud_location,
         model=config.model,
         thinking_level=config.thinking_level,
         batch_size=config.batch_size,
@@ -383,7 +559,27 @@ def validate_process_gui_config(
         rules_path=config.rules_path,
         api_key=config.api_key,
         environ=environ,
+        allow_input_directories=True,
     )
+
+    cleaned_source_file = _clean(config.source_file)
+    if translation_requires_source_file(input_files):
+        if not cleaned_source_file:
+            errors.append("Source file is required for Android .xml translation runs.")
+        elif not os.path.isfile(cleaned_source_file):
+            errors.append(f"Source file does not exist: {cleaned_source_file}")
+    elif cleaned_source_file and not os.path.isfile(cleaned_source_file):
+        errors.append(f"Source file does not exist: {cleaned_source_file}")
+
+    if not any(message.startswith("Source file ") for message in errors):
+        try:
+            translate_task.validate_translation_files(
+                input_files,
+                source_file=cleaned_source_file or None,
+            )
+        except ValueError as exc:
+            errors.append(str(exc))
+    return errors
 
 
 def validate_extract_gui_config(
@@ -394,6 +590,9 @@ def validate_extract_gui_config(
         input_file=config.input_file,
         source_lang=config.source_lang,
         target_lang=config.target_lang,
+        provider=config.provider,
+        gemini_backend=config.gemini_backend,
+        google_cloud_location=config.google_cloud_location,
         model=config.model,
         thinking_level=config.thinking_level,
         batch_size=config.batch_size,
@@ -425,6 +624,58 @@ def validate_extract_gui_config(
     return errors
 
 
+def validate_local_extract_gui_config(config: LocalExtractGuiConfig) -> list[str]:
+    errors: list[str] = []
+
+    cleaned_input = _clean(config.input_file)
+    cleaned_vocab = _clean(config.vocab_path)
+    cleaned_out = _clean(config.out_path)
+    cleaned_source = _clean(config.source_lang)
+    cleaned_target = _clean(config.target_lang)
+    cleaned_mode = _clean(config.mode)
+    cleaned_max_length = _clean(config.max_length)
+
+    if not cleaned_input:
+        errors.append("Input file is required.")
+    elif config.to_po:
+        if not os.path.isfile(cleaned_input):
+            errors.append(f"Input file does not exist: {cleaned_input}")
+    elif not os.path.isfile(cleaned_input) and not os.path.isdir(cleaned_input):
+        errors.append(f"Input file or directory does not exist: {cleaned_input}")
+
+    if not config.to_po:
+        if not cleaned_source:
+            errors.append("Source language is required.")
+        if not cleaned_target:
+            errors.append("Target language is required.")
+        try:
+            _validate_choice(cleaned_mode, EXTRACT_MODE_CHOICES, "Mode")
+        except ValueError as exc:
+            errors.append(str(exc))
+        try:
+            max_length_value = int(cleaned_max_length)
+        except ValueError:
+            errors.append("Max length must be 1, 2, or 3.")
+        else:
+            try:
+                validate_max_length(max_length_value)
+            except ValueError:
+                errors.append("Max length must be 1, 2, or 3.")
+        if cleaned_vocab and not path_exists_as_file_or_dir(cleaned_vocab):
+            errors.append(f"Vocabulary file or directory does not exist: {cleaned_vocab}")
+        if cleaned_out and not cleaned_out.lower().endswith(".json"):
+            errors.append("Local extraction output path should end with .json.")
+    else:
+        if config.also_po:
+            errors.append("JSON to PO mode cannot also request one-shot PO output.")
+        if cleaned_input and not cleaned_input.lower().endswith(".json"):
+            errors.append("JSON to PO mode requires a .json input file.")
+        if cleaned_out and not cleaned_out.lower().endswith(".po"):
+            errors.append("PO output path should end with .po in JSON to PO mode.")
+
+    return errors
+
+
 def validate_check_gui_config(
     config: CheckGuiConfig,
     environ: dict[str, str] | None = None,
@@ -433,6 +684,9 @@ def validate_check_gui_config(
         input_file=config.input_file,
         source_lang=config.source_lang,
         target_lang=config.target_lang,
+        provider=config.provider,
+        gemini_backend=config.gemini_backend,
+        google_cloud_location=config.google_cloud_location,
         model=config.model,
         thinking_level=config.thinking_level,
         batch_size=config.batch_size,
@@ -466,9 +720,15 @@ def _detect_revision_file_kind(input_file: str) -> FileKind | None:
         return None
 
 
+def translation_requires_source_file(input_files: list[str] | tuple[str, ...]) -> bool:
+    if len(input_files) != 1:
+        return False
+    return _detect_revision_file_kind(input_files[0]) == FileKind.ANDROID_XML
+
+
 def revision_requires_source_file(input_file: str) -> bool:
     file_kind = _detect_revision_file_kind(input_file)
-    return file_kind in (FileKind.STRINGS, FileKind.RESX, FileKind.TXT)
+    return file_kind in (FileKind.ANDROID_XML, FileKind.STRINGS, FileKind.RESX, FileKind.TXT)
 
 
 def validate_revise_gui_config(
@@ -479,6 +739,9 @@ def validate_revise_gui_config(
         input_file=config.input_file,
         source_lang=config.source_lang,
         target_lang=config.target_lang,
+        provider=config.provider,
+        gemini_backend=config.gemini_backend,
+        google_cloud_location=config.google_cloud_location,
         model=config.model,
         thinking_level=config.thinking_level,
         batch_size=config.batch_size,
@@ -491,12 +754,12 @@ def validate_revise_gui_config(
 
     file_kind = _detect_revision_file_kind(config.input_file)
     if _clean(config.input_file) and file_kind is None:
-        errors.append("Input file must be a supported .po, .ts, .resx, .strings, or .txt file.")
+        errors.append("Input file must be a supported .po, .ts, .resx, .strings, .txt, or Android .xml file.")
 
     cleaned_source_file = _clean(config.source_file)
     if revision_requires_source_file(config.input_file):
         if not cleaned_source_file:
-            errors.append("Source file is required for .strings, .resx, and .txt revision runs.")
+            errors.append("Source file is required for Android .xml, .strings, .resx, and .txt revision runs.")
         elif not os.path.isfile(cleaned_source_file):
             errors.append(f"Source file does not exist: {cleaned_source_file}")
     elif cleaned_source_file and not os.path.isfile(cleaned_source_file):
@@ -526,26 +789,48 @@ def _append_common_cli_args(
     *,
     source_lang: str,
     target_lang: str,
+    provider: str,
+    gemini_backend: str,
+    google_cloud_location: str,
     model: str,
     thinking_level: str,
+    flex_mode: bool,
     batch_size: str,
     parallel_requests: str,
     vocab_path: str = "",
 ) -> None:
+    provider_name = _clean(provider) or DEFAULT_PROVIDER
+    model_name = resolve_provider_model(provider_name, _clean(model) or None)
     command.extend(
         [
             "--source-lang",
             _clean(source_lang),
             "--target-lang",
             _clean(target_lang),
+            "--provider",
+            provider_name,
             "--model",
-            _clean(model),
+            model_name,
         ]
     )
 
     thinking_level_value = _clean(thinking_level)
     if thinking_level_value:
         command.extend(["--thinking-level", thinking_level_value])
+
+    try:
+        provider_spec = get_translation_provider(provider_name)
+    except ValueError:
+        provider_spec = None
+    if provider_name == "gemini":
+        backend_value = _clean(gemini_backend).lower()
+        location_value = _clean(google_cloud_location)
+        if backend_value == "vertex" or (location_value and location_value.lower() != "global"):
+            command.extend(["--gemini-backend", "vertex"])
+            if location_value:
+                command.extend(["--google-cloud-location", location_value])
+    if flex_mode and provider_spec is not None and getattr(provider_spec, "supports_flex_mode", False):
+        command.append("--flex")
 
     batch_size_value = _validate_optional_positive_int(batch_size, "Batch size")
     if batch_size_value:
@@ -572,22 +857,28 @@ def build_process_command(
     if errors:
         raise ValueError("\n".join(errors))
 
-    resolved_script = os.path.abspath(script_path or build_process_script_path())
+    resolved_script = os.path.abspath(script_path or build_cli_script_path())
     if not os.path.isfile(resolved_script):
-        raise ValueError(f"process.py not found at: {resolved_script}")
+        raise ValueError(f"translate_cli.py not found at: {resolved_script}")
 
+    input_files = resolve_process_input_files(config)
     command = [
         python_executable or sys.executable,
         "-u",
         resolved_script,
-        _clean(config.input_file),
+        "translate",
+        *input_files,
     ]
     _append_common_cli_args(
         command,
         source_lang=config.source_lang,
         target_lang=config.target_lang,
+        provider=config.provider,
+        gemini_backend=config.gemini_backend,
+        google_cloud_location=config.google_cloud_location,
         model=config.model,
         thinking_level=config.thinking_level,
+        flex_mode=config.flex_mode,
         batch_size=config.batch_size,
         parallel_requests=config.parallel_requests,
         vocab_path=config.vocab_path,
@@ -601,8 +892,14 @@ def build_process_command(
     if rules_str:
         command.extend(["--rules-str", rules_str])
 
+    source_file = _clean(config.source_file)
+    if source_file:
+        command.extend(["--source-file", source_file])
+
     if config.retranslate_all:
         command.append("--retranslate-all")
+    if config.warnings_report:
+        command.append("--warnings-report")
 
     return command
 
@@ -616,22 +913,27 @@ def build_extract_command(
     if errors:
         raise ValueError("\n".join(errors))
 
-    resolved_script = os.path.abspath(script_path or build_extract_script_path())
+    resolved_script = os.path.abspath(script_path or build_cli_script_path())
     if not os.path.isfile(resolved_script):
-        raise ValueError(f"extract_terms.py not found at: {resolved_script}")
+        raise ValueError(f"translate_cli.py not found at: {resolved_script}")
 
     command = [
         python_executable or sys.executable,
         "-u",
         resolved_script,
+        "extract-terms",
         _clean(config.input_file),
     ]
     _append_common_cli_args(
         command,
         source_lang=config.source_lang,
         target_lang=config.target_lang,
+        provider=config.provider,
+        gemini_backend=config.gemini_backend,
+        google_cloud_location=config.google_cloud_location,
         model=config.model,
         thinking_level=config.thinking_level,
+        flex_mode=config.flex_mode,
         batch_size=config.batch_size,
         parallel_requests=config.parallel_requests,
         vocab_path=config.vocab_path,
@@ -659,6 +961,61 @@ def build_extract_command(
     return command
 
 
+def build_local_extract_command(
+    config: LocalExtractGuiConfig,
+    python_executable: str | None = None,
+    script_path: str | None = None,
+) -> list[str]:
+    errors = validate_local_extract_gui_config(config)
+    if errors:
+        raise ValueError("\n".join(errors))
+
+    resolved_script = os.path.abspath(script_path or build_cli_script_path())
+    if not os.path.isfile(resolved_script):
+        raise ValueError(f"translate_cli.py not found at: {resolved_script}")
+
+    command = [
+        python_executable or sys.executable,
+        "-u",
+        resolved_script,
+        "extract-terms-local",
+        _clean(config.input_file),
+    ]
+
+    if config.to_po:
+        command.append("--to-po")
+        if config.include_borderline:
+            command.append("--include-borderline")
+    else:
+        command.extend(
+            [
+                "--source-lang",
+                _clean(config.source_lang),
+                "--target-lang",
+                _clean(config.target_lang),
+                "--mode",
+                _clean(config.mode) or "missing",
+                "--max-length",
+                _clean(config.max_length) or "1",
+            ]
+        )
+        vocab_path = _clean(config.vocab_path)
+        if vocab_path:
+            command.extend(["--vocab", vocab_path])
+        if config.include_rejected:
+            command.append("--include-rejected")
+        if config.also_po:
+            command.append("--also-po")
+            if config.include_borderline:
+                command.append("--include-borderline")
+
+    out_path = _clean(config.out_path)
+    if out_path:
+        command.extend(["--out", out_path])
+
+    return command
+
+
 def build_check_command(
     config: CheckGuiConfig,
     python_executable: str | None = None,
@@ -668,22 +1025,27 @@ def build_check_command(
     if errors:
         raise ValueError("\n".join(errors))
 
-    resolved_script = os.path.abspath(script_path or build_check_script_path())
+    resolved_script = os.path.abspath(script_path or build_cli_script_path())
     if not os.path.isfile(resolved_script):
-        raise ValueError(f"check_translations.py not found at: {resolved_script}")
+        raise ValueError(f"translate_cli.py not found at: {resolved_script}")
 
     command = [
         python_executable or sys.executable,
         "-u",
         resolved_script,
+        "check",
         _clean(config.input_file),
     ]
     _append_common_cli_args(
         command,
         source_lang=config.source_lang,
         target_lang=config.target_lang,
+        provider=config.provider,
+        gemini_backend=config.gemini_backend,
+        google_cloud_location=config.google_cloud_location,
         model=config.model,
         thinking_level=config.thinking_level,
+        flex_mode=config.flex_mode,
         batch_size=config.batch_size,
         parallel_requests=config.parallel_requests,
         vocab_path=config.vocab_path,
@@ -730,14 +1092,15 @@ def build_revise_command(
     if errors:
         raise ValueError("\n".join(errors))
 
-    resolved_script = os.path.abspath(script_path or build_revise_script_path())
+    resolved_script = os.path.abspath(script_path or build_cli_script_path())
     if not os.path.isfile(resolved_script):
-        raise ValueError(f"revise_translations.py not found at: {resolved_script}")
+        raise ValueError(f"translate_cli.py not found at: {resolved_script}")
 
     command = [
         python_executable or sys.executable,
         "-u",
         resolved_script,
+        "revise",
         _clean(config.input_file),
         "--instruction",
         _clean(config.instruction),
@@ -746,8 +1109,12 @@ def build_revise_command(
         command,
         source_lang=config.source_lang,
         target_lang=config.target_lang,
+        provider=config.provider,
+        gemini_backend=config.gemini_backend,
+        google_cloud_location=config.google_cloud_location,
         model=config.model,
         thinking_level=config.thinking_level,
+        flex_mode=config.flex_mode,
         batch_size=config.batch_size,
         parallel_requests=config.parallel_requests,
         vocab_path=config.vocab_path,
@@ -794,12 +1161,25 @@ def build_revise_command(
 
 def build_script_env(
     api_key: str,
+    provider: str = DEFAULT_PROVIDER,
+    gemini_backend: str = "studio",
+    google_cloud_location: str = "global",
     base_env: dict[str, str] | None = None,
 ) -> dict[str, str]:
     env = dict(base_env if base_env is not None else os.environ)
     cleaned_api_key = _clean(api_key)
-    if cleaned_api_key:
-        env["GOOGLE_API_KEY"] = cleaned_api_key
+    provider_spec = get_translation_provider(provider)
+    api_key_env = provider_spec.api_key_env
+    if cleaned_api_key and api_key_env:
+        env[api_key_env] = cleaned_api_key
+    apply_provider_environment_from_args(
+        SimpleNamespace(
+            provider=provider,
+            gemini_backend=gemini_backend,
+            google_cloud_location=google_cloud_location,
+        ),
+        environ=env,
+    )
     return env
 
 
@@ -807,7 +1187,13 @@ def build_process_env(
     config: ProcessGuiConfig,
     base_env: dict[str, str] | None = None,
 ) -> dict[str, str]:
-    return build_script_env(config.api_key, base_env=base_env)
+    return build_script_env(
+        config.api_key,
+        provider=config.provider,
+        gemini_backend=config.gemini_backend,
+        google_cloud_location=config.google_cloud_location,
+        base_env=base_env,
+    )
 
 
 class BaseToolTab(ttk.Frame):
@@ -822,6 +1208,9 @@ class BaseToolTab(ttk.Frame):
         input_filetypes: list[tuple[str, str]],
         supports_vocab: bool = True,
         supports_rules: bool = False,
+        input_label: str = "Input file",
+        supports_provider_controls: bool = True,
+        preview_label: str = "System prompt",
     ) -> None:
         super().__init__(notebook)
         self.app = app
@@ -831,16 +1220,24 @@ class BaseToolTab(ttk.Frame):
         self.input_filetypes = input_filetypes
         self.supports_vocab = supports_vocab
         self.supports_rules = supports_rules
+        self.input_label = input_label
+        self.supports_provider_controls = supports_provider_controls
+        self.preview_label = preview_label
         self.resource_root = app.resource_root
         self._auto_vocab_path = ""
         self._auto_rules_path = ""
+        self._auto_model = DEFAULT_MODEL
         self.api_key_var = app.api_key_var
+        self.provider_var = app.provider_var
+        self.gemini_backend_var = app.gemini_backend_var
+        self.google_cloud_location_var = app.google_cloud_location_var
+        self.thinking_level_var = app.thinking_level_var
+        self.flex_mode_var = app.flex_mode_var
 
         self.input_file_var = tk.StringVar()
         self.source_lang_var = tk.StringVar(value=DEFAULT_SOURCE_LANG)
         self.target_lang_var = tk.StringVar(value=DEFAULT_TARGET_LANG)
         self.model_var = tk.StringVar(value=DEFAULT_MODEL)
-        self.thinking_level_var = tk.StringVar()
         self.batch_size_var = tk.StringVar()
         self.parallel_requests_var = tk.StringVar()
         self.vocab_path_var = tk.StringVar()
@@ -851,16 +1248,26 @@ class BaseToolTab(ttk.Frame):
         self.stop_button: ttk.Button | None = None
         self.rules_preview_text: ScrolledText | None = None
         self.rules_text: ScrolledText | None = None
+        self.system_prompt_text: ScrolledText | None = None
+        self.flex_mode_button: ttk.Checkbutton | None = None
+        self.thinking_level_combo: ttk.Combobox | None = None
+        self.gemini_backend_combo: ttk.Combobox | None = None
+        self.google_cloud_location_entry: ttk.Entry | None = None
 
         self.columnconfigure(0, weight=1)
         self.rowconfigure(0, weight=1)
 
         self._build_widgets()
+        self._apply_default_model(force=True)
+        self._refresh_provider_specific_controls()
         self._refresh_api_status()
         self._apply_default_resources(force=True)
         self._load_rules_preview()
+        self._load_system_prompt_preview()
 
         self.api_key_var.trace_add("write", self._on_api_key_changed)
+        self.provider_var.trace_add("write", self._on_provider_changed)
+        self.gemini_backend_var.trace_add("write", self._on_api_key_changed)
         self.target_lang_var.trace_add("write", self._on_target_lang_changed)
         self.rules_path_var.trace_add("write", self._on_rules_path_changed)
 
@@ -881,37 +1288,61 @@ class BaseToolTab(ttk.Frame):
         ttk.Label(form, text=self.title).grid(row=0, column=0, columnspan=3, sticky="w")
 
         row = 1
-        self._add_entry_row(
-            form,
-            row=row,
-            label="Input file",
-            variable=self.input_file_var,
-            browse_command=self._browse_input_file,
-        )
-        row += 1
+        row += self._build_input_row(form, row)
         self._add_entry_row(form, row=row, label="Source lang", variable=self.source_lang_var)
         row += 1
         self._add_entry_row(form, row=row, label="Target lang", variable=self.target_lang_var)
         row += 1
-        self._add_entry_row(form, row=row, label="Model", variable=self.model_var)
-        row += 1
-        self._add_combo_row(
-            form,
-            row=row,
-            label="Thinking level",
-            variable=self.thinking_level_var,
-            values=THINKING_LEVEL_CHOICES,
-        )
-        row += 1
-        self._add_entry_row(form, row=row, label="Batch size", variable=self.batch_size_var)
-        row += 1
-        self._add_entry_row(
-            form,
-            row=row,
-            label="Parallel requests",
-            variable=self.parallel_requests_var,
-        )
-        row += 1
+        if self.supports_provider_controls:
+            self._add_combo_row(
+                form,
+                row=row,
+                label="Provider",
+                variable=self.provider_var,
+                values=SUPPORTED_PROVIDER_CHOICES,
+            )
+            row += 1
+            ttk.Label(form, text="Gemini backend").grid(row=row, column=0, sticky="w", pady=4)
+            self.gemini_backend_combo = ttk.Combobox(
+                form,
+                textvariable=self.gemini_backend_var,
+                values=GEMINI_BACKEND_CHOICES,
+            )
+            self.gemini_backend_combo.grid(row=row, column=1, sticky="ew", pady=4)
+            row += 1
+            ttk.Label(form, text="GCP location").grid(row=row, column=0, sticky="w", pady=4)
+            self.google_cloud_location_entry = ttk.Entry(
+                form,
+                textvariable=self.google_cloud_location_var,
+            )
+            self.google_cloud_location_entry.grid(row=row, column=1, sticky="ew", pady=4)
+            row += 1
+            self._add_entry_row(form, row=row, label="Model", variable=self.model_var)
+            row += 1
+            ttk.Label(form, text="Thinking level").grid(row=row, column=0, sticky="w", pady=4)
+            self.thinking_level_combo = ttk.Combobox(
+                form,
+                textvariable=self.thinking_level_var,
+                values=THINKING_LEVEL_CHOICES,
+            )
+            self.thinking_level_combo.grid(row=row, column=1, sticky="ew", pady=4)
+            row += 1
+            self.flex_mode_button = ttk.Checkbutton(
+                form,
+                text="Flex mode",
+                variable=self.flex_mode_var,
+            )
+            self.flex_mode_button.grid(row=row, column=0, columnspan=3, sticky="w", pady=(0, 4))
+            row += 1
+            self._add_entry_row(form, row=row, label="Batch size", variable=self.batch_size_var)
+            row += 1
+            self._add_entry_row(
+                form,
+                row=row,
+                label="Parallel requests",
+                variable=self.parallel_requests_var,
+            )
+            row += 1
 
         if self.supports_vocab:
             self._add_entry_row(
@@ -933,38 +1364,51 @@ class BaseToolTab(ttk.Frame):
             )
             row += 1
 
-        self._add_entry_row(
-            form,
-            row=row,
-            label="API key",
-            variable=self.api_key_var,
-            show="*",
-        )
-        row += 1
+        if self.supports_provider_controls:
+            self._add_entry_row(
+                form,
+                row=row,
+                label="API key",
+                variable=self.api_key_var,
+                show="*",
+            )
+            row += 1
 
-        ttk.Label(form, textvariable=self.api_status_var).grid(
-            row=row,
-            column=0,
-            columnspan=3,
-            sticky="w",
-            pady=(2, 8),
-        )
-        row += 1
+            ttk.Label(form, textvariable=self.api_status_var).grid(
+                row=row,
+                column=0,
+                columnspan=3,
+                sticky="w",
+                pady=(2, 8),
+            )
+            row += 1
 
         row = self._build_tool_specific_fields(form, row)
 
-        if self.supports_rules:
-            ttk.Label(form, text="Rules").grid(row=row, column=0, sticky="nw")
-            rules_notebook = ttk.Notebook(form)
-            rules_notebook.grid(
-                row=row + 1,
-                column=0,
-                columnspan=3,
-                sticky="nsew",
-                pady=(4, 8),
-            )
+        ttk.Label(form, text="Instructions").grid(row=row, column=0, sticky="nw")
+        instructions_notebook = ttk.Notebook(form)
+        instructions_notebook.grid(
+            row=row + 1,
+            column=0,
+            columnspan=3,
+            sticky="nsew",
+            pady=(4, 8),
+        )
 
-            preview_tab = ttk.Frame(rules_notebook, padding=6)
+        system_tab = ttk.Frame(instructions_notebook, padding=6)
+        system_tab.columnconfigure(0, weight=1)
+        system_tab.rowconfigure(0, weight=1)
+        self.system_prompt_text = ScrolledText(
+            system_tab,
+            wrap="word",
+            font=("Consolas", 10),
+            state="disabled",
+        )
+        self.system_prompt_text.grid(row=0, column=0, sticky="nsew")
+        instructions_notebook.add(system_tab, text=self.preview_label)
+
+        if self.supports_rules:
+            preview_tab = ttk.Frame(instructions_notebook, padding=6)
             preview_tab.columnconfigure(0, weight=1)
             preview_tab.rowconfigure(0, weight=1)
             self.rules_preview_text = ScrolledText(
@@ -974,9 +1418,9 @@ class BaseToolTab(ttk.Frame):
                 state="disabled",
             )
             self.rules_preview_text.grid(row=0, column=0, sticky="nsew")
-            rules_notebook.add(preview_tab, text="Loaded rules")
+            instructions_notebook.add(preview_tab, text="Loaded rules")
 
-            inline_tab = ttk.Frame(rules_notebook, padding=6)
+            inline_tab = ttk.Frame(instructions_notebook, padding=6)
             inline_tab.columnconfigure(0, weight=1)
             inline_tab.rowconfigure(0, weight=1)
             self.rules_text = ScrolledText(
@@ -985,9 +1429,10 @@ class BaseToolTab(ttk.Frame):
                 font=("Consolas", 10),
             )
             self.rules_text.grid(row=0, column=0, sticky="nsew")
-            rules_notebook.add(inline_tab, text="Inline override")
-            form.rowconfigure(row + 1, weight=1)
-            row += 2
+            instructions_notebook.add(inline_tab, text="Inline override")
+
+        form.rowconfigure(row + 1, weight=1)
+        row += 2
 
         buttons = ttk.Frame(form)
         buttons.grid(row=row, column=0, columnspan=3, sticky="ew")
@@ -1028,6 +1473,16 @@ class BaseToolTab(ttk.Frame):
     def _build_tool_specific_fields(self, parent: ttk.Frame, start_row: int) -> int:
         return start_row
 
+    def _build_input_row(self, parent: ttk.Frame, row: int) -> int:
+        self._add_entry_row(
+            parent,
+            row=row,
+            label=self.input_label,
+            variable=self.input_file_var,
+            browse_command=self._browse_input_file,
+        )
+        return 1
+
     def _add_entry_row(
         self,
         parent: ttk.Frame,
@@ -1062,14 +1517,16 @@ class BaseToolTab(ttk.Frame):
         label: str,
         variable: tk.StringVar,
         values: tuple[str, ...],
-    ) -> None:
+    ) -> ttk.Combobox:
         ttk.Label(parent, text=label).grid(row=row, column=0, sticky="w", pady=4)
-        ttk.Combobox(
+        combo = ttk.Combobox(
             parent,
             textvariable=variable,
             state="readonly",
             values=values,
-        ).grid(row=row, column=1, sticky="ew", pady=4)
+        )
+        combo.grid(row=row, column=1, sticky="ew", pady=4)
+        return combo
 
     def _browse_input_file(self) -> None:
         selected = filedialog.askopenfilename(
@@ -1098,22 +1555,109 @@ class BaseToolTab(ttk.Frame):
     def _on_api_key_changed(self, *_args: object) -> None:
         self._refresh_api_status()
 
+    def _on_provider_changed(self, *_args: object) -> None:
+        self._apply_default_model()
+        self._refresh_provider_specific_controls()
+        self._refresh_api_status()
+
     def _on_target_lang_changed(self, *_args: object) -> None:
         self._apply_default_resources()
+        self._load_system_prompt_preview()
 
     def _on_rules_path_changed(self, *_args: object) -> None:
         self._load_rules_preview()
 
     def _refresh_api_status(self) -> None:
+        if not self.supports_provider_controls:
+            self.api_status_var.set("")
+            return
+        provider_name = _clean(self.provider_var.get()) or DEFAULT_PROVIDER
+        try:
+            provider_spec = get_translation_provider(provider_name)
+        except ValueError:
+            self.api_status_var.set(f"API key source: invalid provider ({provider_name})")
+            return
+
+        api_key_env = provider_spec.api_key_env
+        if not api_key_env:
+            self.api_status_var.set("API key source: not required")
+            return
+
+        if provider_name == "gemini" and _clean(self.gemini_backend_var.get()).lower() == "vertex":
+            if _clean(self.api_key_var.get()):
+                self.api_status_var.set(f"API key source: GUI field ({api_key_env})")
+                return
+
+            if os.environ.get(api_key_env):
+                self.api_status_var.set(f"API key source: {api_key_env} environment variable")
+                return
+
+            self.api_status_var.set(f"API key source: missing ({api_key_env})")
+            return
+
         if _clean(self.api_key_var.get()):
-            self.api_status_var.set("API key source: GUI field")
+            self.api_status_var.set(f"API key source: GUI field ({api_key_env})")
             return
 
-        if os.environ.get("GOOGLE_API_KEY"):
-            self.api_status_var.set("API key source: GOOGLE_API_KEY environment variable")
+        if os.environ.get(api_key_env):
+            self.api_status_var.set(f"API key source: {api_key_env} environment variable")
             return
 
-        self.api_status_var.set("API key source: missing")
+        self.api_status_var.set(f"API key source: missing ({api_key_env})")
+
+    def _refresh_provider_specific_controls(self) -> None:
+        if not self.supports_provider_controls:
+            return
+        if (
+            self.flex_mode_button is None
+            and self.thinking_level_combo is None
+            and self.gemini_backend_combo is None
+        ):
+            return
+
+        provider_name = _clean(self.provider_var.get()) or DEFAULT_PROVIDER
+        try:
+            provider_spec = get_translation_provider(provider_name)
+        except ValueError:
+            flex_state = "disabled"
+            thinking_state = "disabled"
+            gemini_state = "disabled"
+        else:
+            flex_state = "normal" if getattr(provider_spec, "supports_flex_mode", False) else "disabled"
+            thinking_state = "normal" if getattr(provider_spec, "supports_thinking", False) else "disabled"
+            gemini_state = "normal" if provider_name == "gemini" else "disabled"
+        if self.flex_mode_button is not None:
+            self.flex_mode_button.configure(state=flex_state)
+        if flex_state == "disabled":
+            self.flex_mode_var.set(False)
+        if self.thinking_level_combo is not None:
+            self.thinking_level_combo.configure(state=thinking_state)
+        if thinking_state == "disabled":
+            self.thinking_level_var.set("")
+        for widget in (
+            self.gemini_backend_combo,
+            self.google_cloud_location_entry,
+        ):
+            if widget is not None:
+                widget.configure(state=gemini_state)
+
+    def _apply_default_model(self, force: bool = False) -> None:
+        if not self.supports_provider_controls:
+            return
+        provider_name = _clean(self.provider_var.get()) or DEFAULT_PROVIDER
+        try:
+            new_default_model = resolve_provider_model(provider_name, None)
+        except ValueError:
+            new_default_model = DEFAULT_MODEL
+
+        model_value, self._auto_model = choose_resource_field_value(
+            current_value=self.model_var.get(),
+            previous_auto_value=self._auto_model,
+            new_auto_value=new_default_model,
+            force=force,
+        )
+        if model_value != self.model_var.get():
+            self.model_var.set(model_value)
 
     def _apply_default_resources(self, force: bool = False) -> None:
         vocab_path, rules_path = detect_default_resource_paths(
@@ -1155,6 +1699,17 @@ class BaseToolTab(ttk.Frame):
         self.rules_preview_text.see("1.0")
         self.rules_preview_text.configure(state="disabled")
 
+    def _load_system_prompt_preview(self) -> None:
+        if self.system_prompt_text is None:
+            return
+
+        content = build_system_prompt_preview(self.tool_key, self.target_lang_var.get())
+        self.system_prompt_text.configure(state="normal")
+        self.system_prompt_text.delete("1.0", "end")
+        self.system_prompt_text.insert("1.0", content)
+        self.system_prompt_text.see("1.0")
+        self.system_prompt_text.configure(state="disabled")
+
     def _start_run(self) -> None:
         self.app.start_run(self)
 
@@ -1189,7 +1744,14 @@ class BaseToolTab(ttk.Frame):
         self.log_text.configure(state="disabled")
 
     def build_env(self) -> dict[str, str]:
-        return build_script_env(self.api_key_var.get())
+        if not self.supports_provider_controls:
+            return dict(os.environ)
+        return build_script_env(
+            self.api_key_var.get(),
+            provider=self.provider_var.get(),
+            gemini_backend=self.gemini_backend_var.get(),
+            google_cloud_location=self.google_cloud_location_var.get(),
+        )
 
     def build_command(self) -> list[str]:
         raise NotImplementedError
@@ -1197,31 +1759,130 @@ class BaseToolTab(ttk.Frame):
 
 class ProcessToolTab(BaseToolTab):
     def __init__(self, app: "ProcessGuiApp", notebook: ttk.Notebook) -> None:
+        self.source_file_var = tk.StringVar()
         self.retranslate_all_var = tk.BooleanVar(value=False)
+        self.warnings_report_var = tk.BooleanVar(value=True)
+        self.selected_input_files: tuple[str, ...] = ()
+        self._selected_input_files_display = ""
+        self.input_files_button: ttk.Button | None = None
+        self.input_folder_button: ttk.Button | None = None
         super().__init__(
             app,
             notebook,
             tool_key="process",
-            title="Translate with process.py",
-            script_name="process.py",
+            title="Translate",
+            script_name="translate_cli.py",
             input_filetypes=TRANSLATABLE_FILETYPES,
             supports_vocab=True,
             supports_rules=True,
+            input_label="Input file(s) / folder",
         )
 
+    def _build_input_row(self, parent: ttk.Frame, row: int) -> int:
+        ttk.Label(parent, text=self.input_label).grid(row=row, column=0, sticky="w", pady=4)
+        ttk.Entry(parent, textvariable=self.input_file_var).grid(
+            row=row,
+            column=1,
+            sticky="ew",
+            pady=4,
+        )
+        button_frame = ttk.Frame(parent)
+        button_frame.grid(row=row, column=2, sticky="nw", padx=(8, 0), pady=4)
+        self.input_files_button = ttk.Button(
+            button_frame,
+            text="Input files",
+            command=self._browse_input_file,
+        )
+        self.input_files_button.grid(row=0, column=0, sticky="ew")
+        self.input_folder_button = ttk.Button(
+            button_frame,
+            text="Input folder",
+            command=self._browse_input_folder,
+        )
+        self.input_folder_button.grid(row=1, column=0, sticky="ew", pady=(4, 0))
+        return 1
+
+    def _browse_input_file(self) -> None:
+        selected = tuple(
+            filedialog.askopenfilenames(
+                title=f"Select input files for {self.title}",
+                filetypes=self.input_filetypes,
+            )
+        )
+        if not selected:
+            return
+        self.selected_input_files = selected
+        self._selected_input_files_display = summarize_input_files(selected)
+        self.input_file_var.set(self._selected_input_files_display)
+
+    def _browse_input_folder(self) -> None:
+        selected = filedialog.askdirectory(
+            title=f"Select input folder for {self.title}",
+            mustexist=True,
+        )
+        if not selected:
+            return
+        try:
+            resolved_files = translate_task.resolve_translation_input_paths([selected])
+        except ValueError as exc:
+            messagebox.showwarning("No supported files", str(exc))
+            return
+        self.selected_input_files = (selected,)
+        self._selected_input_files_display = summarize_recursive_input_folder(
+            selected,
+            len(resolved_files),
+        )
+        self.input_file_var.set(self._selected_input_files_display)
+
+    def _resolve_selected_input_files(self) -> tuple[str, ...]:
+        display_value = _clean(self.input_file_var.get())
+        if self.selected_input_files and display_value == self._selected_input_files_display:
+            return self.selected_input_files
+        return (display_value,) if display_value else ()
+
     def _build_tool_specific_fields(self, parent: ttk.Frame, start_row: int) -> int:
+        self._add_entry_row(
+            parent,
+            row=start_row,
+            label="Source file",
+            variable=self.source_file_var,
+            browse_command=self._browse_source_file,
+        )
+        ttk.Label(
+            parent,
+            text="Required for Android .xml translation runs.",
+        ).grid(row=start_row + 1, column=0, columnspan=3, sticky="w", pady=(0, 8))
         ttk.Checkbutton(
             parent,
             text="Retranslate all entries",
             variable=self.retranslate_all_var,
-        ).grid(row=start_row, column=0, columnspan=3, sticky="w", pady=(4, 8))
-        return start_row + 1
+        ).grid(row=start_row + 2, column=0, columnspan=3, sticky="w", pady=(4, 8))
+        ttk.Checkbutton(
+            parent,
+            text="Write translation warnings JSON report",
+            variable=self.warnings_report_var,
+        ).grid(row=start_row + 3, column=0, columnspan=3, sticky="w", pady=(0, 8))
+        return start_row + 4
+
+    def _browse_source_file(self) -> None:
+        selected = filedialog.askopenfilename(
+            title="Select source file",
+            filetypes=TRANSLATABLE_FILETYPES,
+        )
+        if selected:
+            self.source_file_var.set(selected)
 
     def build_config(self) -> ProcessGuiConfig:
+        input_files = self._resolve_selected_input_files()
         return ProcessGuiConfig(
-            input_file=self.input_file_var.get(),
+            input_file=input_files[0] if len(input_files) == 1 else self.input_file_var.get(),
+            input_files=input_files,
+            source_file=self.source_file_var.get(),
             source_lang=self.source_lang_var.get(),
             target_lang=self.target_lang_var.get(),
+            provider=self.provider_var.get(),
+            gemini_backend=self.gemini_backend_var.get(),
+            google_cloud_location=self.google_cloud_location_var.get(),
             model=self.model_var.get(),
             thinking_level=self.thinking_level_var.get(),
             batch_size=self.batch_size_var.get(),
@@ -1230,7 +1891,9 @@ class ProcessToolTab(BaseToolTab):
             rules_path=self.rules_path_var.get(),
             rules_str=self.rules_text.get("1.0", "end-1c") if self.rules_text else "",
             api_key=self.api_key_var.get(),
+            flex_mode=self.flex_mode_var.get(),
             retranslate_all=self.retranslate_all_var.get(),
+            warnings_report=self.warnings_report_var.get(),
         )
 
     def build_command(self) -> list[str]:
@@ -1248,8 +1911,8 @@ class ExtractToolTab(BaseToolTab):
             app,
             notebook,
             tool_key="extract",
-            title="Extract glossary terms with extract_terms.py",
-            script_name="extract_terms.py",
+            title="Extract Terms",
+            script_name="translate_cli.py",
             input_filetypes=TRANSLATABLE_FILETYPES,
             supports_vocab=True,
             supports_rules=False,
@@ -1307,12 +1970,16 @@ class ExtractToolTab(BaseToolTab):
             input_file=self.input_file_var.get(),
             source_lang=self.source_lang_var.get(),
             target_lang=self.target_lang_var.get(),
+            provider=self.provider_var.get(),
+            gemini_backend=self.gemini_backend_var.get(),
+            google_cloud_location=self.google_cloud_location_var.get(),
             model=self.model_var.get(),
             thinking_level=self.thinking_level_var.get(),
             batch_size=self.batch_size_var.get(),
             parallel_requests=self.parallel_requests_var.get(),
             vocab_path=self.vocab_path_var.get(),
             api_key=self.api_key_var.get(),
+            flex_mode=self.flex_mode_var.get(),
             mode=self.mode_var.get(),
             out_format=self.out_format_var.get(),
             out_path=self.out_path_var.get(),
@@ -1322,6 +1989,180 @@ class ExtractToolTab(BaseToolTab):
 
     def build_command(self) -> list[str]:
         return build_extract_command(self.build_config())
+
+
+class LocalExtractToolTab(BaseToolTab):
+    def __init__(self, app: "ProcessGuiApp", notebook: ttk.Notebook) -> None:
+        self.mode_var = tk.StringVar(value="missing")
+        self.max_length_var = tk.StringVar(value="1")
+        self.out_path_var = tk.StringVar()
+        self.include_rejected_var = tk.BooleanVar(value=False)
+        self.to_po_var = tk.BooleanVar(value=False)
+        self.include_borderline_var = tk.BooleanVar(value=False)
+        self.mode_combo: ttk.Combobox | None = None
+        self.max_length_combo: ttk.Combobox | None = None
+        self.include_rejected_button: ttk.Checkbutton | None = None
+        self.include_borderline_button: ttk.Checkbutton | None = None
+        self.input_file_button: ttk.Button | None = None
+        self.input_folder_button: ttk.Button | None = None
+        super().__init__(
+            app,
+            notebook,
+            tool_key="extract_local",
+            title="Local Extract",
+            script_name="translate_cli.py",
+            input_filetypes=LOCAL_EXTRACT_FILETYPES,
+            supports_vocab=True,
+            supports_rules=False,
+            input_label="Input file / folder / JSON",
+            supports_provider_controls=False,
+            preview_label="Task info",
+        )
+        self.to_po_var.trace_add("write", self._on_to_po_changed)
+        self._refresh_local_mode_controls()
+
+    def _build_input_row(self, parent: ttk.Frame, row: int) -> int:
+        ttk.Label(parent, text=self.input_label).grid(row=row, column=0, sticky="w", pady=4)
+        ttk.Entry(parent, textvariable=self.input_file_var).grid(
+            row=row,
+            column=1,
+            sticky="ew",
+            pady=4,
+        )
+        button_frame = ttk.Frame(parent)
+        button_frame.grid(row=row, column=2, sticky="nw", padx=(8, 0), pady=4)
+        self.input_file_button = ttk.Button(
+            button_frame,
+            text="Source file",
+            command=self._browse_local_extract_file,
+        )
+        self.input_file_button.grid(row=0, column=0, sticky="ew")
+        self.input_folder_button = ttk.Button(
+            button_frame,
+            text="Source folder",
+            command=self._browse_local_extract_folder,
+        )
+        self.input_folder_button.grid(row=1, column=0, sticky="ew", pady=(4, 0))
+        return 1
+
+    def _build_tool_specific_fields(self, parent: ttk.Frame, start_row: int) -> int:
+        ttk.Checkbutton(
+            parent,
+            text="Convert local JSON to PO handoff",
+            variable=self.to_po_var,
+        ).grid(row=start_row, column=0, columnspan=3, sticky="w", pady=(4, 4))
+
+        self.mode_combo = self._add_combo_row(
+            parent,
+            row=start_row + 1,
+            label="Mode",
+            variable=self.mode_var,
+            values=EXTRACT_MODE_CHOICES,
+        )
+
+        self.max_length_combo = self._add_combo_row(
+            parent,
+            row=start_row + 2,
+            label="Max length",
+            variable=self.max_length_var,
+            values=LOCAL_EXTRACT_MAX_LENGTH_CHOICES,
+        )
+
+        self._add_entry_row(
+            parent,
+            row=start_row + 3,
+            label="Output path",
+            variable=self.out_path_var,
+            browse_command=self._browse_output_file,
+        )
+        self.include_rejected_button = ttk.Checkbutton(
+            parent,
+            text="Include rejected terms in JSON output",
+            variable=self.include_rejected_var,
+        )
+        self.include_rejected_button.grid(row=start_row + 4, column=0, columnspan=3, sticky="w", pady=(4, 0))
+        self.include_borderline_button = ttk.Checkbutton(
+            parent,
+            text="Include borderline terms in generated PO handoff",
+            variable=self.include_borderline_var,
+        )
+        self.include_borderline_button.grid(row=start_row + 5, column=0, columnspan=3, sticky="w", pady=(0, 8))
+        return start_row + 6
+
+    def _on_to_po_changed(self, *_args: object) -> None:
+        self._refresh_local_mode_controls()
+
+    def _refresh_local_mode_controls(self) -> None:
+        to_po_mode = self.to_po_var.get()
+        if self.mode_combo is not None:
+            self.mode_combo.configure(state="disabled" if to_po_mode else "readonly")
+        if self.max_length_combo is not None:
+            self.max_length_combo.configure(state="disabled" if to_po_mode else "readonly")
+        if self.include_rejected_button is not None:
+            self.include_rejected_button.configure(state="disabled" if to_po_mode else "normal")
+        po_enabled = True
+        if self.include_borderline_button is not None:
+            self.include_borderline_button.configure(state="normal" if po_enabled else "disabled")
+        if self.input_file_button is not None:
+            self.input_file_button.configure(text="JSON file" if to_po_mode else "Source file")
+        if self.input_folder_button is not None:
+            self.input_folder_button.configure(state="disabled" if to_po_mode else "normal")
+        if to_po_mode:
+            self.include_rejected_var.set(False)
+
+    def _browse_output_file(self) -> None:
+        to_po_mode = self.to_po_var.get()
+        extension = ".po" if to_po_mode else ".json"
+        selected = filedialog.asksaveasfilename(
+            title="Select output file",
+            defaultextension=extension,
+            filetypes=[("Output files", f"*{extension}"), ("All files", "*.*")],
+        )
+        if selected:
+            self.out_path_var.set(selected)
+
+    def _browse_input_file(self) -> None:
+        self._browse_local_extract_file()
+
+    def _browse_local_extract_file(self) -> None:
+        title, filetypes = get_local_extract_file_dialog_config(self.to_po_var.get())
+        selected = filedialog.askopenfilename(
+            title=title,
+            filetypes=filetypes,
+        )
+        if selected:
+            self.input_file_var.set(selected)
+
+    def _browse_local_extract_folder(self) -> None:
+        if self.to_po_var.get():
+            return
+        selected = filedialog.askdirectory(
+            title="Select source folder for local extraction",
+            mustexist=True,
+        )
+        if selected:
+            self.input_file_var.set(selected)
+
+    def build_config(self) -> LocalExtractGuiConfig:
+        return LocalExtractGuiConfig(
+            input_file=self.input_file_var.get(),
+            source_lang=self.source_lang_var.get(),
+            target_lang=self.target_lang_var.get(),
+            vocab_path=self.vocab_path_var.get(),
+            mode=self.mode_var.get(),
+            max_length=self.max_length_var.get(),
+            out_path=self.out_path_var.get(),
+            include_rejected=self.include_rejected_var.get(),
+            to_po=self.to_po_var.get(),
+            also_po=not self.to_po_var.get(),
+            include_borderline=self.include_borderline_var.get(),
+        )
+
+    def build_command(self) -> list[str]:
+        return build_local_extract_command(self.build_config())
+
+    def build_env(self) -> dict[str, str]:
+        return dict(os.environ)
 
 
 class CheckToolTab(BaseToolTab):
@@ -1334,8 +2175,8 @@ class CheckToolTab(BaseToolTab):
             app,
             notebook,
             tool_key="check",
-            title="Review translations with check_translations.py",
-            script_name="check_translations.py",
+            title="Check Translations",
+            script_name="translate_cli.py",
             input_filetypes=CHECK_FILETYPES,
             supports_vocab=True,
             supports_rules=True,
@@ -1382,6 +2223,9 @@ class CheckToolTab(BaseToolTab):
             input_file=self.input_file_var.get(),
             source_lang=self.source_lang_var.get(),
             target_lang=self.target_lang_var.get(),
+            provider=self.provider_var.get(),
+            gemini_backend=self.gemini_backend_var.get(),
+            google_cloud_location=self.google_cloud_location_var.get(),
             model=self.model_var.get(),
             thinking_level=self.thinking_level_var.get(),
             batch_size=self.batch_size_var.get(),
@@ -1390,6 +2234,7 @@ class CheckToolTab(BaseToolTab):
             rules_path=self.rules_path_var.get(),
             rules_str=self.rules_text.get("1.0", "end-1c") if self.rules_text else "",
             api_key=self.api_key_var.get(),
+            flex_mode=self.flex_mode_var.get(),
             num_messages=self.num_messages_var.get(),
             out_path=self.out_path_var.get(),
             include_ok=self.include_ok_var.get(),
@@ -1413,8 +2258,8 @@ class ReviseToolTab(BaseToolTab):
             app,
             notebook,
             tool_key="revise",
-            title="Revise translations with revise_translations.py",
-            script_name="revise_translations.py",
+            title="Revise Translations",
+            script_name="translate_cli.py",
             input_filetypes=TRANSLATABLE_FILETYPES,
             supports_vocab=True,
             supports_rules=True,
@@ -1430,7 +2275,7 @@ class ReviseToolTab(BaseToolTab):
         )
         ttk.Label(
             parent,
-            text="Required for .strings, .resx, and .txt revision runs.",
+            text="Required for Android .xml, .strings, .resx, and .txt revision runs.",
         ).grid(row=start_row + 1, column=0, columnspan=3, sticky="w", pady=(0, 8))
 
         self._add_entry_row(
@@ -1505,6 +2350,9 @@ class ReviseToolTab(BaseToolTab):
             source_file=self.source_file_var.get(),
             source_lang=self.source_lang_var.get(),
             target_lang=self.target_lang_var.get(),
+            provider=self.provider_var.get(),
+            gemini_backend=self.gemini_backend_var.get(),
+            google_cloud_location=self.google_cloud_location_var.get(),
             model=self.model_var.get(),
             thinking_level=self.thinking_level_var.get(),
             batch_size=self.batch_size_var.get(),
@@ -1513,6 +2361,7 @@ class ReviseToolTab(BaseToolTab):
             rules_path=self.rules_path_var.get(),
             rules_str=self.rules_text.get("1.0", "end-1c") if self.rules_text else "",
             api_key=self.api_key_var.get(),
+            flex_mode=self.flex_mode_var.get(),
             instruction=self.instruction_text.get("1.0", "end-1c") if self.instruction_text else "",
             num_messages=self.num_messages_var.get(),
             out_path=self.out_path_var.get(),
@@ -1531,6 +2380,11 @@ class ProcessGuiApp(ttk.Frame):
         self.master = master
         self.resource_root = build_resource_root()
         self.api_key_var = tk.StringVar()
+        self.provider_var = tk.StringVar(value=DEFAULT_PROVIDER)
+        self.gemini_backend_var = tk.StringVar(value="studio")
+        self.google_cloud_location_var = tk.StringVar(value="global")
+        self.thinking_level_var = tk.StringVar()
+        self.flex_mode_var = tk.BooleanVar(value=False)
         self.queue: queue.Queue[tuple[str, str, object]] = queue.Queue()
         self.process: subprocess.Popen[str] | None = None
         self.active_tool_key: str | None = None
@@ -1568,18 +2422,21 @@ class ProcessGuiApp(ttk.Frame):
         process_tab = ProcessToolTab(self, notebook)
         revise_tab = ReviseToolTab(self, notebook)
         extract_tab = ExtractToolTab(self, notebook)
+        extract_local_tab = LocalExtractToolTab(self, notebook)
         check_tab = CheckToolTab(self, notebook)
 
         self.tabs = {
             process_tab.tool_key: process_tab,
             revise_tab.tool_key: revise_tab,
             extract_tab.tool_key: extract_tab,
+            extract_local_tab.tool_key: extract_local_tab,
             check_tab.tool_key: check_tab,
         }
 
         notebook.add(process_tab, text="Translate")
         notebook.add(revise_tab, text="Revise")
         notebook.add(extract_tab, text="Extract")
+        notebook.add(extract_local_tab, text="Local Extract")
         notebook.add(check_tab, text="Check")
 
         status_frame = ttk.Frame(self)

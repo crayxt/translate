@@ -1,13 +1,77 @@
 import os
 import unittest
 from datetime import datetime
+from unittest.mock import patch
 
 import process_gui
 
 
+class _FakeVar:
+    def __init__(self, value=None):
+        self.value = value
+
+    def get(self):
+        return self.value
+
+    def set(self, value):
+        self.value = value
+
+
+class _FakeWidget:
+    def __init__(self):
+        self.config = {}
+
+    def configure(self, **kwargs):
+        self.config.update(kwargs)
+
+
 class ProcessGuiSmokeTests(unittest.TestCase):
+    def test_check_filetypes_include_ts(self):
+        self.assertIn(("Qt TS files", "*.ts"), process_gui.CHECK_FILETYPES)
+
+    def test_summarize_input_files_formats_multi_file_display(self):
+        summary = process_gui.summarize_input_files(
+            [r"C:\tmp\one.po", r"C:\tmp\two.po", r"C:\tmp\three.po"]
+        )
+
+        self.assertEqual(summary, r"C:\tmp\one.po (+2 more)")
+
+    def test_summarize_recursive_input_folder_includes_count(self):
+        summary = process_gui.summarize_recursive_input_folder(r"C:\tmp\tree", 3)
+
+        self.assertEqual(summary, r"C:\tmp\tree (3 recursive files)")
+
+    def test_get_local_extract_file_dialog_config_uses_source_files_in_extract_mode(self):
+        title, filetypes = process_gui.get_local_extract_file_dialog_config(False)
+
+        self.assertEqual(title, "Select source file for local extraction")
+        self.assertEqual(filetypes, process_gui.LOCAL_EXTRACT_SOURCE_FILETYPES)
+
+    def test_get_local_extract_file_dialog_config_uses_json_files_in_to_po_mode(self):
+        title, filetypes = process_gui.get_local_extract_file_dialog_config(True)
+
+        self.assertEqual(title, "Select local extraction JSON file")
+        self.assertEqual(filetypes, process_gui.JSON_FILETYPES)
+
+    def test_build_system_prompt_preview_for_translate_uses_translation_system_prompt(self):
+        preview = process_gui.build_system_prompt_preview("process", "kk")
+        self.assertIn("professional software localization translator", preview)
+        self.assertIn("MANDATORY LOCALIZATION INVARIANTS", preview)
+        self.assertIn("Placeholders must be preserved exactly", preview)
+
+    def test_build_system_prompt_preview_for_check_uses_target_script_guidance(self):
+        preview = process_gui.build_system_prompt_preview("check", "kk")
+        self.assertIn("software localization QA reviewer", preview)
+        self.assertIn("real Kazakh Cyrillic alphabet", preview)
+
+    def test_build_system_prompt_preview_for_local_extract_explains_local_flow(self):
+        preview = process_gui.build_system_prompt_preview("extract_local", "kk")
+        self.assertIn("No model system prompt is used", preview)
+        self.assertIn("core/term_extraction.py", preview)
+        self.assertIn("core/term_handoff.py", preview)
+
     def test_detect_default_resource_paths_prefers_data_dir(self):
-        data_dir = os.path.join(os.getcwd(), "_tmp_gui_data", "data", "fr")
+        data_dir = os.path.join(os.getcwd(), "_tmp_gui_data", "data", "locales", "fr")
         legacy_dir = os.path.join(os.getcwd(), "_tmp_gui_data")
         os.makedirs(data_dir, exist_ok=True)
         vocab_path = os.path.join(data_dir, "vocab.txt")
@@ -15,7 +79,7 @@ class ProcessGuiSmokeTests(unittest.TestCase):
         legacy_vocab_path = os.path.join(legacy_dir, "vocab-fr.txt")
         try:
             with open(vocab_path, "w", encoding="utf-8") as handle:
-                handle.write("save - enregistrer\n")
+                handle.write("save|enregistrer|verb|\n")
             with open(rules_path, "w", encoding="utf-8") as handle:
                 handle.write("Use imperative tone.\n")
             with open(legacy_vocab_path, "w", encoding="utf-8") as handle:
@@ -32,6 +96,35 @@ class ProcessGuiSmokeTests(unittest.TestCase):
             for path in (vocab_path, rules_path, legacy_vocab_path):
                 if os.path.exists(path):
                     os.remove(path)
+            if os.path.isdir(data_dir):
+                os.removedirs(data_dir)
+
+    def test_detect_default_resource_paths_supports_vocab_directory(self):
+        data_dir = os.path.join(os.getcwd(), "_tmp_gui_data_dir", "data", "locales", "fr")
+        legacy_dir = os.path.join(os.getcwd(), "_tmp_gui_data_dir")
+        vocab_dir = os.path.join(data_dir, "vocab")
+        vocab_file = os.path.join(vocab_dir, "colors.txt")
+        rules_path = os.path.join(data_dir, "rules.md")
+        try:
+            os.makedirs(vocab_dir, exist_ok=True)
+            with open(vocab_file, "w", encoding="utf-8") as handle:
+                handle.write("blue|bleu|adjective|\n")
+            with open(rules_path, "w", encoding="utf-8") as handle:
+                handle.write("Use imperative tone.\n")
+
+            detected_vocab, detected_rules = process_gui.detect_default_resource_paths(
+                "fr",
+                base_dir=legacy_dir,
+            )
+
+            self.assertEqual(detected_vocab, vocab_dir)
+            self.assertEqual(detected_rules, rules_path)
+        finally:
+            for path in (vocab_file, rules_path):
+                if os.path.exists(path):
+                    os.remove(path)
+            if os.path.isdir(vocab_dir):
+                os.rmdir(vocab_dir)
             if os.path.isdir(data_dir):
                 os.removedirs(data_dir)
 
@@ -63,6 +156,49 @@ class ProcessGuiSmokeTests(unittest.TestCase):
         self.assertIn("Input file is required.", errors)
         self.assertTrue(any("GOOGLE_API_KEY is not set" in item for item in errors))
 
+    def test_validate_config_requires_api_key_for_gemini_vertex(self):
+        input_path = os.path.join(os.getcwd(), "_tmp_gui_vertex.po")
+        try:
+            with open(input_path, "w", encoding="utf-8") as handle:
+                handle.write('msgid "Open"\nmsgstr ""\n')
+
+            config = process_gui.ProcessGuiConfig(
+                input_file=input_path,
+                provider="gemini",
+                gemini_backend="vertex",
+            )
+
+            errors = process_gui.validate_process_gui_config(config, environ={})
+
+            self.assertTrue(any("GOOGLE_API_KEY is not set" in item for item in errors))
+        finally:
+            if os.path.exists(input_path):
+                os.remove(input_path)
+
+    def test_validate_config_rejects_non_global_location_for_gemini_vertex(self):
+        input_path = os.path.join(os.getcwd(), "_tmp_gui_vertex_location.po")
+        try:
+            with open(input_path, "w", encoding="utf-8") as handle:
+                handle.write('msgid "Open"\nmsgstr ""\n')
+
+            config = process_gui.ProcessGuiConfig(
+                input_file=input_path,
+                provider="gemini",
+                gemini_backend="vertex",
+                google_cloud_location="us-central1",
+                api_key="vertex-key",
+            )
+
+            errors = process_gui.validate_process_gui_config(config, environ={})
+
+            self.assertIn(
+                "Gemini Vertex API-key mode currently supports only the global endpoint.",
+                errors,
+            )
+        finally:
+            if os.path.exists(input_path):
+                os.remove(input_path)
+
     def test_validate_config_rejects_bad_optional_values(self):
         input_path = os.path.join(os.getcwd(), "_tmp_gui_input.po")
         try:
@@ -82,11 +218,88 @@ class ProcessGuiSmokeTests(unittest.TestCase):
 
             self.assertIn("Batch size must be a whole number.", errors)
             self.assertIn("Parallel requests must be greater than 0.", errors)
-            self.assertIn("Vocabulary file does not exist: missing-vocab.txt", errors)
+            self.assertIn("Vocabulary file or directory does not exist: missing-vocab.txt", errors)
             self.assertIn("Rules file does not exist: missing-rules.md", errors)
         finally:
             if os.path.exists(input_path):
                 os.remove(input_path)
+
+    def test_validate_config_accepts_vocabulary_directory(self):
+        input_path = os.path.join(os.getcwd(), "_tmp_gui_vocab_dir.po")
+        vocab_dir = os.path.join(os.getcwd(), "_tmp_gui_vocab_dir")
+        vocab_file = os.path.join(vocab_dir, "colors.txt")
+        try:
+            with open(input_path, "w", encoding="utf-8") as handle:
+                handle.write('msgid "Open"\nmsgstr ""\n')
+            os.makedirs(vocab_dir, exist_ok=True)
+            with open(vocab_file, "w", encoding="utf-8") as handle:
+                handle.write("blue|bleu|adjective|\n")
+
+            config = process_gui.ProcessGuiConfig(
+                input_file=input_path,
+                vocab_path=vocab_dir,
+                api_key="test-key",
+            )
+
+            errors = process_gui.validate_process_gui_config(config, environ={})
+
+            self.assertFalse(
+                any("Vocabulary file or directory does not exist" in item for item in errors)
+            )
+        finally:
+            for path in (input_path, vocab_file):
+                if os.path.exists(path):
+                    os.remove(path)
+            if os.path.isdir(vocab_dir):
+                os.rmdir(vocab_dir)
+
+    def test_validate_process_config_rejects_mixed_file_types(self):
+        input_po = os.path.join(os.getcwd(), "_tmp_gui_input.po")
+        input_ts = os.path.join(os.getcwd(), "_tmp_gui_input.ts")
+        try:
+            with open(input_po, "w", encoding="utf-8") as handle:
+                handle.write('msgid "Open"\nmsgstr ""\n')
+            with open(input_ts, "w", encoding="utf-8") as handle:
+                handle.write("<TS></TS>\n")
+
+            config = process_gui.ProcessGuiConfig(
+                input_file=input_po,
+                input_files=(input_po, input_ts),
+                api_key="test-key",
+            )
+
+            errors = process_gui.validate_process_gui_config(config, environ={})
+
+            self.assertIn(
+                "Multi-file translation requires all input files to use the same format.",
+                errors,
+            )
+        finally:
+            for path in (input_po, input_ts):
+                if os.path.exists(path):
+                    os.remove(path)
+
+    def test_validate_process_config_accepts_input_directory(self):
+        input_dir = os.path.join(os.getcwd(), "_tmp_gui_input_dir")
+        input_path = os.path.join(input_dir, "first.po")
+        try:
+            os.makedirs(input_dir, exist_ok=True)
+            with open(input_path, "w", encoding="utf-8") as handle:
+                handle.write('msgid "Open"\nmsgstr ""\n')
+
+            config = process_gui.ProcessGuiConfig(
+                input_file=input_dir,
+                api_key="test-key",
+            )
+
+            errors = process_gui.validate_process_gui_config(config, environ={})
+
+            self.assertEqual(errors, [])
+        finally:
+            if os.path.exists(input_path):
+                os.remove(input_path)
+            if os.path.isdir(input_dir):
+                os.rmdir(input_dir)
 
     def test_build_process_command_includes_required_and_optional_flags(self):
         input_path = os.path.join(os.getcwd(), "_tmp_gui_input.po")
@@ -124,11 +337,14 @@ class ProcessGuiSmokeTests(unittest.TestCase):
                     "python",
                     "-u",
                     os.path.abspath(script_path),
+                    "translate",
                     input_path,
                     "--source-lang",
                     "en",
                     "--target-lang",
                     "fr",
+                    "--provider",
+                    "gemini",
                     "--model",
                     "gemini-test",
                     "--thinking-level",
@@ -151,6 +367,215 @@ class ProcessGuiSmokeTests(unittest.TestCase):
                 if os.path.exists(path):
                     os.remove(path)
 
+    def test_build_process_command_accepts_input_directory(self):
+        input_dir = os.path.join(os.getcwd(), "_tmp_gui_process_dir")
+        input_path = os.path.join(input_dir, "first.po")
+        script_path = os.path.join(os.getcwd(), "_tmp_process_script.py")
+        try:
+            os.makedirs(input_dir, exist_ok=True)
+            with open(input_path, "w", encoding="utf-8") as handle:
+                handle.write('msgid "Open"\nmsgstr ""\n')
+            with open(script_path, "w", encoding="utf-8") as handle:
+                handle.write("print('stub')\n")
+
+            config = process_gui.ProcessGuiConfig(
+                input_file=input_dir,
+                api_key="test-key",
+            )
+
+            command = process_gui.build_process_command(
+                config,
+                python_executable="python",
+                script_path=script_path,
+            )
+
+            self.assertEqual(
+                command[:5],
+                [
+                    "python",
+                    "-u",
+                    os.path.abspath(script_path),
+                    "translate",
+                    input_dir,
+                ],
+            )
+        finally:
+            for path in (input_path, script_path):
+                if os.path.exists(path):
+                    os.remove(path)
+            if os.path.isdir(input_dir):
+                os.rmdir(input_dir)
+
+    def test_build_process_command_uses_provider_default_model_when_blank(self):
+        input_path = os.path.join(os.getcwd(), "_tmp_gui_default_model.po")
+        script_path = os.path.join(os.getcwd(), "_tmp_process_script.py")
+        try:
+            with open(input_path, "w", encoding="utf-8") as handle:
+                handle.write('msgid "Open"\nmsgstr ""\n')
+            with open(script_path, "w", encoding="utf-8") as handle:
+                handle.write("print('stub')\n")
+
+            config = process_gui.ProcessGuiConfig(
+                input_file=input_path,
+                provider="openai",
+                model="",
+                api_key="openai-key",
+            )
+
+            command = process_gui.build_process_command(
+                config,
+                python_executable="python",
+                script_path=script_path,
+            )
+
+            self.assertIn("--model", command)
+            self.assertEqual(command[command.index("--model") + 1], "gpt-5-mini")
+        finally:
+            for path in (input_path, script_path):
+                if os.path.exists(path):
+                    os.remove(path)
+
+    def test_build_process_command_supports_multiple_input_files(self):
+        input_one = os.path.join(os.getcwd(), "_tmp_gui_one.po")
+        input_two = os.path.join(os.getcwd(), "_tmp_gui_two.po")
+        script_path = os.path.join(os.getcwd(), "_tmp_process_script.py")
+        try:
+            for path in (input_one, input_two):
+                with open(path, "w", encoding="utf-8") as handle:
+                    handle.write('msgid "Open"\nmsgstr ""\n')
+            with open(script_path, "w", encoding="utf-8") as handle:
+                handle.write("print('stub')\n")
+
+            config = process_gui.ProcessGuiConfig(
+                input_file=input_one,
+                input_files=(input_one, input_two),
+                source_lang="en",
+                target_lang="fr",
+                model="gemini-test",
+                api_key="test-key",
+            )
+
+            command = process_gui.build_process_command(
+                config,
+                python_executable="python",
+                script_path=script_path,
+            )
+
+            self.assertEqual(
+                command,
+                [
+                    "python",
+                    "-u",
+                    os.path.abspath(script_path),
+                    "translate",
+                    input_one,
+                    input_two,
+                    "--source-lang",
+                    "en",
+                    "--target-lang",
+                    "fr",
+                    "--provider",
+                    "gemini",
+                    "--model",
+                    "gemini-test",
+                ],
+            )
+        finally:
+            for path in (input_one, input_two, script_path):
+                if os.path.exists(path):
+                    os.remove(path)
+
+    def test_build_process_command_includes_flex_for_supported_provider(self):
+        input_path = os.path.join(os.getcwd(), "_tmp_gui_flex.po")
+        script_path = os.path.join(os.getcwd(), "_tmp_process_script.py")
+        try:
+            with open(input_path, "w", encoding="utf-8") as handle:
+                handle.write('msgid "Open"\nmsgstr ""\n')
+            with open(script_path, "w", encoding="utf-8") as handle:
+                handle.write("print('stub')\n")
+
+            config = process_gui.ProcessGuiConfig(
+                input_file=input_path,
+                provider="openai",
+                model="gpt-4.1-mini",
+                api_key="test-key",
+                flex_mode=True,
+            )
+
+            command = process_gui.build_process_command(
+                config,
+                python_executable="python",
+                script_path=script_path,
+            )
+
+            self.assertIn("--flex", command)
+        finally:
+            for path in (input_path, script_path):
+                if os.path.exists(path):
+                    os.remove(path)
+
+    def test_build_process_command_includes_warnings_report_flag(self):
+        input_path = os.path.join(os.getcwd(), "_tmp_gui_warn.po")
+        script_path = os.path.join(os.getcwd(), "_tmp_process_script.py")
+        try:
+            with open(input_path, "w", encoding="utf-8") as handle:
+                handle.write('msgid "Open"\nmsgstr ""\n')
+            with open(script_path, "w", encoding="utf-8") as handle:
+                handle.write("print('stub')\n")
+
+            config = process_gui.ProcessGuiConfig(
+                input_file=input_path,
+                provider="gemini",
+                model="gemini-test",
+                api_key="test-key",
+                warnings_report=True,
+            )
+
+            command = process_gui.build_process_command(
+                config,
+                python_executable="python",
+                script_path=script_path,
+            )
+
+            self.assertIn("--warnings-report", command)
+        finally:
+            for path in (input_path, script_path):
+                if os.path.exists(path):
+                    os.remove(path)
+
+    def test_build_process_command_includes_gemini_vertex_args(self):
+        input_path = os.path.join(os.getcwd(), "_tmp_gui_vertex_args.po")
+        script_path = os.path.join(os.getcwd(), "_tmp_process_script.py")
+        try:
+            with open(input_path, "w", encoding="utf-8") as handle:
+                handle.write('msgid "Open"\nmsgstr ""\n')
+            with open(script_path, "w", encoding="utf-8") as handle:
+                handle.write("print('stub')\n")
+
+            config = process_gui.ProcessGuiConfig(
+                input_file=input_path,
+                provider="gemini",
+                gemini_backend="vertex",
+                google_cloud_location="global",
+                model="gemini-3-flash-preview",
+                api_key="vertex-key",
+            )
+
+            command = process_gui.build_process_command(
+                config,
+                python_executable="python",
+                script_path=script_path,
+            )
+
+            self.assertIn("--gemini-backend", command)
+            self.assertIn("vertex", command)
+            self.assertIn("--google-cloud-location", command)
+            self.assertIn("global", command)
+        finally:
+            for path in (input_path, script_path):
+                if os.path.exists(path):
+                    os.remove(path)
+
     def test_build_process_env_prefers_gui_api_key(self):
         config = process_gui.ProcessGuiConfig(
             input_file="dummy.po",
@@ -163,6 +588,54 @@ class ProcessGuiSmokeTests(unittest.TestCase):
         )
 
         self.assertEqual(env["GOOGLE_API_KEY"], "gui-key")
+        self.assertEqual(env["PATH"], "x")
+
+    def test_build_process_env_sets_gemini_vertex_env(self):
+        config = process_gui.ProcessGuiConfig(
+            input_file="dummy.po",
+            provider="gemini",
+            gemini_backend="vertex",
+            google_cloud_location="global",
+            api_key="vertex-key",
+        )
+
+        env = process_gui.build_process_env(
+            config,
+            base_env={"PATH": "x"},
+        )
+
+        self.assertEqual(env["GOOGLE_API_KEY"], "vertex-key")
+        self.assertEqual(env["GOOGLE_GENAI_USE_VERTEXAI"], "true")
+        self.assertEqual(env["GOOGLE_CLOUD_LOCATION"], "global")
+
+    def test_build_process_env_uses_openai_api_key_env_for_openai_provider(self):
+        config = process_gui.ProcessGuiConfig(
+            input_file="dummy.po",
+            provider="openai",
+            api_key="openai-key",
+        )
+
+        env = process_gui.build_process_env(
+            config,
+            base_env={"PATH": "x"},
+        )
+
+        self.assertEqual(env["OPENAI_API_KEY"], "openai-key")
+        self.assertEqual(env["PATH"], "x")
+
+    def test_build_process_env_uses_anthropic_api_key_env_for_anthropic_provider(self):
+        config = process_gui.ProcessGuiConfig(
+            input_file="dummy.po",
+            provider="anthropic",
+            api_key="anthropic-key",
+        )
+
+        env = process_gui.build_process_env(
+            config,
+            base_env={"PATH": "x"},
+        )
+
+        self.assertEqual(env["ANTHROPIC_API_KEY"], "anthropic-key")
         self.assertEqual(env["PATH"], "x")
 
     def test_build_extract_command_includes_extract_specific_flags(self):
@@ -203,11 +676,14 @@ class ProcessGuiSmokeTests(unittest.TestCase):
                     "python",
                     "-u",
                     os.path.abspath(script_path),
+                    "extract-terms",
                     input_path,
                     "--source-lang",
                     "en",
                     "--target-lang",
                     "fr",
+                    "--provider",
+                    "gemini",
                     "--model",
                     "gemini-test",
                     "--thinking-level",
@@ -228,6 +704,258 @@ class ProcessGuiSmokeTests(unittest.TestCase):
                     "25",
                     "--max-attempts",
                     "7",
+                ],
+            )
+        finally:
+            for path in (input_path, script_path):
+                if os.path.exists(path):
+                    os.remove(path)
+
+    def test_validate_local_extract_config_does_not_require_api_key(self):
+        input_path = os.path.join(os.getcwd(), "_tmp_gui_local_extract.po")
+        try:
+            with open(input_path, "w", encoding="utf-8") as handle:
+                handle.write('msgid "Open"\nmsgstr ""\n')
+
+            config = process_gui.LocalExtractGuiConfig(
+                input_file=input_path,
+                source_lang="en",
+                target_lang="kk",
+            )
+
+            errors = process_gui.validate_local_extract_gui_config(config)
+
+            self.assertEqual(errors, [])
+        finally:
+            if os.path.exists(input_path):
+                os.remove(input_path)
+
+    def test_validate_local_extract_config_accepts_directory_input(self):
+        input_dir = os.path.join(os.getcwd(), "_tmp_gui_local_extract_dir")
+        try:
+            os.makedirs(input_dir, exist_ok=True)
+
+            config = process_gui.LocalExtractGuiConfig(
+                input_file=input_dir,
+                source_lang="en",
+                target_lang="kk",
+            )
+
+            errors = process_gui.validate_local_extract_gui_config(config)
+
+            self.assertEqual(errors, [])
+        finally:
+            if os.path.isdir(input_dir):
+                os.rmdir(input_dir)
+
+    def test_local_extract_browse_file_uses_json_dialog_in_to_po_mode(self):
+        tab = object.__new__(process_gui.LocalExtractToolTab)
+        tab.to_po_var = _FakeVar(True)
+        tab.input_file_var = _FakeVar("")
+
+        with patch(
+            "process_gui.filedialog.askopenfilename",
+            return_value=r"C:\tmp\terms.json",
+        ) as askopenfilename:
+            tab._browse_local_extract_file()
+
+        askopenfilename.assert_called_once_with(
+            title="Select local extraction JSON file",
+            filetypes=process_gui.JSON_FILETYPES,
+        )
+        self.assertEqual(tab.input_file_var.get(), r"C:\tmp\terms.json")
+
+    def test_local_extract_browse_folder_does_not_fallback_to_file_dialog(self):
+        tab = object.__new__(process_gui.LocalExtractToolTab)
+        tab.to_po_var = _FakeVar(False)
+        tab.input_file_var = _FakeVar("")
+
+        with (
+            patch("process_gui.filedialog.askdirectory", return_value="") as askdirectory,
+            patch("process_gui.filedialog.askopenfilename") as askopenfilename,
+        ):
+            tab._browse_local_extract_folder()
+
+        askdirectory.assert_called_once_with(
+            title="Select source folder for local extraction",
+            mustexist=True,
+        )
+        askopenfilename.assert_not_called()
+        self.assertEqual(tab.input_file_var.get(), "")
+
+    def test_refresh_local_mode_controls_updates_input_buttons_for_json_mode(self):
+        tab = object.__new__(process_gui.LocalExtractToolTab)
+        tab.to_po_var = _FakeVar(True)
+        tab.mode_combo = _FakeWidget()
+        tab.max_length_combo = _FakeWidget()
+        tab.include_rejected_button = _FakeWidget()
+        tab.include_borderline_button = _FakeWidget()
+        tab.input_file_button = _FakeWidget()
+        tab.input_folder_button = _FakeWidget()
+        tab.include_rejected_var = _FakeVar(True)
+
+        tab._refresh_local_mode_controls()
+
+        self.assertEqual(tab.input_file_button.config["text"], "JSON file")
+        self.assertEqual(tab.input_folder_button.config["state"], "disabled")
+        self.assertEqual(tab.include_rejected_var.get(), False)
+
+    def test_validate_local_extract_config_rejects_directory_in_json_to_po_mode(self):
+        input_dir = os.path.join(os.getcwd(), "_tmp_gui_local_extract_json_dir")
+        try:
+            os.makedirs(input_dir, exist_ok=True)
+
+            config = process_gui.LocalExtractGuiConfig(
+                input_file=input_dir,
+                to_po=True,
+            )
+
+            errors = process_gui.validate_local_extract_gui_config(config)
+
+            self.assertIn(f"Input file does not exist: {input_dir}", errors)
+        finally:
+            if os.path.isdir(input_dir):
+                os.rmdir(input_dir)
+
+    def test_build_local_extract_command_includes_local_flags(self):
+        input_path = os.path.join(os.getcwd(), "_tmp_gui_local_extract.po")
+        script_path = os.path.join(os.getcwd(), "_tmp_local_extract_script.py")
+        try:
+            with open(input_path, "w", encoding="utf-8") as handle:
+                handle.write('msgid "Open"\nmsgstr ""\n')
+            with open(script_path, "w", encoding="utf-8") as handle:
+                handle.write("print('stub')\n")
+
+            config = process_gui.LocalExtractGuiConfig(
+                input_file=input_path,
+                source_lang="en",
+                target_lang="fr",
+                vocab_path=input_path,
+                mode="all",
+                max_length="3",
+                out_path="terms.json",
+                include_rejected=True,
+            )
+
+            command = process_gui.build_local_extract_command(
+                config,
+                python_executable="python",
+                script_path=script_path,
+            )
+
+            self.assertEqual(
+                command,
+                [
+                    "python",
+                    "-u",
+                    os.path.abspath(script_path),
+                    "extract-terms-local",
+                    input_path,
+                    "--source-lang",
+                    "en",
+                    "--target-lang",
+                    "fr",
+                    "--mode",
+                    "all",
+                    "--max-length",
+                    "3",
+                    "--vocab",
+                    input_path,
+                    "--include-rejected",
+                    "--out",
+                    "terms.json",
+                ],
+            )
+        finally:
+            for path in (input_path, script_path):
+                if os.path.exists(path):
+                    os.remove(path)
+
+    def test_build_local_extract_command_supports_json_to_po_mode(self):
+        input_path = os.path.join(os.getcwd(), "_tmp_gui_local_extract.prototype-missing-terms.json")
+        script_path = os.path.join(os.getcwd(), "_tmp_local_extract_script.py")
+        try:
+            with open(input_path, "w", encoding="utf-8") as handle:
+                handle.write("{}\n")
+            with open(script_path, "w", encoding="utf-8") as handle:
+                handle.write("print('stub')\n")
+
+            config = process_gui.LocalExtractGuiConfig(
+                input_file=input_path,
+                to_po=True,
+                include_borderline=True,
+                out_path="terms.po",
+            )
+
+            command = process_gui.build_local_extract_command(
+                config,
+                python_executable="python",
+                script_path=script_path,
+            )
+
+            self.assertEqual(
+                command,
+                [
+                    "python",
+                    "-u",
+                    os.path.abspath(script_path),
+                    "extract-terms-local",
+                    input_path,
+                    "--to-po",
+                    "--include-borderline",
+                    "--out",
+                    "terms.po",
+                ],
+            )
+        finally:
+            for path in (input_path, script_path):
+                if os.path.exists(path):
+                    os.remove(path)
+
+    def test_build_local_extract_command_supports_one_shot_json_and_po_output(self):
+        input_path = os.path.join(os.getcwd(), "_tmp_gui_local_extract.po")
+        script_path = os.path.join(os.getcwd(), "_tmp_local_extract_script.py")
+        try:
+            with open(input_path, "w", encoding="utf-8") as handle:
+                handle.write('msgid "Access token"\nmsgstr ""\n')
+            with open(script_path, "w", encoding="utf-8") as handle:
+                handle.write("print('stub')\n")
+
+            config = process_gui.LocalExtractGuiConfig(
+                input_file=input_path,
+                source_lang="en",
+                target_lang="kk",
+                also_po=True,
+                include_borderline=True,
+                out_path="terms.json",
+            )
+
+            command = process_gui.build_local_extract_command(
+                config,
+                python_executable="python",
+                script_path=script_path,
+            )
+
+            self.assertEqual(
+                command,
+                [
+                    "python",
+                    "-u",
+                    os.path.abspath(script_path),
+                    "extract-terms-local",
+                    input_path,
+                    "--source-lang",
+                    "en",
+                    "--target-lang",
+                    "kk",
+                    "--mode",
+                    "missing",
+                    "--max-length",
+                    "1",
+                    "--also-po",
+                    "--include-borderline",
+                    "--out",
+                    "terms.json",
                 ],
             )
         finally:
@@ -274,11 +1002,14 @@ class ProcessGuiSmokeTests(unittest.TestCase):
                     "python",
                     "-u",
                     os.path.abspath(script_path),
+                    "check",
                     input_path,
                     "--source-lang",
                     "en",
                     "--target-lang",
                     "fr",
+                    "--provider",
+                    "gemini",
                     "--model",
                     "gemini-test",
                     "--thinking-level",
@@ -322,7 +1053,7 @@ class ProcessGuiSmokeTests(unittest.TestCase):
             errors = process_gui.validate_revise_gui_config(config, environ={})
 
             self.assertIn(
-                "Source file is required for .strings, .resx, and .txt revision runs.",
+                "Source file is required for Android .xml, .strings, .resx, and .txt revision runs.",
                 errors,
             )
         finally:
@@ -376,6 +1107,7 @@ class ProcessGuiSmokeTests(unittest.TestCase):
                     "python",
                     "-u",
                     os.path.abspath(script_path),
+                    "revise",
                     input_path,
                     "--instruction",
                     "Change viewer to browser",
@@ -383,6 +1115,8 @@ class ProcessGuiSmokeTests(unittest.TestCase):
                     "en",
                     "--target-lang",
                     "fr",
+                    "--provider",
+                    "gemini",
                     "--model",
                     "gemini-test",
                     "--thinking-level",

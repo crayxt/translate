@@ -1,284 +1,433 @@
-# Translate script
-Script for translating PO/TS/RESX/STRINGS/TXT localization files using Google Gemini API.
+# Translation Toolkit
 
-# Setup
+Translate and maintain software localization files with one CLI and one GUI.
+
+This repository is for software-localization work, not generic document translation. It gives you a shared backend for five jobs:
+
+- translate unfinished localization files
+- revise existing translations with a precise instruction
+- check translated PO or TS files for QA issues
+- extract glossary terms with a model
+- discover glossary candidates locally without any API call
+
+Supported formats:
+
+- `.po`
+- `.ts`
+- `.resx`
+- `.strings`
+- `.txt`
+- Android `<resources>` XML
+
+Supported providers:
+
+- Gemini
+- OpenAI
+- Anthropic
+
+## What This Project Is
+
+The toolkit is built around three ideas:
+
+1. One task-oriented CLI: `translate`, `revise`, `check`, `extract-terms`, `extract-terms-local`
+2. Shared language resources: vocabulary and rules are loaded by target language
+3. One format backend: supported file types are normalized into a shared entry model and then written back in their native format
+
+That matters because the same vocabulary, rules, runtime controls, batching, and format handling are reused across CLI and GUI instead of being reimplemented per script.
+
+The preferred entry point is:
+
+```text
+python translate_cli.py
+```
+
+`translate_cli.py` is the main CLI surface, and `process_gui.py` is the GUI entry point.
+
+## Task Docs
+
+Detailed task guides live in `docs/`:
+
+- `docs/translate.md`
+- `docs/check.md`
+- `docs/extract.md`
+- `docs/extract-local.md`
+- `docs/revise.md`
+- `docs/extraction-refactor.md`
+
+## Quick Start
+
 Install dependencies:
 
-```
+```powershell
 pip install -r requirements.txt
 ```
 
-Obtain a Google API key (for example from AI Studio), then set:
+Set the API key for the provider you want to use:
 
-```
-set GOOGLE_API_KEY=your_google_api_key
-```
-
-# Run
-
-```
-python process.py your_file.po
-python process.py your_file.ts
-python process.py your_file.resx
-python process.py your_file.strings
-python process.py your_file.txt
+```powershell
+$env:GOOGLE_API_KEY = "your_google_api_key"
+$env:OPENAI_API_KEY = "your_openai_api_key"
+$env:ANTHROPIC_API_KEY = "your_anthropic_api_key"
 ```
 
-Output files are written as `*.ai-translated.po`, `*.ai-translated.ts`, `*.ai-translated.resx`, `*.ai-translated.strings`, or `*.ai-translated.txt`.
+Notes:
 
-Set target language (default is `kk`):
+- You only need the key for the provider you are actually using.
+- Gemini can run against AI Studio or Vertex API-key mode.
+- Vertex API-key mode currently supports the `global` endpoint only.
 
-```
-python process.py your_file.po --target-lang fr
-python process.py your_file.po --target-lang fr_CA
-python process.py your_file.po --thinking-level medium
-```
+## The Main Workflows
 
-Force re-translation of all translatable messages:
+### 1. Translate a localization file
 
-```
-python process.py your_file.po --retranslate-all
-```
+Translate one file:
 
-Default processing behavior:
-
-- translates unfinished messages (`untranslated` + `fuzzy`/`unfinished`)
-- skips already translated messages unless `--retranslate-all` is used
-
-By default, vocabulary and project rules are auto-detected from target language under `data/`:
-
-- `data/<target-lang>/vocab.txt`
-- `data/<target-lang>/rules.md`
-
-Recommended layout:
-
-```
-data/
-  kk/
-    vocab.txt
-    rules.md
-  fr/
-    vocab.txt
-    rules.md
-  fr_CA/
-    vocab.txt
-    rules.md
+```powershell
+python translate_cli.py translate source.po
+python translate_cli.py translate source.ts
+python translate_cli.py translate source.resx
+python translate_cli.py translate source.strings
+python translate_cli.py translate source.txt
 ```
 
-Locale fallback is supported:
+Translate several files in one run when they are the same format:
 
-- for `--target-lang fr_CA`, the script first tries `data/fr_CA/vocab.txt` / `data/fr_CA/rules.md`
-- if not found, it falls back to `data/fr/vocab.txt` / `data/fr/rules.md`
-
-Legacy flat naming is still accepted as a fallback:
-
-- `vocab-<target-lang>.txt`
-- `rules-<target-lang>.md`
-
-Override them per run:
-
-```
-python process.py your_file.po --vocab custom-vocab.txt --rules custom-rules.md
+```powershell
+python translate_cli.py translate first.po second.po third.po
 ```
 
-`--vocab` also accepts a glossary `.po` file. Only entries that are actually translated
-(so untranslated, fuzzy, and obsolete entries are ignored) are converted to vocabulary pairs
-and injected into the translation prompt:
+Choose provider and model explicitly:
 
-```
-python process.py your_file.po --vocab approved-glossary.po
-```
-
-Quick inline rule override:
-
-```
-python process.py your_file.po --rules-str "Use polite formal tone for settings labels."
+```powershell
+python translate_cli.py translate source.po --provider openai --model your-model
+python translate_cli.py translate source.po --provider anthropic --model your-model
+python translate_cli.py translate source.po --provider gemini --model your-model
 ```
 
-`--rules-str` is merged with file-based rules when both are present.
+Useful controls:
 
-Startup output prints both:
-
-- `Vocabulary source` (`file:<path>` or `none`)
-- `Rules source` (`file:<path>`, `inline:--rules-str`, combined, or `none`)
-- `Thinking level` (`minimal`, `low`, `medium`, `high`, or provider default)
-
-# Extract Glossary Terms
-
-Run a terminology discovery pass that builds a translated glossary (`msgid=term`, `msgstr=translation`) as PO:
-
-```
-python extract_terms.py your_file.po
-```
-
-Optional controls:
-
-```
-python extract_terms.py your_file.po --out glossary.po --batch-size 200 --parallel-requests 4
-python extract_terms.py your_file.po --thinking-level high
-```
-
-Defaults:
-
-- mode: `--mode all` (extract full glossary)
-- output format: `--out-format po`
-- output path: `<input>.glossary.po`
-
-The generated glossary `.po` can be reviewed and then reused directly during translation:
-
-```
-python process.py your_file.po --vocab your_file.glossary.po
-```
-
-When you run missing-term extraction with `--vocab` and `--out-format po`, the output PO is merged automatically:
-
-```
-python extract_terms.py your_file.po --mode missing --vocab data/kk/vocab.txt --out-format po
-```
-
-That PO contains:
-
-- translated entries imported from the supplied vocabulary
-- newly extracted missing terms as `fuzzy` entries for review
-
-So the resulting file can be passed straight back into translation:
-
-```
-python process.py your_file.po --vocab your_file.missing-terms.po
-```
-
-To get previous behavior (missing terms only, JSON output):
-
-```
-python extract_terms.py your_file.po --mode missing --out-format json --vocab data/kk/vocab.txt
-```
-
-# Check Translated PO Files
-
-Run a QA pass on an already translated `.po` file. The checker sends structured `source` / `translation`
-pairs to Gemini and merges model findings with deterministic local checks for placeholders, tags,
-accelerators, plural slots, and approved vocabulary usage:
-
-```
-python check_translations.py your_file.po
-```
-
-Default output path:
-
-```
-your_file.translation-check.json
-```
-
-Optional controls:
-
-```
-python check_translations.py your_file.po --probe 25
-python check_translations.py your_file.po --out report.json --batch-size 100 --parallel-requests 4
-python check_translations.py your_file.po --vocab approved-glossary.po --rules custom-rules.md
-python check_translations.py your_file.po --rules-str "Keep menu labels short and imperative."
-python check_translations.py your_file.po --thinking-level low
-```
-
-`--probe` and `--num-messages` are aliases. They limit how many translated messages are sent to Gemini,
-which is useful for prompt testing and quick validation runs.
-
-Defaults follow the same resource lookup as the translation script:
-
-- `data/<target-lang>/vocab.txt`
-- `data/<target-lang>/rules.md`
-
-`--vocab` also accepts a glossary `.po` file, so you can point the checker at a reviewed glossary PO
-directly.
-
-# Revise Existing Translations
-
-Run an instruction-driven revision pass on an already translated file. The script reviews each
-existing source/translation pair, keeps entries that already satisfy the instruction, and updates
-only the entries that actually need a change.
-
-For formats that keep source and translation in the same file (`.po`, `.ts`):
-
-```
-python revise_translations.py your_file.po --instruction "Change the translation of Save to Store"
-python revise_translations.py your_file.ts --instruction "Use a shorter translation for Close"
-```
-
-For formats where the translated file no longer retains the original source text (`.strings`, `.resx`, `.txt`),
-pass both the translated file and the original source file:
-
-```
-python revise_translations.py translated.ai-translated.strings --source-file original.strings --instruction "Change the translation of viewer to browser only where needed"
-python revise_translations.py translated.ai-translated.resx --source-file original.resx --instruction "Replace toolbar with command bar when the source says toolbar"
-python revise_translations.py translated.txt --source-file source.txt --instruction "Use formal tone for the word Exit"
+```powershell
+python translate_cli.py translate source.po --target-lang fr
+python translate_cli.py translate source.po --thinking-level medium
+python translate_cli.py translate source.po --batch-size 100 --parallel-requests 4
+python translate_cli.py translate source.po --retranslate-all
+python translate_cli.py translate source.po --flex
+python translate_cli.py translate source.po --warnings-report
 ```
 
 Behavior:
 
-- default output path: `<input>.revised.<ext>`
-- default output path: `<input>-revised.<ext>`
-- original file is left untouched unless `--in-place` is used
-- `--dry-run` previews the review without writing a file
-- changed AI-reviewed entries are marked as `fuzzy` / `unfinished` for human review
+- default target language is `kk`
+- by default, only unfinished messages are translated
+- `--retranslate-all` forces already translated messages through translation again
+- recursive directory translation skips generated toolkit artifacts such as `*.ai-translated.*`, `*.glossary.po`, `*.missing-terms.po`, and `*.prototype-*.po`
+- when the scan root is this toolkit repository itself, recursive translation also skips toolkit-owned directories such as `data/`, `logs/`, `docs/`, `tests/`, `tasks/`, and `core/`
+- translated output is written as `*.ai-translated.<ext>`
+- `--warnings-report` also writes `*.translation-warnings.json` with only the messages where the model reported ambiguity, unclear meaning, risky glossary choice, or another review-worthy concern
 
-Useful controls:
+Warnings sidecar behavior:
 
+- warnings are emitted per translated message, not as one batch-level summary
+- each warning item includes structured issues with `code`, `message`, and `severity`, plus the source text, translated text, and any available `context`, `note`, or matched `relevant_vocabulary`
+- translation warning codes use the `translate.*` namespace, for example `translate.ambiguous_term`
+- `severity` is `warning` for real risk or ambiguity, and `info` for notable but non-risk notes such as preserved structure
+- this is a lightweight translator self-report; the dedicated `check` task remains the real QA pass
+
+### 2. Translate Android XML with a paired source file
+
+Android translated exports often contain only resource IDs on the target side, so translation uses a paired-source workflow:
+
+```powershell
+python translate_cli.py translate translated.xml --source-file source.xml
 ```
-python revise_translations.py your_file.po --instruction "Replace preferences with settings" --dry-run --probe 50
-python revise_translations.py your_file.po --instruction "Use the term archive instead of package" --out revised.po
-python revise_translations.py translated.ai-translated.strings --source-file original.strings --instruction "Shorten app names where possible" --batch-size 80 --parallel-requests 4
+
+The Android XML backend:
+
+- supports `<string>` and `<plurals>`
+- pairs `<string>` items by resource name
+- pairs `<plurals>` by resource name plus quantity
+- preserves inline XML such as `<xliff:g>`
+- preserves literal escapes such as `\n` in source style
+
+Current translation constraint:
+
+- Android `.xml` translation currently supports one target file at a time and requires `--source-file`
+
+### 3. Revise an existing translation
+
+Use `revise` when a file is already translated and you want targeted changes rather than full retranslation.
+
+For formats that still contain source and translation together:
+
+```powershell
+python translate_cli.py revise translated.po --instruction "Use a shorter term for Preferences"
+python translate_cli.py revise translated.ts --instruction "Replace archive with package where the source says package"
 ```
 
-## `.strings` behavior
+For formats where the translated file no longer carries the original source text, pass the matching source file:
 
-For `.strings` files, this project uses the following convention:
+```powershell
+python translate_cli.py revise translated.ai-translated.xml --source-file source.xml --instruction "Use natural confirmation questions and preserve literal \\n escapes"
+python translate_cli.py revise translated.ai-translated.strings --source-file source.strings --instruction "Shorten viewer labels where possible"
+python translate_cli.py revise translated.ai-translated.resx --source-file source.resx --instruction "Use command bar instead of toolbar"
+python translate_cli.py revise translated.txt --source-file source.txt --instruction "Use formal tone for Exit"
+```
 
-- commented key/value entries (`/* "key" = "value"; */`) are treated as untranslated source entries
-- uncommented entries (`"key" = "value";`) are treated as already translated
-- leading `.strings` comments are passed to the model as contextual translator notes
+Revision behavior:
 
-Translated output for `.strings` preserves file encoding (including UTF BOM when present) and writes translated entries as uncommented lines.
+- default output path is `<input>.revised.<ext>`
+- `--in-place` overwrites the translated input file
+- `--dry-run` reviews and reports changes without writing output
+- changed AI-reviewed entries are marked as review-required where the format supports it
 
-Escaped sequences are preserved in `.strings` output. The pipeline normalizes model-returned literal escapes to the source style for common control escapes (for example `\n`, `\t`, `\r`, `\a`, `\b`, `\f`, `\v`) to avoid accidental double-escaping like `\\n` or `\\a`.
+### 4. Check a translated PO or TS file
 
-## `.txt` behavior
+Use `check` for QA on an already translated PO or TS file:
 
-For `.txt` files:
+```powershell
+python translate_cli.py check translated.po
+python translate_cli.py check translated.ts
+python translate_cli.py check translated.po --probe 50
+python translate_cli.py check translated.po --out report.json --include-ok
+```
 
-- each line is treated as one independent message
-- blank/whitespace-only lines are preserved and skipped
-- translated output preserves original line order and line breaks
+The checker combines model findings with deterministic local checks for:
 
-## Internal Unified Entry Model
+- placeholders
+- tags
+- accelerators
+- plural slots
+- approved vocabulary usage
 
-The translation pipeline now normalizes all formats (`.po`, `.ts`, `.resx`, `.strings`, `.txt`) into a shared internal entry model with common fields (message, context, note, status, flags, plural data, and string type), then syncs updates back to each native file format on save.
+Default output path:
 
-Status values are normalized as:
+```text
+translated.translation-check.json
+```
 
-- `untranslated`: no translation content yet
-- `fuzzy`: review-required translations (for example PO `fuzzy` or TS `unfinished`)
-- `translated`: translated and not fuzzy
-- `skipped`: non-localizable entries (for example typed/binary `.resx` resources)
+Check-report issue shape:
 
-# Notes
+- each issue uses a structured `code`, `message`, and `severity`
+- check issue codes use the `check.*` namespace, for example `check.meaning`, `check.placeholder`, or `check.terminology`
 
-## Gettext placeholder reordering (`%s`, `%d`)
+### 5. Extract glossary terms with a model
 
-If Poedit complains after you change placeholder order, check the format flag on that entry:
+Use `extract-terms` when you want the model to propose glossary entries:
 
-- `#, c-format`: reordering is allowed with positional placeholders, e.g. `%2$s`, `%1$s`.
-- `#, python-format`: positional `%2$s` is not valid; you cannot safely reorder plain `%s` placeholders.
+```powershell
+python translate_cli.py extract-terms source.po
+python translate_cli.py extract-terms source.xml
+```
 
-For `python-format` entries, reordering requires source-side named placeholders, for example:
+Useful variants:
+
+```powershell
+python translate_cli.py extract-terms source.po --mode missing --vocab data/locales/kk/vocab --out-format po
+python translate_cli.py extract-terms source.po --mode missing --out-format json --vocab data/locales/kk/vocab
+python translate_cli.py extract-terms source.po --out glossary.po --batch-size 200 --parallel-requests 4
+```
+
+Modes:
+
+- `all`: build a broader glossary from the source content
+- `missing`: focus on terms that are not already in your existing vocabulary
+
+Output defaults:
+
+- `all` + `po` -> `<input>.glossary.po`
+- `missing` + `po` -> `<input>.missing-terms.po`
+- `missing` + `json` -> `<input>.missing-terms.json`
+
+When you run missing-term extraction with `--out-format po`, the generated PO is designed to go straight back into review and then translation:
+
+- known terms from the supplied vocabulary are imported
+- new missing terms are added as reviewable entries
+
+### 6. Discover terms locally, without a model
+
+Use `extract-terms-local` when you want a fast local analysis pass with no API call.
+
+Single-file usage:
+
+```powershell
+python translate_cli.py extract-terms-local source.po
+python translate_cli.py extract-terms-local source.xml --mode missing --max-length 1
+```
+
+Directory-tree usage:
+
+```powershell
+python translate_cli.py extract-terms-local C:\path\to\source-tree --also-po
+```
+
+Convert a local JSON report into a PO handoff:
+
+```powershell
+python translate_cli.py extract-terms-local source.prototype-missing-terms.json --to-po
+```
+
+Local extraction behavior:
+
+- works on one supported source file or a whole directory tree
+- deduplicates repeated source messages across files
+- writes a JSON report with accepted, borderline, and translation-candidate terms
+- can also write a PO handoff file with `--also-po`
+
+The local extractor deliberately filters common localization noise before scoring terms, including:
+
+- placeholders and variable-like tokens
+- CLI flags and digit-led labels
+- mnemonic fragments such as underscore accelerators
+- URL, tag, and attribute noise such as `href`, `src`, domain fragments, and embedded markup payloads
+
+## Vocabulary And Rules
+
+By default, the toolkit looks up language resources from `data/locales/<target-lang>/`.
+
+Auto-detected resources:
+
+- `data/locales/<target-lang>/vocab.txt`
+- `data/locales/<target-lang>/vocab/`
+- `data/locales/<target-lang>/rules.md`
+
+Locale fallback is supported. For example, `fr_CA` falls back to `fr` if the region-specific resource is not present.
+
+You can override both resources per run:
+
+```powershell
+python translate_cli.py translate source.po --vocab custom-vocab.txt --rules custom-rules.md
+python translate_cli.py translate source.po --vocab custom-vocab --rules-str "Use concise imperative labels."
+```
+
+`--vocab` accepts:
+
+- a glossary `.txt`
+- a glossary `.po`
+- a glossary `.tbx`
+- a directory containing glossary `.txt`, `.po`, and `.tbx` files
+
+When a vocabulary directory is used:
+
+- files are loaded in filename order
+- later duplicates override earlier ones
+
+Recommended layout:
+
+```text
+data/
+  locales/
+    kk/
+      vocab/
+        common.txt
+        colors.txt
+        media.txt
+      rules.md
+    fr/
+      vocab.txt
+      rules.md
+  extract/
+    common/
+      abbreviations.txt
+      excluded_terms.txt
+    en/
+      stopwords.txt
+      low_value_words.txt
+      fixed_multiword_allowlist.txt
+```
+
+Rich vocabulary entries use this schema:
+
+```text
+source_term|target_term|part_of_speech|context_note
+```
+
+Example:
+
+```text
+archive|package|noun|software package manager context
+save|store|verb|short imperative UI action
+```
+
+During translation, the toolkit still sends the full vocabulary for compatibility, but it also computes `relevant_vocabulary` per message so each message sees the subset of glossary entries that actually match it.
+
+When warnings reporting is enabled, the translation response can also include a per-message `warnings` field. Those warnings are written to a separate JSON sidecar so you can inspect ambiguous or risky messages without rereading the whole translated file.
+
+## Format Behavior At A Glance
+
+| Format | Translate | Revise | Extract Terms | Notes |
+| --- | --- | --- | --- | --- |
+| `.po` | Yes | Yes | Yes | Source and translation live together |
+| `.ts` | Yes | Yes | Yes | Source and translation live together |
+| `.resx` | Yes | Yes | Yes | Revision requires `--source-file` |
+| `.strings` | Yes | Yes | Yes | Revision requires `--source-file` |
+| `.txt` | Yes | Yes | Yes | One line equals one message; revision requires `--source-file` |
+| Android `.xml` | Yes | Yes | Yes | Translation and revision use paired-source matching |
+
+Additional notes:
+
+- `check` currently supports translated `.po` and `.ts` files
+- `.strings` translation treats commented key/value entries as untranslated source entries and uncommented entries as translated entries
+- `.strings` output preserves file encoding and common literal escape sequences
+- `.txt` output preserves original line order and blank lines
+
+## GUI
+
+The Tk desktop UI is available here:
+
+```powershell
+python process_gui.py
+```
+
+The GUI is a frontend over the same backend concepts as the CLI. It includes:
+
+- shared provider, model, API-key, thinking, and runtime controls
+- instruction preview for the resolved system prompt and language rules
+- a `Translate` tab with Android `Source file` support
+- a `Local Extract` tab for file, folder, and JSON-to-PO local extraction workflows
+
+Translate-tab note:
+
+- the GUI enables the translation warnings JSON sidecar by default
+- a normal translate run writes the translated output file and a matching `*.translation-warnings.json` report
+
+## Project Layout
+
+The repository is intentionally split between shared mechanics and task-specific logic:
+
+```text
+translate_cli.py          unified CLI entry point
+process_gui.py            Tk frontend
+tasks/                    task-specific contracts and runners
+core/                     formats, providers, runtime, resources, shared helpers
+data/locales/             per-language vocabulary and rules
+data/extract/             local-extraction stop words and filters
+tests/                    smoke and regression coverage
+```
+
+If you are changing behavior, the important design line is:
+
+- `core/` owns shared mechanics
+- `tasks/` owns task-specific prompts, schemas, and result handling
+- `process_gui.py` should stay frontend-oriented
+
+## Gettext Placeholder Note
+
+If Poedit complains after placeholder order changes, check the format flag on the entry:
+
+- `#, c-format`: reordering is allowed with positional placeholders such as `%2$s`, `%1$s`
+- `#, python-format`: `%2$s` is not valid, so plain `%s` placeholders cannot be safely reordered
+
+For `python-format`, safe reordering requires named placeholders in the source, for example:
 
 ```po
 msgid "From %(src)s to %(dst)s"
-msgstr "%(dst)s konumuna %(src)s"
+msgstr "%(dst)s to %(src)s"
 ```
 
-Always preserve the same placeholder set and types (`%s`, `%d`, names) between `msgid` and `msgstr`.
+Always preserve the same placeholder set and types between source and translation.
 
-# Smoke tests
+## Smoke Tests
 
-```
+```powershell
 python -m unittest discover -s tests -p "test_*.py" -v
 ```
