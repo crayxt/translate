@@ -27,11 +27,14 @@ gajim
 geopackage
 ghostbsd
 gimp
+github
+gitlab
 gnome
 gnu
 google
 i18n
 ibm
+icewm
 icq
 ime
 instagram
@@ -56,6 +59,7 @@ linux
 lotus
 microsoft
 midnightbsd
+motif
 mozilla
 natnum12
 netbsd
@@ -80,6 +84,7 @@ tdf
 telegram
 telnet
 the document foundation
+thunderbird
 unix
 vba
 vlc
@@ -87,6 +92,7 @@ wayland
 webdav
 whatsapp
 windows
+x11
 xfce
 xfce4
 xorg
