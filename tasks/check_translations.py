@@ -49,6 +49,7 @@ from core.system_instructions import (
     SHARED_LOCALIZATION_INVARIANTS,
     join_instruction_sections,
 )
+from core.runtime import DEFAULT_BATCH_SIZE, DEFAULT_PARALLEL_REQUESTS
 from core.task_batches import build_fixed_batches, build_indexed_batch_map, run_model_batches
 from core.task_runtime import build_task_runtime_context, print_startup_configuration
 from core.task_issues import (
@@ -60,8 +61,8 @@ from core.task_issues import (
 )
 
 
-DEFAULT_CHECK_BATCH_SIZE = 150
-DEFAULT_CHECK_PARALLEL = 6
+DEFAULT_CHECK_BATCH_SIZE = DEFAULT_BATCH_SIZE
+DEFAULT_CHECK_PARALLEL = DEFAULT_PARALLEL_REQUESTS
 
 CHECK_SYSTEM_INSTRUCTION = join_instruction_sections(
     """

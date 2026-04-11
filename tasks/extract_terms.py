@@ -38,7 +38,7 @@ from core.task_cli import (
     run_task_main,
 )
 from core.resources import load_vocabulary_pairs, read_optional_vocabulary_file, resolve_resource_path
-from core.runtime import resolve_runtime_limits
+from core.runtime import DEFAULT_BATCH_SIZE, DEFAULT_PARALLEL_REQUESTS, resolve_runtime_limits
 from core.task_batches import build_fixed_batches, build_indexed_batch_map, run_model_batches
 from core.task_runtime import build_task_runtime_context, print_startup_configuration
 from core.term_extraction import collect_source_messages as collect_shared_source_messages
@@ -430,8 +430,8 @@ def normalize_limits(
     if batch_size_arg is None and parallel_arg is None:
         batch_size, parallel, _ = resolve_runtime_limits(
             total_items=total_items,
-            batch_size_arg=250,
-            parallel_arg=6,
+            batch_size_arg=DEFAULT_BATCH_SIZE,
+            parallel_arg=DEFAULT_PARALLEL_REQUESTS,
         )
         return batch_size, parallel, "term defaults"
 

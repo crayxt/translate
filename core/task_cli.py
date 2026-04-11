@@ -5,10 +5,11 @@ import os
 from typing import Callable
 
 from core.providers import get_translation_provider
-from core.runtime import add_thinking_level_argument
+from core.runtime import DEFAULT_BATCH_SIZE, DEFAULT_PARALLEL_REQUESTS, add_thinking_level_argument
 
 
 GEMINI_BACKEND_CHOICES = ("studio", "vertex")
+DEFAULT_GEMINI_BACKEND = "vertex"
 
 
 def add_language_arguments(
@@ -53,8 +54,8 @@ def add_provider_arguments(
     parser.add_argument(
         "--gemini-backend",
         choices=GEMINI_BACKEND_CHOICES,
-        default=None,
-        help="Gemini backend override: studio or vertex",
+        default=DEFAULT_GEMINI_BACKEND,
+        help=f"Gemini backend override (default: {DEFAULT_GEMINI_BACKEND})",
     )
     parser.add_argument(
         "--google-cloud-location",
@@ -79,8 +80,13 @@ def resolve_provider_model(
 
 def add_runtime_limit_arguments(parser: argparse.ArgumentParser) -> None:
     """Register shared batching and parallelism flags."""
-    parser.add_argument("--batch-size", type=int, default=None, help="Batch size (auto if omitted)")
-    parser.add_argument("--parallel-requests", type=int, default=None, help="Concurrent requests (auto if omitted)")
+    parser.add_argument("--batch-size", type=int, default=None, help=f"Batch size (default: {DEFAULT_BATCH_SIZE})")
+    parser.add_argument(
+        "--parallel-requests",
+        type=int,
+        default=None,
+        help=f"Concurrent requests (default: {DEFAULT_PARALLEL_REQUESTS})",
+    )
 
 
 def add_vocabulary_argument(parser: argparse.ArgumentParser) -> None:
@@ -175,6 +181,7 @@ def apply_provider_environment_from_args(
 
 __all__ = [
     "GEMINI_BACKEND_CHOICES",
+    "DEFAULT_GEMINI_BACKEND",
     "add_language_arguments",
     "add_max_attempts_argument",
     "add_probe_argument",
