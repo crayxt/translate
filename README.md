@@ -280,6 +280,49 @@ The local extractor deliberately filters common localization noise before scorin
 - mnemonic fragments such as underscore accelerators
 - URL, tag, and attribute noise such as `href`, `src`, domain fragments, and embedded markup payloads
 
+## Recommended Workflow
+
+For larger localization work, the recommended flow is:
+
+1. Run local extraction first.
+2. Translate the resulting glossary PO handoff.
+3. Review and approve that glossary.
+4. Use the approved glossary as the vocabulary base for the main translation.
+5. Review and approve the main translated source file.
+
+In practice, that looks like this:
+
+```powershell
+# 1. Local extraction from one file or a source tree
+python translate_cli.py extract-terms-local source.po --mode missing --also-po
+python translate_cli.py extract-terms-local C:\path\to\source-tree --mode missing --also-po
+
+# 2. Translate the generated glossary PO handoff
+python translate_cli.py translate source.prototype-missing-terms.po --vocab data/locales/kk/vocab
+
+# 3. Review and approve the glossary PO
+#    Keep only good terms, fix bad translations, and save the approved glossary.
+
+# 4. Use the approved glossary as the base vocabulary for the main translation
+python translate_cli.py translate source.po --vocab approved-glossary.po
+
+# 5. Review and approve the main translated source file
+```
+
+Why this workflow is recommended:
+
+- `extract-terms-local` can deterministically avoid terms already present in your approved vocabulary and skip local noise such as stop words, excluded abbreviations, placeholders, tags, and weak phrase candidates
+- the glossary is reviewed before bulk translation, so terminology is stabilized early
+- the main `translate` task can load the approved glossary PO directly through `--vocab`
+- the final source translation still needs review, because approved terminology does not replace full QA
+
+Keep a distinction between:
+
+- candidate glossary output from local extraction
+- approved glossary used as translation input
+
+That approved glossary can stay as a reviewed `.po` passed with `--vocab`, or it can be merged into your canonical locale vocabulary under `data/locales/<target-lang>/`.
+
 ## Vocabulary And Rules
 
 By default, the toolkit looks up language resources from `data/locales/<target-lang>/`.
