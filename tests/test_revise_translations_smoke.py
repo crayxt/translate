@@ -150,6 +150,41 @@ class ReviseTranslationsSmokeTests(unittest.TestCase):
                 if os.path.exists(path):
                     os.remove(path)
 
+    def test_load_review_bundle_for_xliff_uses_embedded_source(self):
+        input_path = os.path.join(os.getcwd(), "_tmp_revision.xliff")
+        generated_out = os.path.join(os.getcwd(), "_tmp_revision.ai-translated.xliff")
+        try:
+            with open(input_path, "w", encoding="utf-8", newline="") as handle:
+                handle.write(
+                    """<?xml version="1.0" encoding="utf-8"?>
+<xliff version="1.2" xmlns="urn:oasis:names:tc:xliff:document:1.2">
+  <file original="messages.json">
+    <body>
+      <trans-unit id="openAction" resname="openAction">
+        <source>Open</source>
+        <target state="translated">Ашу</target>
+        <note>Main action label.</note>
+      </trans-unit>
+    </body>
+  </file>
+</xliff>
+"""
+                )
+
+            bundle = revise_translations.load_review_bundle(input_path)
+
+            self.assertEqual(bundle.file_kind, FileKind.XLIFF)
+            self.assertEqual(len(bundle.items), 1)
+            self.assertEqual(bundle.items[0].source_text, "Open")
+            self.assertEqual(bundle.items[0].current_text, "Ашу")
+            self.assertEqual(bundle.items[0].context, "openAction")
+            self.assertIn("file: messages.json", bundle.items[0].note)
+            self.assertIn("Main action label.", bundle.items[0].note)
+        finally:
+            for path in (input_path, generated_out):
+                if os.path.exists(path):
+                    os.remove(path)
+
     def test_load_review_bundle_pairs_strings_source_and_translation(self):
         source_path = os.path.join(os.getcwd(), "_tmp_source.strings")
         translated_path = os.path.join(os.getcwd(), "_tmp_translated.ai-translated.strings")

@@ -23,6 +23,7 @@ from core.formats import (
     detect_file_kind,
     get_entry_prompt_context_and_note,
     load_paired_android_xml,
+    load_xliff,
     load_po,
     load_resx,
     load_strings,
@@ -510,6 +511,8 @@ def _load_file_entries(file_path: str, file_kind: FileKind) -> Tuple[List[Unifie
     """Load one revisable file kind and return entries plus save metadata."""
     if file_kind == FileKind.PO:
         return load_po(file_path)
+    if file_kind == FileKind.XLIFF:
+        return load_xliff(file_path)
     if file_kind == FileKind.TS:
         return load_ts(file_path)
     if file_kind == FileKind.RESX:
@@ -707,7 +710,7 @@ def load_review_bundle(
                 f"--source-file type mismatch: expected .{file_kind.value}, got .{source_kind.value}"
             )
 
-    if file_kind in (FileKind.PO, FileKind.TS):
+    if file_kind in (FileKind.PO, FileKind.XLIFF, FileKind.TS):
         return build_single_file_bundle(translated_file, file_kind)
 
     if file_kind == FileKind.ANDROID_XML:
@@ -744,7 +747,7 @@ def load_review_bundle(
         return build_paired_bundle(source_file, translated_file, file_kind)
 
     raise ValueError(
-        "Unsupported file type. Use .po, .ts, .resx, .strings, .txt, or Android .xml"
+        "Unsupported file type. Use .po, .xlf/.xliff, .ts, .resx, .strings, .txt, or Android .xml"
     )
 
 
@@ -860,7 +863,7 @@ def configure_parser(parser: argparse.ArgumentParser) -> argparse.ArgumentParser
     )
     parser.add_argument(
         "file",
-        help="Current translated .po, .ts, .resx, .strings, .txt, or Android .xml file",
+        help="Current translated .po, .xlf/.xliff, .ts, .resx, .strings, .txt, or Android .xml file",
     )
     parser.add_argument(
         "--instruction",

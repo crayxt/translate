@@ -212,6 +212,43 @@ class ExtractTermsSmokeTests(unittest.TestCase):
                 if os.path.exists(path):
                     os.remove(path)
 
+    def test_load_entries_for_xliff_file(self):
+        in_path = os.path.join(os.getcwd(), "_tmp_terms.xliff")
+        out_path = os.path.join(os.getcwd(), "_tmp_terms.ai-translated.xliff")
+        try:
+            with open(in_path, "w", encoding="utf-8", newline="") as handle:
+                handle.write(
+                    """<?xml version="1.0" encoding="utf-8"?>
+<xliff version="1.2" xmlns="urn:oasis:names:tc:xliff:document:1.2">
+  <file original="messages.json">
+    <body>
+      <trans-unit id="tokenLabel" resname="tokenLabel">
+        <source>Access token</source>
+        <note>Shown in settings.</note>
+      </trans-unit>
+    </body>
+  </file>
+</xliff>
+"""
+                )
+
+            entries = extract_terms.load_entries_for_file(in_path, process.FileKind.XLIFF)
+            messages = extract_terms.collect_source_messages(entries)
+            self.assertEqual(
+                messages,
+                [
+                    {
+                        "source": "Access token",
+                        "context": "tokenLabel",
+                        "note": "file: messages.json | Shown in settings.",
+                    }
+                ],
+            )
+        finally:
+            for path in (in_path, out_path):
+                if os.path.exists(path):
+                    os.remove(path)
+
     def test_save_terms_as_po_writes_msgid_msgstr_and_notes(self):
         out_path = os.path.join(os.getcwd(), "_tmp_glossary.po")
         try:

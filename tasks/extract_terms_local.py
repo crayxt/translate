@@ -8,7 +8,18 @@ import os
 import sys
 from typing import List, Tuple
 
-from core.formats import FileKind, UnifiedEntry, detect_file_kind, load_android_xml, load_po, load_resx, load_strings, load_ts, load_txt
+from core.formats import (
+    FileKind,
+    UnifiedEntry,
+    detect_file_kind,
+    load_android_xml,
+    load_xliff,
+    load_po,
+    load_resx,
+    load_strings,
+    load_ts,
+    load_txt,
+)
 from core.resources import load_vocabulary_pairs, resolve_resource_path
 from core.task_cli import add_language_arguments, add_vocabulary_argument, build_task_parser, run_task_main
 from core.term_extraction import SourceMessage, collect_source_messages, extract_terms_locally
@@ -19,6 +30,9 @@ def load_entries_for_file(file_path: str, file_kind: FileKind) -> List[UnifiedEn
     """Load localization entries for any supported local-discovery source file kind."""
     if file_kind == FileKind.ANDROID_XML:
         entries, _, _ = load_android_xml(file_path)
+        return entries
+    if file_kind == FileKind.XLIFF:
+        entries, _, _ = load_xliff(file_path)
         return entries
     if file_kind == FileKind.TS:
         entries, _, _ = load_ts(file_path)

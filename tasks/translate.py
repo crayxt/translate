@@ -44,6 +44,7 @@ from core.formats import (
     build_output_path,
     detect_file_kind,
     load_android_xml,
+    load_xliff,
     load_paired_android_xml,
     load_resx,
     load_strings,
@@ -103,6 +104,8 @@ TRANSLATABLE_INPUT_EXTENSIONS = frozenset(
     {
         ".po",
         ".pot",
+        ".xlf",
+        ".xliff",
         ".ts",
         ".resx",
         ".strings",
@@ -501,12 +504,12 @@ class TranslationQueueItem:
 def configure_parser(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
     """Configure the standalone CLI for translation runs."""
     parser.description = (
-        "Pre-process and translate PO, TS, RESX, STRINGS, TXT, or Android XML files using a provider adapter"
+        "Pre-process and translate PO, XLIFF, TS, RESX, STRINGS, TXT, or Android XML files using a provider adapter"
     )
     parser.add_argument(
         "files",
         nargs="+",
-        help="Input .po, .ts, .resx, .strings, .txt, or Android .xml file(s) or directory tree(s)",
+        help="Input .po, .xlf/.xliff, .ts, .resx, .strings, .txt, or Android .xml file(s) or directory tree(s)",
     )
     parser.add_argument(
         "--source-file",
@@ -738,6 +741,8 @@ def load_entries_for_translation(file_path: str, source_file: str | None = None)
                 )
             entries, save_callback, output_path, warnings = load_paired_android_xml(source_file, file_path)
             return file_kind, entries, save_callback, output_path, warnings
+        if file_kind == FileKind.XLIFF:
+            return file_kind, *load_xliff(file_path), []
         if file_kind == FileKind.TS:
             return file_kind, *load_ts(file_path), []
         if file_kind == FileKind.RESX:

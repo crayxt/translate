@@ -20,6 +20,7 @@ from core.formats import (
     UnifiedEntry,
     build_entry_source_text,
     detect_file_kind,
+    load_xliff,
     load_po,
     load_ts,
 )
@@ -177,6 +178,9 @@ def build_check_output_path(file_path: str) -> str:
 
 def load_entries_for_check(file_path: str, file_kind: FileKind) -> List[UnifiedEntry]:
     """Load translated entries for supported QA file kinds."""
+    if file_kind == FileKind.XLIFF:
+        entries, _, _ = load_xliff(file_path)
+        return entries
     if file_kind == FileKind.TS:
         entries, _, _ = load_ts(file_path)
         return entries
@@ -451,8 +455,8 @@ def _build_legacy_check_issue_code(raw_issue: Dict[str, Any]) -> str:
 
 def configure_parser(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
     """Configure the standalone CLI for translation QA."""
-    parser.description = "Check translated PO or TS files using the configured provider"
-    parser.add_argument("file", help="Input translated .po or .ts file")
+    parser.description = "Check translated PO, XLIFF, or TS files using the configured provider"
+    parser.add_argument("file", help="Input translated .po, .xlf/.xliff, or .ts file")
     add_language_arguments(parser)
     add_provider_arguments(
         parser,
@@ -493,8 +497,8 @@ def run_from_args(args: argparse.Namespace) -> None:
     except ValueError as e:
         sys.exit(f"ERROR: {e}")
 
-    if file_kind not in (FileKind.PO, FileKind.TS):
-        sys.exit("ERROR: the check command currently supports only .po and .ts files")
+    if file_kind not in (FileKind.PO, FileKind.XLIFF, FileKind.TS):
+        sys.exit("ERROR: the check command currently supports only .po, .xlf/.xliff, and .ts files")
 
     runtime_context = build_task_runtime_context(
         provider_name=args.provider,

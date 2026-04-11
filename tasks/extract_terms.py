@@ -18,6 +18,7 @@ from core.formats import (
     UnifiedEntry,
     detect_file_kind,
     load_android_xml,
+    load_xliff,
     load_po,
     load_resx,
     load_strings,
@@ -401,6 +402,9 @@ def load_entries_for_file(file_path: str, file_kind: FileKind) -> List[UnifiedEn
     if file_kind == FileKind.ANDROID_XML:
         entries, _, _ = load_android_xml(file_path)
         return entries
+    if file_kind == FileKind.XLIFF:
+        entries, _, _ = load_xliff(file_path)
+        return entries
     if file_kind == FileKind.TS:
         entries, _, _ = load_ts(file_path)
         return entries
@@ -441,10 +445,10 @@ def normalize_limits(
 def configure_parser(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
     """Configure the standalone CLI for model-based glossary extraction."""
     parser.description = (
-        "Extract glossary term candidates from PO/TS/RESX/STRINGS/TXT/Android XML files using the configured provider "
+        "Extract glossary term candidates from PO/XLIFF/TS/RESX/STRINGS/TXT/Android XML files using the configured provider "
         "and save as PO or JSON"
     )
-    parser.add_argument("file", help="Input .po, .ts, .resx, .strings, .txt, or Android .xml file")
+    parser.add_argument("file", help="Input .po, .xlf/.xliff, .ts, .resx, .strings, .txt, or Android .xml file")
     add_language_arguments(parser)
     add_provider_arguments(
         parser,

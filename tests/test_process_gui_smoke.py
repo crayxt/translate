@@ -29,6 +29,11 @@ class ProcessGuiSmokeTests(unittest.TestCase):
     def test_check_filetypes_include_ts(self):
         self.assertIn(("Qt TS files", "*.ts"), process_gui.CHECK_FILETYPES)
 
+    def test_filetype_filters_include_xliff(self):
+        self.assertIn(("XLIFF files", "*.xlf *.xliff"), process_gui.TRANSLATABLE_FILETYPES)
+        self.assertIn(("XLIFF files", "*.xlf *.xliff"), process_gui.CHECK_FILETYPES)
+        self.assertIn(("XLIFF files", "*.xlf *.xliff"), process_gui.LOCAL_EXTRACT_FILETYPES)
+
     def test_summarize_input_files_formats_multi_file_display(self):
         summary = process_gui.summarize_input_files(
             [r"C:\tmp\one.po", r"C:\tmp\two.po", r"C:\tmp\three.po"]
@@ -1056,6 +1061,42 @@ class ProcessGuiSmokeTests(unittest.TestCase):
                 "Source file is required for Android .xml, .strings, .resx, and .txt revision runs.",
                 errors,
             )
+        finally:
+            if os.path.exists(input_path):
+                os.remove(input_path)
+
+    def test_validate_revise_config_accepts_xliff_without_source_file(self):
+        input_path = os.path.join(os.getcwd(), "_tmp_gui_revise.xliff")
+        try:
+            with open(input_path, "w", encoding="utf-8", newline="") as handle:
+                handle.write(
+                    """<?xml version="1.0" encoding="utf-8"?>
+<xliff version="1.2" xmlns="urn:oasis:names:tc:xliff:document:1.2">
+  <file original="messages.json">
+    <body>
+      <trans-unit id="openAction" resname="openAction">
+        <source>Open</source>
+        <target state="translated">Ouvrir</target>
+      </trans-unit>
+    </body>
+  </file>
+</xliff>
+"""
+                )
+
+            config = process_gui.ReviseGuiConfig(
+                input_file=input_path,
+                instruction="Change to imperative mood",
+                api_key="test-key",
+            )
+
+            errors = process_gui.validate_revise_gui_config(config, environ={})
+
+            self.assertNotIn(
+                "Source file is required for Android .xml, .strings, .resx, and .txt revision runs.",
+                errors,
+            )
+            self.assertEqual(errors, [])
         finally:
             if os.path.exists(input_path):
                 os.remove(input_path)

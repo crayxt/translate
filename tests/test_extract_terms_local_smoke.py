@@ -139,6 +139,36 @@ class ExtractTermsLocalSmokeTests(unittest.TestCase):
         finally:
             self._cleanup_paths(input_root)
 
+    def test_load_messages_for_input_supports_xliff_file(self):
+        input_path = os.path.abspath("_tmp_extract_terms_local.xliff")
+        self._cleanup_paths(input_path)
+
+        try:
+            with open(input_path, "w", encoding="utf-8", newline="") as handle:
+                handle.write(
+                    """<?xml version="1.0" encoding="utf-8"?>
+<xliff version="1.2" xmlns="urn:oasis:names:tc:xliff:document:1.2">
+  <file original="messages.json">
+    <body>
+      <trans-unit id="tokenLabel" resname="tokenLabel">
+        <source>Access token</source>
+      </trans-unit>
+    </body>
+  </file>
+</xliff>
+"""
+                )
+
+            messages, scanned_files = extract_terms_local.load_messages_for_input(input_path)
+
+            self.assertEqual(scanned_files, [input_path])
+            self.assertEqual(len(messages), 1)
+            self.assertEqual(messages[0].source, "Access token")
+            self.assertEqual(messages[0].context, "tokenLabel")
+            self.assertEqual(messages[0].source_file, os.path.basename(input_path))
+        finally:
+            self._cleanup_paths(input_path)
+
 
 if __name__ == "__main__":
     unittest.main()

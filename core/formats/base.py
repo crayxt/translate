@@ -19,6 +19,7 @@ class FileKind(str, Enum):
     RESX = "resx"
     STRINGS = "strings"
     TXT = "txt"
+    XLIFF = "xliff"
     ANDROID_XML = "xml"
 
 
@@ -76,6 +77,8 @@ def detect_file_kind(file_path: str) -> FileKind:
     lower_path = file_path.lower()
     if lower_path.endswith((".po", ".pot")):
         return FileKind.PO
+    if lower_path.endswith((".xlf", ".xliff")):
+        return FileKind.XLIFF
     if lower_path.endswith(".ts"):
         return FileKind.TS
     if lower_path.endswith(".resx"):
@@ -89,11 +92,14 @@ def detect_file_kind(file_path: str) -> FileKind:
 
         if is_android_resources_xml(file_path):
             return FileKind.ANDROID_XML
-    raise ValueError("Unsupported file type. Use .po, .ts, .resx, .strings, .txt, or Android .xml")
+    raise ValueError("Unsupported file type. Use .po, .xlf/.xliff, .ts, .resx, .strings, .txt, or Android .xml")
 
 
 def build_output_path(file_path: str, file_kind: FileKind) -> str:
     root, _ = os.path.splitext(file_path)
+    if file_kind == FileKind.XLIFF:
+        extension = os.path.splitext(file_path)[1] or ".xliff"
+        return f"{root}.ai-translated{extension}"
     return f"{root}.ai-translated.{file_kind.value}"
 
 

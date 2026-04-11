@@ -51,8 +51,9 @@ BATCH_PROGRESS_RE = re.compile(
     r"Progress:\s*completed batches\s+(?P<done>\d+)/(?P<total>\d+)"
 )
 TRANSLATABLE_FILETYPES = [
-    ("Translatable files", "*.po *.ts *.resx *.strings *.txt *.xml"),
+    ("Translatable files", "*.po *.xlf *.xliff *.ts *.resx *.strings *.txt *.xml"),
     ("PO files", "*.po"),
+    ("XLIFF files", "*.xlf *.xliff"),
     ("Qt TS files", "*.ts"),
     ("RESX files", "*.resx"),
     ("Apple strings files", "*.strings"),
@@ -73,21 +74,24 @@ RULES_FILETYPES = [
     ("All files", "*.*"),
 ]
 CHECK_FILETYPES = [
-    ("Checkable files", "*.po *.ts"),
+    ("Checkable files", "*.po *.xlf *.xliff *.ts"),
     ("PO files", "*.po"),
+    ("XLIFF files", "*.xlf *.xliff"),
     ("Qt TS files", "*.ts"),
     ("All files", "*.*"),
 ]
 LOCAL_EXTRACT_FILETYPES = [
-    ("Supported local extract files", "*.po *.ts *.resx *.strings *.txt *.xml *.json"),
-    ("Translatable files", "*.po *.ts *.resx *.strings *.txt *.xml"),
+    ("Supported local extract files", "*.po *.xlf *.xliff *.ts *.resx *.strings *.txt *.xml *.json"),
+    ("Translatable files", "*.po *.xlf *.xliff *.ts *.resx *.strings *.txt *.xml"),
+    ("XLIFF files", "*.xlf *.xliff"),
     ("Android XML files", "*.xml"),
     ("JSON files", "*.json"),
     ("All files", "*.*"),
 ]
 LOCAL_EXTRACT_SOURCE_FILETYPES = [
-    ("Supported local extract files", "*.po *.ts *.resx *.strings *.txt *.xml"),
-    ("Translatable files", "*.po *.ts *.resx *.strings *.txt *.xml"),
+    ("Supported local extract files", "*.po *.xlf *.xliff *.ts *.resx *.strings *.txt *.xml"),
+    ("Translatable files", "*.po *.xlf *.xliff *.ts *.resx *.strings *.txt *.xml"),
+    ("XLIFF files", "*.xlf *.xliff"),
     ("Android XML files", "*.xml"),
     ("All files", "*.*"),
 ]
@@ -754,7 +758,7 @@ def validate_revise_gui_config(
 
     file_kind = _detect_revision_file_kind(config.input_file)
     if _clean(config.input_file) and file_kind is None:
-        errors.append("Input file must be a supported .po, .ts, .resx, .strings, .txt, or Android .xml file.")
+        errors.append("Input file must be a supported .po, .xlf/.xliff, .ts, .resx, .strings, .txt, or Android .xml file.")
 
     cleaned_source_file = _clean(config.source_file)
     if revision_requires_source_file(config.input_file):

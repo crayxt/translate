@@ -1654,6 +1654,62 @@ class ProcessSmokeTests(unittest.TestCase):
         mocked_detect.assert_not_called()
         self.assertEqual(resolved, "custom-rules.md")
 
+    def test_resolve_translation_input_paths_includes_xliff_files(self):
+        root_dir = os.path.join(os.getcwd(), "_tmp_translate_xliff_tree")
+        xliff_path = os.path.join(root_dir, "messages.xliff")
+        xlf_path = os.path.join(root_dir, "messages.xlf")
+        ignored = os.path.join(root_dir, "notes.md")
+        try:
+            os.makedirs(root_dir, exist_ok=True)
+            with open(xliff_path, "w", encoding="utf-8", newline="") as handle:
+                handle.write(
+                    '<?xml version="1.0" encoding="utf-8"?>\n'
+                    '<xliff version="1.2" xmlns="urn:oasis:names:tc:xliff:document:1.2">\n'
+                    "  <file><body/></file>\n"
+                    "</xliff>\n"
+                )
+            with open(xlf_path, "w", encoding="utf-8", newline="") as handle:
+                handle.write(
+                    '<?xml version="1.0" encoding="utf-8"?>\n'
+                    '<xliff version="1.2" xmlns="urn:oasis:names:tc:xliff:document:1.2">\n'
+                    "  <file><body/></file>\n"
+                    "</xliff>\n"
+                )
+            with open(ignored, "w", encoding="utf-8") as handle:
+                handle.write("ignore me\n")
+
+            resolved = process.resolve_translation_input_paths([root_dir])
+
+            self.assertEqual(resolved, [xlf_path, xliff_path])
+        finally:
+            for path in (xliff_path, xlf_path, ignored):
+                if os.path.exists(path):
+                    os.remove(path)
+            if os.path.isdir(root_dir):
+                os.rmdir(root_dir)
+
+    def test_load_entries_for_translation_supports_xliff(self):
+        entries = [
+            process.UnifiedEntry(
+                file_kind=process.FileKind.XLIFF,
+                msgid="Open",
+                msgstr="",
+                status=process.EntryStatus.UNTRANSLATED,
+            )
+        ]
+
+        with patch("tasks.translate.load_xliff", return_value=(entries, Mock(), "out.xliff")) as mocked_load:
+            file_kind, loaded_entries, save_callback, output_path, warnings = process.load_entries_for_translation(
+                "messages.xliff"
+            )
+
+        mocked_load.assert_called_once_with("messages.xliff")
+        self.assertEqual(file_kind, process.FileKind.XLIFF)
+        self.assertEqual(loaded_entries, entries)
+        self.assertEqual(output_path, "out.xliff")
+        self.assertEqual(warnings, [])
+        self.assertTrue(callable(save_callback))
+
 
 if __name__ == "__main__":
     unittest.main()

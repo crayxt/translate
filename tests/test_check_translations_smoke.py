@@ -181,6 +181,22 @@ class CheckTranslationsSmokeTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             check_translations.limit_review_entries([], 0)
 
+    def test_load_entries_for_check_supports_xliff(self):
+        entries = [
+            process.UnifiedEntry(
+                file_kind=process.FileKind.XLIFF,
+                msgid="Open",
+                msgstr="Ашу",
+                status=process.EntryStatus.TRANSLATED,
+            )
+        ]
+
+        with patch("tasks.check_translations.load_xliff", return_value=(entries, None, None)) as mocked_load:
+            loaded = check_translations.load_entries_for_check("input.xliff", process.FileKind.XLIFF)
+
+        mocked_load.assert_called_once_with("input.xliff")
+        self.assertEqual(loaded, entries)
+
     def test_build_target_script_guidance_generic_non_kazakh(self):
         guidance = check_translations.build_target_script_guidance("fr")
         self.assertIn("real writing system", guidance)
@@ -305,6 +321,54 @@ class CheckTranslationsSmokeTests(unittest.TestCase):
 
             self.assertEqual(payload["source_file"], "input.ts")
             self.assertEqual(payload["total_entries_checked"], 2)
+            self.assertEqual(payload["entries_with_issues"], 0)
+            self.assertEqual(payload["issue_count"], 0)
+            self.assertEqual(len(payload["results"]), 0)
+        finally:
+            if os.path.exists(out_path):
+                os.remove(out_path)
+
+    def test_main_writes_json_report_for_xliff(self):
+        out_path = os.path.join(os.getcwd(), "_tmp_translation_check_xliff.json")
+        entries = [
+            process.UnifiedEntry(
+                file_kind=process.FileKind.XLIFF,
+                msgid="Open",
+                msgstr="Ашу",
+                msgctxt="openAction",
+                status=process.EntryStatus.TRANSLATED,
+            )
+        ]
+
+        try:
+            provider = _DummyProvider()
+            with (
+                patch.dict(os.environ, {"GOOGLE_API_KEY": "test-key"}, clear=False),
+                patch("tasks.check_translations.get_translation_provider", return_value=provider),
+                patch("tasks.check_translations.detect_file_kind", return_value=process.FileKind.XLIFF),
+                patch(
+                    "tasks.check_translations.resolve_resource_path",
+                    side_effect=[
+                        os.path.join("data", "locales", "kk", "vocab.txt"),
+                        os.path.join("data", "locales", "kk", "rules.md"),
+                    ],
+                ),
+                patch("tasks.check_translations.read_optional_vocabulary_file", return_value=""),
+                patch("tasks.check_translations.read_optional_text_file", return_value=""),
+                patch("tasks.check_translations.load_xliff", return_value=(entries, None, None)),
+                patch(
+                    "tasks.check_translations.sys.argv",
+                    ["check_translations.py", "input.xliff", "--out", out_path],
+                ),
+                patch("builtins.print"),
+            ):
+                check_translations.main()
+
+            with open(out_path, "r", encoding="utf-8") as f:
+                payload = json.load(f)
+
+            self.assertEqual(payload["source_file"], "input.xliff")
+            self.assertEqual(payload["total_entries_checked"], 1)
             self.assertEqual(payload["entries_with_issues"], 0)
             self.assertEqual(payload["issue_count"], 0)
             self.assertEqual(len(payload["results"]), 0)

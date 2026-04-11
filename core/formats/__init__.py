@@ -15,6 +15,7 @@ from core.formats.resx import ResxEntryAdapter, load_resx
 from core.formats.strings import StringsEntryAdapter, load_strings
 from core.formats.ts import TSEntryAdapter, load_ts
 from core.formats.txt import load_txt
+from core.formats.xliff import load_xliff
 
 __all__ = [
     "PO_WRAP_WIDTH",
@@ -36,6 +37,7 @@ __all__ = [
     "load_strings",
     "load_ts",
     "load_txt",
+    "load_xliff",
     "plural_key_sort_key",
     "select_work_items",
 ]
