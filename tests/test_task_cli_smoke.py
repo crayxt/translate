@@ -18,6 +18,19 @@ from core.task_cli import (
 
 
 class TaskCliSmokeTests(unittest.TestCase):
+    def test_provider_argument_defaults_to_gemini_vertex_backend(self):
+        parser = argparse.ArgumentParser()
+        add_provider_arguments(
+            parser,
+            default_provider_name="gemini",
+            default_model="gemini-test",
+            include_thinking=False,
+        )
+
+        args = parser.parse_args([])
+
+        self.assertEqual(args.gemini_backend, "vertex")
+
     def test_common_argument_helpers_populate_expected_fields(self):
         parser = argparse.ArgumentParser()
         add_language_arguments(parser)

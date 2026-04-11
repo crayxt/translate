@@ -8,8 +8,8 @@ from typing import Any, Tuple
 from google import genai
 from google.genai import types as genai_types
 
-DEFAULT_BATCH_SIZE = 1000
-DEFAULT_PARALLEL_REQUESTS = 10
+DEFAULT_BATCH_SIZE = 50
+DEFAULT_PARALLEL_REQUESTS = 1
 MIN_ITEMS_PER_WORKER = 50
 THINKING_LEVEL_CHOICES = ("minimal", "low", "medium", "high")
 

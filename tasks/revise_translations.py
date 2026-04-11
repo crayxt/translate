@@ -50,6 +50,7 @@ from core.review_flow import (
     limit_items,
     normalize_limits as normalize_review_limits,
 )
+from core.runtime import DEFAULT_BATCH_SIZE, DEFAULT_PARALLEL_REQUESTS
 from core.system_instructions import (
     SHARED_GLOSSARY_SENSE_RULES,
     SHARED_LOCALIZATION_INVARIANTS,
@@ -70,8 +71,8 @@ from core.task_issues import (
 )
 
 
-DEFAULT_REVISION_BATCH_SIZE = 120
-DEFAULT_REVISION_PARALLEL = 6
+DEFAULT_REVISION_BATCH_SIZE = DEFAULT_BATCH_SIZE
+DEFAULT_REVISION_PARALLEL = DEFAULT_PARALLEL_REQUESTS
 
 REVISION_SYSTEM_INSTRUCTION = join_instruction_sections(
     """

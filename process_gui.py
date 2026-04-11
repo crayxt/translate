@@ -24,7 +24,9 @@ from core.providers import (
     get_translation_provider,
 )
 from core.resources import detect_default_text_resource
+from core.runtime import DEFAULT_BATCH_SIZE, DEFAULT_PARALLEL_REQUESTS
 from core.task_cli import (
+    DEFAULT_GEMINI_BACKEND,
     GEMINI_BACKEND_CHOICES,
     apply_provider_environment_from_args,
     resolve_provider_model,
@@ -42,6 +44,8 @@ DEFAULT_TARGET_LANG = "kk"
 DEFAULT_PROVIDER = DEFAULT_PROVIDER_NAME
 SUPPORTED_PROVIDER_CHOICES = tuple(sorted(SUPPORTED_TRANSLATION_PROVIDERS))
 DEFAULT_MODEL = DEFAULT_PROVIDER_SPEC.default_model
+DEFAULT_BATCH_SIZE_TEXT = str(DEFAULT_BATCH_SIZE)
+DEFAULT_PARALLEL_REQUESTS_TEXT = str(DEFAULT_PARALLEL_REQUESTS)
 THINKING_LEVEL_CHOICES = ("", "minimal", "low", "medium", "high")
 EXTRACT_MODE_CHOICES = ("missing", "all")
 EXTRACT_OUTPUT_CHOICES = ("po", "json")
@@ -112,12 +116,12 @@ class ProcessGuiConfig:
     source_lang: str = DEFAULT_SOURCE_LANG
     target_lang: str = DEFAULT_TARGET_LANG
     provider: str = DEFAULT_PROVIDER
-    gemini_backend: str = "studio"
+    gemini_backend: str = DEFAULT_GEMINI_BACKEND
     google_cloud_location: str = "global"
     model: str = DEFAULT_MODEL
     thinking_level: str = ""
-    batch_size: str = ""
-    parallel_requests: str = ""
+    batch_size: str = DEFAULT_BATCH_SIZE_TEXT
+    parallel_requests: str = DEFAULT_PARALLEL_REQUESTS_TEXT
     vocab_path: str = ""
     rules_path: str = ""
     rules_str: str = ""
@@ -133,12 +137,12 @@ class ExtractGuiConfig:
     source_lang: str = DEFAULT_SOURCE_LANG
     target_lang: str = DEFAULT_TARGET_LANG
     provider: str = DEFAULT_PROVIDER
-    gemini_backend: str = "studio"
+    gemini_backend: str = DEFAULT_GEMINI_BACKEND
     google_cloud_location: str = "global"
     model: str = DEFAULT_MODEL
     thinking_level: str = ""
-    batch_size: str = ""
-    parallel_requests: str = ""
+    batch_size: str = DEFAULT_BATCH_SIZE_TEXT
+    parallel_requests: str = DEFAULT_PARALLEL_REQUESTS_TEXT
     vocab_path: str = ""
     api_key: str = ""
     flex_mode: bool = False
@@ -155,12 +159,12 @@ class CheckGuiConfig:
     source_lang: str = DEFAULT_SOURCE_LANG
     target_lang: str = DEFAULT_TARGET_LANG
     provider: str = DEFAULT_PROVIDER
-    gemini_backend: str = "studio"
+    gemini_backend: str = DEFAULT_GEMINI_BACKEND
     google_cloud_location: str = "global"
     model: str = DEFAULT_MODEL
     thinking_level: str = ""
-    batch_size: str = ""
-    parallel_requests: str = ""
+    batch_size: str = DEFAULT_BATCH_SIZE_TEXT
+    parallel_requests: str = DEFAULT_PARALLEL_REQUESTS_TEXT
     vocab_path: str = ""
     rules_path: str = ""
     rules_str: str = ""
@@ -194,12 +198,12 @@ class ReviseGuiConfig:
     source_lang: str = DEFAULT_SOURCE_LANG
     target_lang: str = DEFAULT_TARGET_LANG
     provider: str = DEFAULT_PROVIDER
-    gemini_backend: str = "studio"
+    gemini_backend: str = DEFAULT_GEMINI_BACKEND
     google_cloud_location: str = "global"
     model: str = DEFAULT_MODEL
     thinking_level: str = ""
-    batch_size: str = ""
-    parallel_requests: str = ""
+    batch_size: str = DEFAULT_BATCH_SIZE_TEXT
+    parallel_requests: str = DEFAULT_PARALLEL_REQUESTS_TEXT
     vocab_path: str = ""
     rules_path: str = ""
     rules_str: str = ""
@@ -1166,7 +1170,7 @@ def build_revise_command(
 def build_script_env(
     api_key: str,
     provider: str = DEFAULT_PROVIDER,
-    gemini_backend: str = "studio",
+    gemini_backend: str = DEFAULT_GEMINI_BACKEND,
     google_cloud_location: str = "global",
     base_env: dict[str, str] | None = None,
 ) -> dict[str, str]:
@@ -1242,8 +1246,8 @@ class BaseToolTab(ttk.Frame):
         self.source_lang_var = tk.StringVar(value=DEFAULT_SOURCE_LANG)
         self.target_lang_var = tk.StringVar(value=DEFAULT_TARGET_LANG)
         self.model_var = tk.StringVar(value=DEFAULT_MODEL)
-        self.batch_size_var = tk.StringVar()
-        self.parallel_requests_var = tk.StringVar()
+        self.batch_size_var = tk.StringVar(value=DEFAULT_BATCH_SIZE_TEXT)
+        self.parallel_requests_var = tk.StringVar(value=DEFAULT_PARALLEL_REQUESTS_TEXT)
         self.vocab_path_var = tk.StringVar()
         self.rules_path_var = tk.StringVar()
         self.api_status_var = tk.StringVar()
@@ -2385,7 +2389,7 @@ class ProcessGuiApp(ttk.Frame):
         self.resource_root = build_resource_root()
         self.api_key_var = tk.StringVar()
         self.provider_var = tk.StringVar(value=DEFAULT_PROVIDER)
-        self.gemini_backend_var = tk.StringVar(value="studio")
+        self.gemini_backend_var = tk.StringVar(value=DEFAULT_GEMINI_BACKEND)
         self.google_cloud_location_var = tk.StringVar(value="global")
         self.thinking_level_var = tk.StringVar()
         self.flex_mode_var = tk.BooleanVar(value=False)

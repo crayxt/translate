@@ -1,6 +1,7 @@
 import unittest
 from unittest.mock import patch
 
+from core import runtime
 from core.task_resources import TaskResourceContext
 from core.task_runtime import build_task_runtime_context, print_startup_configuration
 
@@ -16,6 +17,17 @@ class _DummyProvider:
 
 
 class TaskRuntimeSmokeTests(unittest.TestCase):
+    def test_resolve_runtime_limits_uses_global_defaults(self):
+        batch_size, parallel_requests, mode = runtime.resolve_runtime_limits(
+            total_items=500,
+            batch_size_arg=None,
+            parallel_arg=None,
+        )
+
+        self.assertEqual(batch_size, 50)
+        self.assertEqual(parallel_requests, 1)
+        self.assertEqual(mode, "defaults")
+
     def test_build_task_runtime_context_builds_provider_client_and_resources(self):
         resources = TaskResourceContext(vocabulary_source="file:vocab.txt", rules_source="file:rules.md")
         provider = _DummyProvider()
