@@ -25,7 +25,7 @@ from core.formats import (
     load_txt,
     load_ts,
 )
-from core.providers import DEFAULT_PROVIDER, DEFAULT_PROVIDER_NAME, TranslationProvider, get_translation_provider
+from core.providers import DEFAULT_PROVIDER, DEFAULT_PROVIDER_NAME, TranslationProvider
 from core.request_contents import TaskRequestSpec, build_task_request_contents, render_text_fallback_prompt
 from core.task_cli import (
     add_language_arguments,
@@ -37,7 +37,6 @@ from core.task_cli import (
     resolve_provider_model,
     run_task_main,
 )
-from core.resources import load_vocabulary_pairs, read_optional_vocabulary_file, resolve_resource_path
 from core.runtime import DEFAULT_BATCH_SIZE, DEFAULT_PARALLEL_REQUESTS, resolve_runtime_limits
 from core.task_batches import build_fixed_batches, build_indexed_batch_map, run_model_batches
 from core.task_runtime import build_task_runtime_context, print_startup_configuration
@@ -496,10 +495,6 @@ def run_from_args(args: argparse.Namespace) -> None:
         explicit_vocab_path=args.vocab,
         include_rules=False,
         load_vocab_pairs_flag=args.mode == "missing" and args.out_format == "po",
-        get_translation_provider_fn=get_translation_provider,
-        resolve_resource_path_fn=resolve_resource_path,
-        read_optional_vocabulary_file_fn=read_optional_vocabulary_file,
-        load_vocabulary_pairs_fn=load_vocabulary_pairs,
     )
     provider = runtime_context.provider
     client = runtime_context.client

@@ -13,8 +13,6 @@ import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, List
 
-import polib
-
 from core.entries import (
     TranslationResult,
     TranslationWarning,
@@ -46,6 +44,7 @@ from core.formats import (
     load_android_xml,
     load_xliff,
     load_paired_android_xml,
+    load_po,
     load_resx,
     load_strings,
     load_ts,
@@ -53,23 +52,22 @@ from core.formats import (
     select_work_items,
 )
 from core.formats.base import _build_unified_entry as _core_build_unified_entry
-from core.formats.po import load_po as _core_load_po
 from core.formats.strings import (
     _detect_text_encoding,
     _write_text_with_encoding_fallback,
 )
 from core.resources import (
-    build_language_code_candidates as _core_build_language_code_candidates,
-    detect_default_text_resource as _core_detect_default_text_resource,
+    build_language_code_candidates,
+    detect_default_text_resource,
     detect_rules_source,
-    load_vocabulary_pairs as _core_load_vocabulary_pairs,
+    load_vocabulary_pairs,
     merge_project_rules,
     parse_vocabulary_line,
     read_optional_text_file,
-    read_optional_vocabulary_file as _core_read_optional_vocabulary_file,
-    resolve_resource_path as _core_resolve_resource_path,
+    read_optional_vocabulary_file,
+    resolve_resource_path,
 )
-from core.providers import DEFAULT_PROVIDER, DEFAULT_PROVIDER_NAME, TranslationProvider, get_translation_provider
+from core.providers import DEFAULT_PROVIDER, DEFAULT_PROVIDER_NAME, TranslationProvider
 from core.request_contents import TaskRequestSpec, build_task_request_contents, render_text_fallback_prompt
 from core.task_cli import (
     add_language_arguments,
@@ -364,81 +362,6 @@ def build_prompt(
             force_non_empty=force_non_empty,
         ),
     )
-
-
-def load_po(file_path: str):
-    """Load a PO file through the shared format adapter."""
-    return _core_load_po(file_path, pofile_loader=polib.pofile)
-
-
-def load_vocabulary_pairs(
-    path: str | None,
-    label: str = "Vocabulary",
-    *,
-    target_lang: str | None = None,
-):
-    """Load normalized vocabulary pairs from text, PO, or TBX resources."""
-    return _core_load_vocabulary_pairs(
-        path,
-        label,
-        pofile_loader=polib.pofile,
-        target_lang=target_lang,
-    )
-
-
-def read_optional_vocabulary_file(
-    path: str | None,
-    label: str = "Vocabulary",
-    *,
-    target_lang: str | None = None,
-):
-    """Read the full optional vocabulary resource as text for prompting."""
-    return _core_read_optional_vocabulary_file(
-        path,
-        label,
-        pofile_loader=polib.pofile,
-        target_lang=target_lang,
-    )
-
-
-def build_language_code_candidates(target_lang: str) -> List[str]:
-    """Return likely language-code variants for resource auto-discovery."""
-    return _core_build_language_code_candidates(target_lang)
-
-
-def detect_default_text_resource(
-    prefix: str,
-    extension: str,
-    target_lang: str,
-    *,
-    allow_directory: bool = False,
-) -> str | None:
-    """Auto-detect a locale resource path under the project conventions."""
-    return _core_detect_default_text_resource(
-        prefix,
-        extension,
-        target_lang,
-        allow_directory=allow_directory,
-    )
-
-
-def resolve_resource_path(
-    explicit_path: str | None,
-    prefix: str,
-    extension: str,
-    target_lang: str,
-    *,
-    allow_directory: bool = False,
-) -> str | None:
-    """Prefer an explicit resource path, otherwise fall back to auto-discovery."""
-    return _core_resolve_resource_path(
-        explicit_path,
-        prefix,
-        extension,
-        target_lang,
-        allow_directory=allow_directory,
-    )
-
 
 def _entry_status_from_legacy(entry: Any) -> EntryStatus:
     """Infer unified translation status from a legacy entry adapter."""
@@ -1022,7 +945,6 @@ def run_translation(config: TranslationRunConfig) -> None:
         explicit_vocab_path=config.vocab,
         explicit_rules_path=config.rules,
         inline_rules=config.rules_str,
-        get_translation_provider_fn=get_translation_provider,
     )
     provider = runtime_context.provider
     client = runtime_context.client

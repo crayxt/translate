@@ -24,7 +24,7 @@ from core.formats import (
     load_po,
     load_ts,
 )
-from core.providers import DEFAULT_PROVIDER, DEFAULT_PROVIDER_NAME, TranslationProvider, get_translation_provider
+from core.providers import DEFAULT_PROVIDER, DEFAULT_PROVIDER_NAME, TranslationProvider
 from core.request_contents import TaskRequestSpec, build_task_request_contents, render_text_fallback_prompt
 from core.task_cli import (
     add_language_arguments,
@@ -38,7 +38,6 @@ from core.task_cli import (
     resolve_provider_model,
     run_task_main,
 )
-from core.resources import read_optional_text_file, read_optional_vocabulary_file, resolve_resource_path
 from core.review_flow import (
     has_reviewable_translation as has_shared_reviewable_translation,
     limit_items,
@@ -508,10 +507,6 @@ def run_from_args(args: argparse.Namespace) -> None:
         explicit_vocab_path=args.vocab,
         explicit_rules_path=args.rules,
         inline_rules=args.rules_str,
-        get_translation_provider_fn=get_translation_provider,
-        resolve_resource_path_fn=resolve_resource_path,
-        read_optional_vocabulary_file_fn=read_optional_vocabulary_file,
-        read_optional_text_file_fn=read_optional_text_file,
     )
     provider = runtime_context.provider
     client = runtime_context.client

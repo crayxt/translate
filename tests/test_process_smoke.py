@@ -411,7 +411,7 @@ class ProcessSmokeTests(unittest.TestCase):
                 os.remove(vocab_path)
 
     def test_load_po_uses_wrapwidth_78(self):
-        with patch("tasks.translate.polib.pofile", return_value=polib.POFile()) as mocked_pofile:
+        with patch("core.formats.po.polib.pofile", return_value=polib.POFile()) as mocked_pofile:
             process.load_po("sample.po")
 
         mocked_pofile.assert_called_once_with("sample.po", wrapwidth=process.PO_WRAP_WIDTH)
@@ -1483,7 +1483,7 @@ class ProcessSmokeTests(unittest.TestCase):
         self.assertIn("fr", candidates)
 
     def test_detect_default_text_resource_prefers_exact_match(self):
-        with patch("tasks.translate.os.path.isfile") as mocked_exists:
+        with patch("core.resources.os.path.isfile") as mocked_exists:
             mocked_exists.side_effect = lambda path: path in {
                 os.path.join("data", "locales", "fr_CA", "rules.md"),
                 os.path.join("data", "locales", "fr", "rules.md"),
@@ -1493,7 +1493,7 @@ class ProcessSmokeTests(unittest.TestCase):
         self.assertEqual(resolved, os.path.join("data", "locales", "fr_CA", "rules.md"))
 
     def test_detect_default_text_resource_falls_back_to_base_language(self):
-        with patch("tasks.translate.os.path.isfile") as mocked_exists:
+        with patch("core.resources.os.path.isfile") as mocked_exists:
             mocked_exists.side_effect = lambda path: path in {
                 os.path.join("data", "locales", "fr", "rules.md")
             }
@@ -1502,7 +1502,7 @@ class ProcessSmokeTests(unittest.TestCase):
         self.assertEqual(resolved, os.path.join("data", "locales", "fr", "rules.md"))
 
     def test_detect_default_text_resource_uses_legacy_fallback(self):
-        with patch("tasks.translate.os.path.isfile") as mocked_exists:
+        with patch("core.resources.os.path.isfile") as mocked_exists:
             mocked_exists.side_effect = lambda path: path == "rules-fr.md"
             resolved = process.detect_default_text_resource("rules", "md", "fr_CA")
 
@@ -1511,8 +1511,8 @@ class ProcessSmokeTests(unittest.TestCase):
     def test_detect_default_text_resource_supports_vocab_directory(self):
         vocab_dir = os.path.join("data", "locales", "fr", "vocab")
         with (
-            patch("tasks.translate.os.path.isfile", return_value=False),
-            patch("tasks.translate.os.path.isdir") as mocked_isdir,
+            patch("core.resources.os.path.isfile", return_value=False),
+            patch("core.resources.os.path.isdir") as mocked_isdir,
         ):
             mocked_isdir.side_effect = lambda path: path == vocab_dir
             resolved = process.detect_default_text_resource(
@@ -1648,7 +1648,7 @@ class ProcessSmokeTests(unittest.TestCase):
         report_mock.assert_not_called()
 
     def test_resolve_resource_path_prefers_explicit_path(self):
-        with patch("tasks.translate.detect_default_text_resource") as mocked_detect:
+        with patch("core.resources.detect_default_text_resource") as mocked_detect:
             resolved = process.resolve_resource_path("custom-rules.md", "rules", "md", "fr")
 
         mocked_detect.assert_not_called()

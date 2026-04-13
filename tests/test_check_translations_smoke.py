@@ -1,6 +1,7 @@
 import json
 import os
 import unittest
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import polib
@@ -242,13 +243,20 @@ class CheckTranslationsSmokeTests(unittest.TestCase):
                     }
                 )
             )
+            runtime_context = SimpleNamespace(
+                provider=provider,
+                client=object(),
+                resources=SimpleNamespace(
+                    vocabulary_text="addon - qosymsha",
+                    project_rules="Use imperative tone.",
+                    vocabulary_source=os.path.join("data", "locales", "kk", "vocab.txt"),
+                    rules_source=os.path.join("data", "locales", "kk", "rules.md"),
+                ),
+            )
             with (
                 patch.dict(os.environ, {"GOOGLE_API_KEY": "test-key"}, clear=False),
-                patch("tasks.check_translations.get_translation_provider", return_value=provider),
+                patch("tasks.check_translations.build_task_runtime_context", return_value=runtime_context),
                 patch("tasks.check_translations.detect_file_kind", return_value=process.FileKind.PO),
-                patch("tasks.check_translations.resolve_resource_path", side_effect=[os.path.join("data", "locales", "kk", "vocab.txt"), os.path.join("data", "locales", "kk", "rules.md")]),
-                patch("tasks.check_translations.read_optional_vocabulary_file", return_value="addon - qosymsha"),
-                patch("tasks.check_translations.read_optional_text_file", return_value="Use imperative tone."),
                 patch("tasks.check_translations.load_po", return_value=(entries, None, None)),
                 patch(
                     "tasks.check_translations.sys.argv",
@@ -294,19 +302,20 @@ class CheckTranslationsSmokeTests(unittest.TestCase):
 
         try:
             provider = _DummyProvider()
+            runtime_context = SimpleNamespace(
+                provider=provider,
+                client=object(),
+                resources=SimpleNamespace(
+                    vocabulary_text="",
+                    project_rules="",
+                    vocabulary_source=os.path.join("data", "locales", "kk", "vocab.txt"),
+                    rules_source=os.path.join("data", "locales", "kk", "rules.md"),
+                ),
+            )
             with (
                 patch.dict(os.environ, {"GOOGLE_API_KEY": "test-key"}, clear=False),
-                patch("tasks.check_translations.get_translation_provider", return_value=provider),
+                patch("tasks.check_translations.build_task_runtime_context", return_value=runtime_context),
                 patch("tasks.check_translations.detect_file_kind", return_value=process.FileKind.TS),
-                patch(
-                    "tasks.check_translations.resolve_resource_path",
-                    side_effect=[
-                        os.path.join("data", "locales", "kk", "vocab.txt"),
-                        os.path.join("data", "locales", "kk", "rules.md"),
-                    ],
-                ),
-                patch("tasks.check_translations.read_optional_vocabulary_file", return_value=""),
-                patch("tasks.check_translations.read_optional_text_file", return_value=""),
                 patch("tasks.check_translations.load_ts", return_value=(entries, None, None)),
                 patch(
                     "tasks.check_translations.sys.argv",
@@ -342,19 +351,20 @@ class CheckTranslationsSmokeTests(unittest.TestCase):
 
         try:
             provider = _DummyProvider()
+            runtime_context = SimpleNamespace(
+                provider=provider,
+                client=object(),
+                resources=SimpleNamespace(
+                    vocabulary_text="",
+                    project_rules="",
+                    vocabulary_source=os.path.join("data", "locales", "kk", "vocab.txt"),
+                    rules_source=os.path.join("data", "locales", "kk", "rules.md"),
+                ),
+            )
             with (
                 patch.dict(os.environ, {"GOOGLE_API_KEY": "test-key"}, clear=False),
-                patch("tasks.check_translations.get_translation_provider", return_value=provider),
+                patch("tasks.check_translations.build_task_runtime_context", return_value=runtime_context),
                 patch("tasks.check_translations.detect_file_kind", return_value=process.FileKind.XLIFF),
-                patch(
-                    "tasks.check_translations.resolve_resource_path",
-                    side_effect=[
-                        os.path.join("data", "locales", "kk", "vocab.txt"),
-                        os.path.join("data", "locales", "kk", "rules.md"),
-                    ],
-                ),
-                patch("tasks.check_translations.read_optional_vocabulary_file", return_value=""),
-                patch("tasks.check_translations.read_optional_text_file", return_value=""),
                 patch("tasks.check_translations.load_xliff", return_value=(entries, None, None)),
                 patch(
                     "tasks.check_translations.sys.argv",

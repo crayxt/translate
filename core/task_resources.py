@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass, field
-from typing import Callable, List, Tuple
+from typing import List, Tuple
 
 from core.resources import (
     detect_rules_source,
@@ -36,25 +36,19 @@ def load_task_resource_context(
     include_vocab: bool = True,
     include_rules: bool = True,
     load_vocab_pairs_flag: bool = False,
-    resolve_resource_path_fn: Callable[..., str | None] = resolve_resource_path,
-    read_optional_vocabulary_file_fn: Callable[..., str | None] = read_optional_vocabulary_file,
-    read_optional_text_file_fn: Callable[..., str | None] = read_optional_text_file,
-    merge_project_rules_fn: Callable[[str | None, str | None], str | None] = merge_project_rules,
-    detect_rules_source_fn: Callable[[str | None, str | None, str | None], str | None] = detect_rules_source,
-    load_vocabulary_pairs_fn: Callable[..., List[Tuple[str, str]]] = load_vocabulary_pairs,
 ) -> TaskResourceContext:
     """Resolve glossary and rules resources, including auto-detected defaults."""
     context = TaskResourceContext()
 
     if include_vocab:
-        context.vocabulary_path = resolve_resource_path_fn(
+        context.vocabulary_path = resolve_resource_path(
             explicit_path=explicit_vocab_path,
             prefix="vocab",
             extension="txt",
             target_lang=target_lang,
             allow_directory=True,
         )
-        context.vocabulary_text = read_optional_vocabulary_file_fn(
+        context.vocabulary_text = read_optional_vocabulary_file(
             context.vocabulary_path,
             "Vocabulary",
             target_lang=target_lang,
@@ -63,22 +57,22 @@ def load_task_resource_context(
             source_prefix = "dir" if os.path.isdir(context.vocabulary_path) else "file"
             context.vocabulary_source = f"{source_prefix}:{context.vocabulary_path}"
         if load_vocab_pairs_flag and context.vocabulary_path:
-            context.vocabulary_pairs = load_vocabulary_pairs_fn(
+            context.vocabulary_pairs = load_vocabulary_pairs(
                 context.vocabulary_path,
                 "Vocabulary",
                 target_lang=target_lang,
             )
 
     if include_rules:
-        context.rules_path = resolve_resource_path_fn(
+        context.rules_path = resolve_resource_path(
             explicit_path=explicit_rules_path,
             prefix="rules",
             extension="md",
             target_lang=target_lang,
         )
-        context.rules_text = read_optional_text_file_fn(context.rules_path, "Rules")
-        context.project_rules = merge_project_rules_fn(context.rules_text, inline_rules)
-        context.rules_source = detect_rules_source_fn(
+        context.rules_text = read_optional_text_file(context.rules_path, "Rules")
+        context.project_rules = merge_project_rules(context.rules_text, inline_rules)
+        context.rules_source = detect_rules_source(
             context.rules_path,
             context.rules_text,
             inline_rules,
