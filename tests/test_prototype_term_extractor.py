@@ -470,6 +470,56 @@ class PrototypeTermExtractorTests(unittest.TestCase):
         self.assertIn("access token", counts)
         self.assertIn("audio channel", counts)
 
+    def test_all_caps_term_is_kept_distinct_from_normal_case_variants(self):
+        result = extraction.extract_terms_locally(
+            [
+                extraction.SourceMessage(source="SUM", context="Calc functions"),
+                extraction.SourceMessage(source="sum", context="Math notes"),
+                extraction.SourceMessage(source="Sum", context="Math headings"),
+            ],
+            mode="all",
+            vocabulary_pairs=[],
+        )
+
+        all_terms = {
+            item.source_term: item
+            for bucket in (result.accepted_terms, result.borderline_terms, result.rejected_terms)
+            for item in bucket
+        }
+
+        self.assertIn("SUM", all_terms)
+        self.assertIn("sum", all_terms)
+        self.assertNotIn("Sum", all_terms)
+        self.assertEqual(all_terms["SUM"].surface_forms, ["SUM"])
+
+    def test_missing_mode_treats_all_caps_vocabulary_as_distinct_from_normal_case(self):
+        result = extraction.extract_terms_locally(
+            [extraction.SourceMessage(source="SUM", context="Calc functions")],
+            mode="missing",
+            vocabulary_pairs=[("sum", "somasy")],
+        )
+
+        accepted = {item.source_term for item in result.accepted_terms}
+        borderline = {item.source_term for item in result.borderline_terms}
+        rejected = {item.source_term: item for item in result.rejected_terms}
+
+        self.assertIn("SUM", accepted | borderline)
+        self.assertNotIn("SUM", rejected)
+
+    def test_missing_mode_excludes_all_caps_term_when_vocab_matches_all_caps(self):
+        result = extraction.extract_terms_locally(
+            [extraction.SourceMessage(source="SUM", context="Calc functions")],
+            mode="missing",
+            vocabulary_pairs=[("SUM", "SUM")],
+        )
+
+        accepted = {item.source_term for item in result.accepted_terms}
+        rejected = {item.source_term: item for item in result.rejected_terms}
+
+        self.assertNotIn("SUM", accepted)
+        self.assertIn("SUM", rejected)
+        self.assertIn("already_in_vocabulary", rejected["SUM"].reasons)
+
     def test_plural_variant_is_canonicalized_when_base_form_exists(self):
         result = extraction.extract_terms_locally(
             [

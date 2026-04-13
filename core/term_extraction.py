@@ -215,6 +215,45 @@ def normalize_candidate_key(text: str | None) -> str:
     return cleaned.lower()
 
 
+def strip_candidate_possessive_suffix(token: str) -> str:
+    """Remove a trailing possessive suffix without changing letter case."""
+    if token.endswith("'s") or token.endswith("’s"):
+        return token[:-2]
+    if token.endswith("'") or token.endswith("’"):
+        return token[:-1]
+    return token
+
+
+def is_distinct_all_caps_token(token: str) -> bool:
+    """Treat pure all-caps terms as a separate candidate family."""
+    compact = strip_candidate_possessive_suffix(token).replace("-", "")
+    letters = [char for char in compact if char.isalpha()]
+    if not letters:
+        return False
+    return all(char.isupper() for char in letters)
+
+
+def normalize_candidate_identity_token(token: str) -> str:
+    """Normalize one token while preserving distinct all-caps identifiers."""
+    cleaned = token.strip(".,:;!?\"'()[]{}")
+    if not cleaned:
+        return ""
+    if is_distinct_all_caps_token(cleaned):
+        return cleaned
+    return cleaned.lower()
+
+
+def normalize_candidate_identity_key(text: str | None) -> str:
+    """Build a stable candidate key that keeps single-word all-caps terms distinct."""
+    cleaned = normalize_ui_source_text(text).strip(".,:;!?\"'()[]{}")
+    if not cleaned:
+        return ""
+    tokens = [token for token in cleaned.split() if token]
+    if len(tokens) == 1:
+        return normalize_candidate_identity_token(tokens[0])
+    return " ".join(token.lower() for token in tokens)
+
+
 def normalize_vocabulary_match_text(text: str | None) -> str:
     """Normalize text for glossary matching without stripping excluded phrases."""
     return normalize_space(strip_ui_accelerators(text)).lower()
@@ -223,6 +262,15 @@ def normalize_vocabulary_match_text(text: str | None) -> str:
 def tokenize_source_text(text: str) -> List[str]:
     """Tokenize normalized UI text into lowercase word-like units."""
     return [token.lower() for token in TOKEN_RE.findall(normalize_ui_source_text(text))]
+
+
+def tokenize_candidate_source_text(text: str) -> List[str]:
+    """Tokenize normalized UI text into candidate units for exact whole-label checks."""
+    raw_tokens = TOKEN_RE.findall(normalize_ui_source_text(text))
+    if len(raw_tokens) == 1:
+        normalized = normalize_candidate_identity_token(raw_tokens[0])
+        return [normalized] if normalized else []
+    return [token.lower() for token in raw_tokens]
 
 
 def is_placeholder_like(term: str) -> bool:
@@ -255,11 +303,12 @@ def is_valid_single_token(token: str) -> bool:
     """Validate a single token as a possible term candidate."""
     if not token:
         return False
+    normalized = normalize_candidate_key(token)
     if has_disallowed_term_prefix(token):
         return False
     if is_excluded_source_term(token):
         return False
-    if token in LOW_VALUE_SINGLE_WORDS:
+    if normalized in LOW_VALUE_SINGLE_WORDS:
         return False
     if token.isdigit():
         return False
@@ -277,7 +326,9 @@ def is_valid_phrase_tokens(tokens: List[str]) -> bool:
         return True
     if is_excluded_source_term(phrase):
         return False
-    if tokens[0] in STOP_WORDS or tokens[-1] in STOP_WORDS:
+    first_token = normalize_candidate_key(tokens[0])
+    last_token = normalize_candidate_key(tokens[-1])
+    if first_token in STOP_WORDS or last_token in STOP_WORDS:
         return False
     return all(is_valid_single_token(token) for token in tokens)
 
@@ -298,12 +349,14 @@ def extract_message_candidate_counts(
 ) -> dict[str, int]:
     """Count candidate terms from one message up to the requested n-gram length."""
     max_length = validate_max_length(max_length)
-    tokens = tokenize_source_text(source_text)
+    raw_tokens = TOKEN_RE.findall(normalize_ui_source_text(source_text))
+    tokens = [token.lower() for token in raw_tokens]
     counts: dict[str, int] = {}
 
-    for token in tokens:
-        if is_valid_single_token(token):
-            counts[token] = counts.get(token, 0) + 1
+    for raw_token, token in zip(raw_tokens, tokens):
+        candidate_token = raw_token if is_distinct_all_caps_token(raw_token) else token
+        if is_valid_single_token(candidate_token):
+            counts[candidate_token] = counts.get(candidate_token, 0) + 1
 
     if max_length == 1:
         return counts
@@ -447,7 +500,7 @@ def build_source_message_key(
     """Build a stable dedupe key for a source message payload."""
     return "\u241f".join(
         (
-            normalize_candidate_key(source),
+            normalize_candidate_identity_key(source),
             normalize_space(context).lower(),
             normalize_space(note).lower(),
             normalize_space(source_file).replace("\\", "/").lower(),
@@ -546,11 +599,15 @@ def add_unique_limited(values: List[str], value: str, limit: int = 3) -> None:
 
 def canonicalize_candidate_key(candidate_key: str) -> str:
     """Apply conservative English canonicalization to a candidate key."""
-    tokens = normalize_candidate_key(candidate_key).split()
+    tokens = normalize_candidate_identity_key(candidate_key).split()
     if not tokens:
         return ""
-    normalized_last = strip_english_possessive(tokens[-1])
-    normalized_last = singularize_english_token(normalized_last)
+    last_token = tokens[-1]
+    if is_distinct_all_caps_token(last_token):
+        normalized_last = strip_candidate_possessive_suffix(last_token)
+    else:
+        normalized_last = strip_english_possessive(last_token)
+        normalized_last = singularize_english_token(normalized_last)
     return " ".join(tokens[:-1] + [normalized_last])
 
 
@@ -560,7 +617,7 @@ def build_vocabulary_translation_map(
     """Map normalized vocabulary source forms to known translations."""
     mapping: Dict[str, str] = {}
     for source, target in vocabulary_pairs or []:
-        normalized_source = normalize_candidate_key(source)
+        normalized_source = normalize_candidate_identity_key(source)
         normalized_target = normalize_space(target)
         if not normalized_source or not normalized_target:
             continue
@@ -577,7 +634,7 @@ def build_vocabulary_exclusion_keys(
     """Build the set of vocabulary keys that should be excluded in missing mode."""
     keys: set[str] = set()
     for source_term, _target_term in vocabulary_pairs or []:
-        normalized = normalize_candidate_key(source_term)
+        normalized = normalize_candidate_identity_key(source_term)
         if not normalized:
             continue
         keys.add(normalized)
@@ -608,8 +665,7 @@ def collect_raw_candidate_evidence(
             message.source,
             max_length=max_length,
         )
-        source_tokens = tokenize_source_text(message.source)
-        exact_candidate = " ".join(source_tokens) if source_tokens else ""
+        exact_candidate = normalize_candidate_identity_key(message.source)
         parsed_locations = parse_location_note(message.note)
 
         for term, count in candidate_counts.items():
@@ -657,8 +713,12 @@ def maybe_canonicalize_candidate(
     tokens = source_term.split()
     if not tokens:
         return source_term
-    normalized_last = strip_english_possessive(tokens[-1])
-    normalized_last = singularize_english_token(normalized_last)
+    last_token = tokens[-1]
+    if is_distinct_all_caps_token(last_token):
+        normalized_last = strip_candidate_possessive_suffix(last_token)
+    else:
+        normalized_last = strip_english_possessive(last_token)
+        normalized_last = singularize_english_token(normalized_last)
     if normalized_last == tokens[-1]:
         return source_term
     candidate = " ".join(tokens[:-1] + [normalized_last])
@@ -672,7 +732,11 @@ def build_candidate_alias_map(
     vocabulary_pairs: List[Tuple[str, str]] | None = None,
 ) -> Dict[str, str]:
     """Map raw observed terms to canonical term keys."""
-    observed_terms = {normalize_candidate_key(term) for term in raw_terms if normalize_candidate_key(term)}
+    observed_terms = {
+        normalize_candidate_identity_key(term)
+        for term in raw_terms
+        if normalize_candidate_identity_key(term)
+    }
     vocabulary_keys = build_vocabulary_exclusion_keys(vocabulary_pairs)
     return {
         term: maybe_canonicalize_candidate(
@@ -768,13 +832,13 @@ def build_strong_atomic_terms(
     terms: set[str] = set()
 
     for key in vocabulary_keys:
-        if len(key.split()) == 1 and key not in LOW_VALUE_SINGLE_WORDS:
+        if len(key.split()) == 1 and normalize_candidate_key(key) not in LOW_VALUE_SINGLE_WORDS:
             terms.add(key)
 
     for term, item in evidence.items():
         if len(term.split()) != 1:
             continue
-        if term in LOW_VALUE_SINGLE_WORDS or is_placeholder_like(term):
+        if normalize_candidate_key(term) in LOW_VALUE_SINGLE_WORDS or is_placeholder_like(term):
             continue
         if (
             item.exact_source_match_count > 0
@@ -829,7 +893,7 @@ def decide_candidate(
 
     if len(tokens) == 1:
         token = tokens[0]
-        if token in LOW_VALUE_SINGLE_WORDS:
+        if normalize_candidate_key(token) in LOW_VALUE_SINGLE_WORDS:
             decided.reasons.append("low_value_single_word")
             return decided
 
@@ -1006,6 +1070,7 @@ __all__ = [
     "is_valid_phrase_tokens",
     "is_valid_single_token",
     "maybe_canonicalize_candidate",
+    "normalize_candidate_identity_key",
     "normalize_candidate_key",
     "normalize_space",
     "normalize_ui_source_text",
@@ -1015,8 +1080,10 @@ __all__ = [
     "should_include_phrase",
     "singularize_english_token",
     "sort_candidates",
+    "strip_candidate_possessive_suffix",
     "strip_english_possessive",
     "strip_ui_accelerators",
+    "tokenize_candidate_source_text",
     "tokenize_source_text",
     "validate_max_length",
 ]
