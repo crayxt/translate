@@ -117,6 +117,44 @@ class ExtractTermsLocalSmokeTests(unittest.TestCase):
         finally:
             self._cleanup_paths(input_root, vocab_path, json_path, po_path)
 
+    def test_run_from_args_preserves_all_caps_term_in_po_handoff(self):
+        input_path = os.path.abspath("_tmp_extract_terms_local_caps.po")
+        vocab_path = os.path.abspath("_tmp_extract_terms_local_caps_vocab.txt")
+        json_path = os.path.abspath("_tmp_extract_terms_local_caps.prototype-missing-terms.json")
+        po_path = os.path.abspath("_tmp_extract_terms_local_caps.prototype-missing-terms.po")
+        self._cleanup_paths(input_path, vocab_path, json_path, po_path)
+
+        try:
+            with open(input_path, "w", encoding="utf-8") as handle:
+                handle.write(
+                    'msgctxt "Calc functions"\nmsgid "SUM"\nmsgstr ""\n\n'
+                    'msgctxt "Formula help"\nmsgid "SUM"\nmsgstr ""\n'
+                )
+            with open(vocab_path, "w", encoding="utf-8") as handle:
+                handle.write("")
+
+            args = argparse.Namespace(
+                file=input_path,
+                source_lang="en",
+                target_lang="kk",
+                vocab=vocab_path,
+                to_po=False,
+                also_po=True,
+                mode="missing",
+                max_length=1,
+                out=json_path,
+                include_rejected=False,
+                include_borderline=False,
+            )
+
+            extract_terms_local.run_from_args(args)
+
+            po = polib.pofile(po_path, wrapwidth=78)
+            self.assertEqual(len(po), 1)
+            self.assertEqual(po[0].msgid, "SUM")
+        finally:
+            self._cleanup_paths(input_path, vocab_path, json_path, po_path)
+
     def test_directory_extraction_keeps_identical_messages_from_different_files_distinct(self):
         input_root = os.path.abspath("_tmp_extract_terms_provenance")
         nested_root = os.path.join(input_root, "sub")
