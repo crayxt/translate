@@ -3,6 +3,7 @@ import unittest
 
 from google.genai import types as genai_types
 
+from core import review_bundle
 from tasks.translate import EntryStatus, FileKind, UnifiedEntry
 from tasks import revise_translations
 
@@ -46,11 +47,11 @@ class ReviseTranslationsSmokeTests(unittest.TestCase):
 
     def test_build_revision_output_path_appends_revised_suffix(self):
         self.assertEqual(
-            revise_translations.build_revision_output_path(r"C:\tmp\sample.po"),
+            review_bundle.build_revision_output_path(r"C:\tmp\sample.po"),
             r"C:\tmp\sample-revised.po",
         )
         self.assertEqual(
-            revise_translations.build_revision_output_path(
+            review_bundle.build_revision_output_path(
                 r"C:\tmp\sample.ai-translated.strings"
             ),
             r"C:\tmp\sample.ai-translated-revised.strings",
@@ -63,7 +64,7 @@ class ReviseTranslationsSmokeTests(unittest.TestCase):
             msgstr="Old term",
             status=EntryStatus.TRANSLATED,
         )
-        item = revise_translations.ReviewItem(
+        item = review_bundle.ReviewItem(
             entry=entry,
             source_text="Save",
             current_text="Old term",
@@ -94,7 +95,7 @@ class ReviseTranslationsSmokeTests(unittest.TestCase):
             msgstr="Keep me",
             status=EntryStatus.TRANSLATED,
         )
-        item = revise_translations.ReviewItem(
+        item = review_bundle.ReviewItem(
             entry=entry,
             source_text="Save",
             current_text="Keep me",
@@ -124,7 +125,7 @@ class ReviseTranslationsSmokeTests(unittest.TestCase):
             status=EntryStatus.TRANSLATED,
         )
 
-        self.assertEqual(revise_translations.get_plural_form_count(entry), 1)
+        self.assertEqual(review_bundle.get_plural_form_count(entry), 1)
 
     def test_load_review_bundle_for_po_uses_embedded_source(self):
         input_path = os.path.join(os.getcwd(), "_tmp_revision.po")
@@ -139,7 +140,7 @@ class ReviseTranslationsSmokeTests(unittest.TestCase):
                     'msgstr "Ashu"\n'
                 )
 
-            bundle = revise_translations.load_review_bundle(input_path)
+            bundle = review_bundle.load_review_bundle(input_path)
 
             self.assertEqual(bundle.file_kind, FileKind.PO)
             self.assertEqual(len(bundle.items), 1)
@@ -171,7 +172,7 @@ class ReviseTranslationsSmokeTests(unittest.TestCase):
 """
                 )
 
-            bundle = revise_translations.load_review_bundle(input_path)
+            bundle = review_bundle.load_review_bundle(input_path)
 
             self.assertEqual(bundle.file_kind, FileKind.XLIFF)
             self.assertEqual(len(bundle.items), 1)
@@ -198,7 +199,7 @@ class ReviseTranslationsSmokeTests(unittest.TestCase):
             with open(translated_path, "w", encoding="utf-8", newline="") as handle:
                 handle.write('"app|Name" = "Qyjat koru quraly";\n')
 
-            bundle = revise_translations.load_review_bundle(
+            bundle = review_bundle.load_review_bundle(
                 translated_path,
                 source_file=source_path,
             )
@@ -223,7 +224,7 @@ class ReviseTranslationsSmokeTests(unittest.TestCase):
             with open(translated_path, "w", encoding="utf-8", newline="") as handle:
                 handle.write("Ashu\n\nSaqtau\n")
 
-            bundle = revise_translations.load_review_bundle(
+            bundle = review_bundle.load_review_bundle(
                 translated_path,
                 source_file=source_path,
             )

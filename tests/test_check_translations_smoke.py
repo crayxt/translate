@@ -61,26 +61,6 @@ class CheckTranslationsSmokeTests(unittest.TestCase):
         self.assertIn("real Kazakh Cyrillic alphabet", system_instruction)
         self.assertIn("Latin transliteration", system_instruction)
 
-    def test_build_check_prompt_includes_translation_rules_and_vocab(self):
-        prompt = check_translations.build_check_prompt(
-            messages={
-                "0": {
-                    "source": "Open <b>%s</b>",
-                    "translation": "Ashu <b>%s</b>",
-                }
-            },
-            source_lang="en",
-            target_lang="kk",
-            vocabulary="open - ashu",
-            translation_rules="Use imperative tone.",
-        )
-
-        self.assertIn("approved vocabulary/glossary", prompt.lower())
-        self.assertIn("Use imperative tone.", prompt)
-        self.assertIn('"translation": "Ashu <b>%s</b>"', prompt)
-        self.assertIn("Do not flag a terminology issue solely because", prompt)
-        self.assertIn("suggested_translation", prompt)
-
     def test_build_check_message_payload_uses_structured_plural_source_fields(self):
         entry = polib.POEntry(
             msgid="File",
@@ -253,9 +233,18 @@ class CheckTranslationsSmokeTests(unittest.TestCase):
                     rules_source=os.path.join("data", "locales", "kk", "rules.md"),
                 ),
             )
+            review_run = SimpleNamespace(
+                runtime_context=runtime_context,
+                items=entries[:1],
+                batch_size=50,
+                parallel_requests=1,
+                limits_mode="check defaults",
+                batch_count=1,
+                batch_plan=SimpleNamespace(batches=[entries[:1]], batch_start_indices={0: 0}),
+            )
             with (
                 patch.dict(os.environ, {"GOOGLE_API_KEY": "test-key"}, clear=False),
-                patch("tasks.check_translations.build_task_runtime_context", return_value=runtime_context),
+                patch("tasks.check_translations.prepare_review_run", return_value=review_run),
                 patch("tasks.check_translations.detect_file_kind", return_value=process.FileKind.PO),
                 patch("tasks.check_translations.load_po", return_value=(entries, None, None)),
                 patch(
@@ -312,9 +301,18 @@ class CheckTranslationsSmokeTests(unittest.TestCase):
                     rules_source=os.path.join("data", "locales", "kk", "rules.md"),
                 ),
             )
+            review_run = SimpleNamespace(
+                runtime_context=runtime_context,
+                items=entries,
+                batch_size=50,
+                parallel_requests=1,
+                limits_mode="check defaults",
+                batch_count=1,
+                batch_plan=SimpleNamespace(batches=[entries], batch_start_indices={0: 0}),
+            )
             with (
                 patch.dict(os.environ, {"GOOGLE_API_KEY": "test-key"}, clear=False),
-                patch("tasks.check_translations.build_task_runtime_context", return_value=runtime_context),
+                patch("tasks.check_translations.prepare_review_run", return_value=review_run),
                 patch("tasks.check_translations.detect_file_kind", return_value=process.FileKind.TS),
                 patch("tasks.check_translations.load_ts", return_value=(entries, None, None)),
                 patch(
@@ -361,9 +359,18 @@ class CheckTranslationsSmokeTests(unittest.TestCase):
                     rules_source=os.path.join("data", "locales", "kk", "rules.md"),
                 ),
             )
+            review_run = SimpleNamespace(
+                runtime_context=runtime_context,
+                items=entries,
+                batch_size=50,
+                parallel_requests=1,
+                limits_mode="check defaults",
+                batch_count=1,
+                batch_plan=SimpleNamespace(batches=[entries], batch_start_indices={0: 0}),
+            )
             with (
                 patch.dict(os.environ, {"GOOGLE_API_KEY": "test-key"}, clear=False),
-                patch("tasks.check_translations.build_task_runtime_context", return_value=runtime_context),
+                patch("tasks.check_translations.prepare_review_run", return_value=review_run),
                 patch("tasks.check_translations.detect_file_kind", return_value=process.FileKind.XLIFF),
                 patch("tasks.check_translations.load_xliff", return_value=(entries, None, None)),
                 patch(

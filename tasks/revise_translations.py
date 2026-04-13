@@ -8,31 +8,22 @@ import json
 import os
 import sys
 from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, List, Tuple
+from typing import Any, Dict, List, Tuple
 
 from core.review_common import (
     build_target_script_guidance as build_shared_target_script_guidance,
     json_load_maybe,
     plural_key_sort_key,
 )
-from core.formats import (
-    EntryStatus,
-    FileKind,
-    UnifiedEntry,
-    build_entry_source_text,
-    detect_file_kind,
-    get_entry_prompt_context_and_note,
-    load_paired_android_xml,
-    load_xliff,
-    load_po,
-    load_resx,
-    load_strings,
-    load_ts,
-)
-from core.formats.strings import _detect_text_encoding, _write_text_with_encoding_fallback
+from core.formats import EntryStatus
 from core.entries import normalize_model_escaped_text
 from core.providers import DEFAULT_PROVIDER, DEFAULT_PROVIDER_NAME, TranslationProvider
-from core.request_contents import TaskRequestSpec, build_task_request_contents, render_text_fallback_prompt
+from core.request_contents import TaskRequestSpec, build_task_request_contents
+from core.review_bundle import (
+    ReviewItem,
+    build_revision_output_path,
+    load_review_bundle,
+)
 from core.task_cli import (
     add_language_arguments,
     add_max_attempts_argument,
@@ -46,9 +37,16 @@ from core.task_cli import (
     run_task_main,
 )
 from core.review_flow import (
-    has_reviewable_translation as has_shared_reviewable_translation,
+    ReviewBatchRunnerSpec,
+    ReviewRetryRunnerSpec,
+    build_retry_review_batch_messages,
+    build_review_batch_messages,
+    find_missing_mapping_indices,
     limit_items,
-    normalize_limits as normalize_review_limits,
+    merge_mapping_review_results,
+    prepare_review_run,
+    print_review_startup,
+    run_review_batches,
 )
 from core.runtime import DEFAULT_BATCH_SIZE, DEFAULT_PARALLEL_REQUESTS
 from core.system_instructions import (
@@ -56,14 +54,6 @@ from core.system_instructions import (
     SHARED_LOCALIZATION_INVARIANTS,
     join_instruction_sections,
 )
-from core.task_batches import (
-    build_fixed_batches,
-    build_indexed_batch_map,
-    find_missing_index_keys,
-    merge_mapping_results,
-    run_model_batches,
-)
-from core.task_runtime import build_task_runtime_context, print_startup_configuration
 from core.task_issues import (
     TaskIssue,
     build_task_issue_schema,
@@ -154,30 +144,6 @@ class RevisionResult:
     issues: List[TaskIssue] = field(default_factory=list)
 
 
-@dataclass(slots=True)
-class ReviewItem:
-    """Revision-ready view of one translated entry plus its review context."""
-    entry: UnifiedEntry
-    source_text: str
-    current_text: str
-    current_plural_texts: List[str]
-    plural_form_count: int
-    context: str = ""
-    note: str = ""
-    pair_key: str = ""
-
-
-@dataclass(slots=True)
-class ReviewBundle:
-    """Loaded file state and review items for one revision run."""
-    file_kind: FileKind
-    entries: List[UnifiedEntry]
-    save_callback: Callable[[], None]
-    generated_output_path: str
-    items: List[ReviewItem]
-    warnings: List[str] = field(default_factory=list)
-
-
 def build_revision_generation_config(
     thinking_level: str | None = None,
     *,
@@ -201,28 +167,6 @@ def configure_stdio() -> None:
         reconfigure = getattr(stream, "reconfigure", None)
         if callable(reconfigure):
             reconfigure(encoding="utf-8", errors="replace")
-
-
-def build_revision_output_path(file_path: str) -> str:
-    """Build the default output path for a revised file."""
-    root, ext = os.path.splitext(file_path)
-    return f"{root}-revised{ext}"
-
-
-def normalize_limits(
-    total_items: int,
-    batch_size_arg: int | None,
-    parallel_arg: int | None,
-) -> Tuple[int, int, str]:
-    """Resolve revision batch limits, applying task defaults when omitted."""
-    return normalize_review_limits(
-        total_items=total_items,
-        batch_size_arg=batch_size_arg,
-        parallel_arg=parallel_arg,
-        default_batch_size=DEFAULT_REVISION_BATCH_SIZE,
-        default_parallel=DEFAULT_REVISION_PARALLEL,
-        label="revision",
-    )
 
 
 def _clean(text: str | None) -> str:
@@ -308,39 +252,6 @@ def parse_revision_response(response_payload: Any) -> Dict[str, RevisionResult]:
 
     text_payload = getattr(response_payload, "text", None) or ""
     return _normalize_revision_payload(json_load_maybe(text_payload))
-
-
-def get_plural_texts(entry: UnifiedEntry) -> List[str]:
-    """Return existing plural translations in stable plural-slot order."""
-    if not entry.msgstr_plural:
-        return []
-    return [
-        str(entry.msgstr_plural[key] or "")
-        for key in sorted(entry.msgstr_plural.keys(), key=plural_key_sort_key)
-    ]
-
-
-def get_plural_form_count(entry: UnifiedEntry) -> int:
-    """Estimate how many plural slots a revised entry should fill."""
-    if not entry.msgid_plural:
-        return 0
-    if entry.msgstr_plural:
-        return len(entry.msgstr_plural)
-    return 2
-
-
-def has_reviewable_translation(entry: UnifiedEntry) -> bool:
-    """Return whether an entry has translated content worth revising."""
-    return has_shared_reviewable_translation(
-        entry,
-        plural_texts=get_plural_texts(entry),
-        allow_context_only=True,
-    )
-
-
-def limit_review_items(items: List[ReviewItem], num_messages: int | None) -> List[ReviewItem]:
-    """Apply an optional prefix limit to the revision item list."""
-    return limit_items(items, num_messages)
 
 
 def build_target_script_guidance(target_lang: str) -> str | None:
@@ -438,28 +349,6 @@ def build_revision_request_contents(
     )
 
 
-def build_revision_prompt(
-    messages: Dict[str, Dict[str, Any]],
-    source_lang: str,
-    target_lang: str,
-    instruction: str,
-    vocabulary: str | None,
-    translation_rules: str | None,
-) -> str:
-    """Render the plain-text fallback prompt for one revision batch."""
-    return render_text_fallback_prompt(
-        task_spec=build_revision_request_spec(),
-        payload=build_revision_request_payload(
-            messages=messages,
-            source_lang=source_lang,
-            target_lang=target_lang,
-            instruction=instruction,
-            vocabulary=vocabulary,
-            translation_rules=translation_rules,
-        ),
-    )
-
-
 def build_review_message_payload(item: ReviewItem) -> Dict[str, Any]:
     """Build one revision payload item from a prepared review record."""
     payload: Dict[str, Any] = {
@@ -475,281 +364,6 @@ def build_review_message_payload(item: ReviewItem) -> Dict[str, Any]:
     if item.note:
         payload["note"] = item.note
     return payload
-
-
-def _join_non_empty(parts: List[str]) -> str:
-    """Join unique non-empty note fragments with a stable separator."""
-    seen: set[str] = set()
-    result: List[str] = []
-    for value in parts:
-        cleaned = _clean(value)
-        if not cleaned or cleaned in seen:
-            continue
-        seen.add(cleaned)
-        result.append(cleaned)
-    return " | ".join(result)
-
-
-def build_review_item(entry: UnifiedEntry) -> ReviewItem:
-    """Project a translated entry into the normalized revision item shape."""
-    context, note = get_entry_prompt_context_and_note(entry)
-    current_plural_texts = get_plural_texts(entry)
-    current_text = current_plural_texts[0] if current_plural_texts else str(entry.msgstr or "")
-    pair_key = _clean(context) or _clean(entry.msgctxt) or _clean(entry.msgid)
-    return ReviewItem(
-        entry=entry,
-        source_text=build_entry_source_text(entry),
-        current_text=current_text,
-        current_plural_texts=current_plural_texts,
-        plural_form_count=get_plural_form_count(entry),
-        context=context or "",
-        note=note or "",
-        pair_key=pair_key,
-    )
-
-
-def _load_file_entries(file_path: str, file_kind: FileKind) -> Tuple[List[UnifiedEntry], Callable[[], None], str]:
-    """Load one revisable file kind and return entries plus save metadata."""
-    if file_kind == FileKind.PO:
-        return load_po(file_path)
-    if file_kind == FileKind.XLIFF:
-        return load_xliff(file_path)
-    if file_kind == FileKind.TS:
-        return load_ts(file_path)
-    if file_kind == FileKind.RESX:
-        return load_resx(file_path)
-    if file_kind == FileKind.STRINGS:
-        return load_strings(file_path)
-    raise ValueError(
-        f"Unsupported single-file revision format: {file_kind.value}. "
-        "Use a paired workflow for .txt files."
-    )
-
-
-def build_single_file_bundle(file_path: str, file_kind: FileKind) -> ReviewBundle:
-    """Build a review bundle for formats that embed their own source text."""
-    entries, save_callback, generated_output_path = _load_file_entries(file_path, file_kind)
-    items = [build_review_item(entry) for entry in entries if has_reviewable_translation(entry)]
-    return ReviewBundle(
-        file_kind=file_kind,
-        entries=entries,
-        save_callback=save_callback,
-        generated_output_path=generated_output_path,
-        items=items,
-    )
-
-
-def _build_pair_key(entry: UnifiedEntry, index: int) -> str:
-    """Build a stable pairing key for source/translated entry alignment."""
-    context = _clean(entry.msgctxt)
-    if context:
-        return context
-    return f"index:{index}"
-
-
-def build_paired_bundle(
-    source_file: str,
-    translated_file: str,
-    file_kind: FileKind,
-) -> ReviewBundle:
-    """Build a review bundle by pairing translated entries with a source file."""
-    source_entries, _, _ = _load_file_entries(source_file, file_kind)
-    translated_entries, save_callback, generated_output_path = _load_file_entries(translated_file, file_kind)
-
-    buckets: Dict[str, List[UnifiedEntry]] = {}
-    for index, source_entry in enumerate(source_entries):
-        key = _build_pair_key(source_entry, index)
-        buckets.setdefault(key, []).append(source_entry)
-
-    items: List[ReviewItem] = []
-    warnings: List[str] = []
-    missing_pairs = 0
-
-    for index, translated_entry in enumerate(translated_entries):
-        if not has_reviewable_translation(translated_entry):
-            continue
-
-        key = _build_pair_key(translated_entry, index)
-        source_bucket = buckets.get(key) or []
-        if not source_bucket:
-            missing_pairs += 1
-            continue
-
-        source_entry = source_bucket.pop(0)
-        translated_context, translated_note = get_entry_prompt_context_and_note(translated_entry)
-        source_context, source_note = get_entry_prompt_context_and_note(source_entry)
-        current_plural_texts = get_plural_texts(translated_entry)
-        current_text = current_plural_texts[0] if current_plural_texts else str(translated_entry.msgstr or "")
-
-        items.append(
-            ReviewItem(
-                entry=translated_entry,
-                source_text=str(source_entry.msgid or ""),
-                current_text=current_text,
-                current_plural_texts=current_plural_texts,
-                plural_form_count=0,
-                context=_clean(translated_context or source_context),
-                note=_join_non_empty([source_note or "", translated_note or ""]),
-                pair_key=key,
-            )
-        )
-
-    if missing_pairs:
-        warnings.append(
-            f"Skipped {missing_pairs} translated entries with no matching source pair in {source_file}."
-        )
-
-    return ReviewBundle(
-        file_kind=file_kind,
-        entries=translated_entries,
-        save_callback=save_callback,
-        generated_output_path=generated_output_path,
-        items=items,
-        warnings=warnings,
-    )
-
-
-def load_paired_txt_bundle(source_file: str, translated_file: str) -> ReviewBundle:
-    """Build a paired revision bundle for line-oriented text files."""
-    source_encoding = _detect_text_encoding(source_file)
-    translated_encoding = _detect_text_encoding(translated_file)
-
-    with open(source_file, "r", encoding=source_encoding) as handle:
-        source_lines = handle.read().splitlines(keepends=True)
-    with open(translated_file, "r", encoding=translated_encoding) as handle:
-        translated_lines = handle.read().splitlines(keepends=True)
-
-    if len(source_lines) != len(translated_lines):
-        raise ValueError(
-            "Paired .txt workflow requires the source and translated files to have the same number of lines."
-        )
-
-    entries: List[UnifiedEntry] = []
-    items: List[ReviewItem] = []
-
-    for index, (source_raw, translated_raw) in enumerate(zip(source_lines, translated_lines)):
-        source_text = source_raw.rstrip("\r\n")
-        translated_text = translated_raw.rstrip("\r\n")
-        translated_line_ending = translated_raw[len(translated_text):]
-        line_number = index + 1
-
-        if not _clean(source_text):
-            status = EntryStatus.SKIPPED
-        elif _clean(translated_text):
-            status = EntryStatus.TRANSLATED
-        else:
-            status = EntryStatus.UNTRANSLATED
-
-        def commit_line(
-            entry: UnifiedEntry,
-            idx: int = index,
-            ending: str = translated_line_ending,
-        ) -> None:
-            translated_lines[idx] = f"{entry.msgstr}{ending}"
-
-        entry = UnifiedEntry(
-            file_kind=FileKind.TXT,
-            msgid=source_text,
-            msgstr=translated_text,
-            msgctxt=f"line:{line_number}",
-            flags=[],
-            obsolete=False,
-            include_in_term_extraction=bool(_clean(source_text)),
-            status=status,
-            _commit_callback=commit_line,
-        )
-        entries.append(entry)
-
-        if not has_reviewable_translation(entry):
-            continue
-
-        items.append(
-            ReviewItem(
-                entry=entry,
-                source_text=source_text,
-                current_text=translated_text,
-                current_plural_texts=[],
-                plural_form_count=0,
-                context=f"line:{line_number}",
-                note="",
-                pair_key=f"line:{line_number}",
-            )
-        )
-
-    generated_output_path = build_revision_output_path(translated_file)
-
-    def save_txt() -> None:
-        for entry in entries:
-            entry.commit()
-        _write_text_with_encoding_fallback(
-            generated_output_path,
-            "".join(translated_lines),
-            translated_encoding,
-            newline="",
-        )
-
-    return ReviewBundle(
-        file_kind=FileKind.TXT,
-        entries=entries,
-        save_callback=save_txt,
-        generated_output_path=generated_output_path,
-        items=items,
-    )
-
-
-def load_review_bundle(
-    translated_file: str,
-    source_file: str | None = None,
-) -> ReviewBundle:
-    """Load the appropriate revision bundle for the translated file and optional source file."""
-    file_kind = detect_file_kind(translated_file)
-
-    if source_file:
-        source_kind = detect_file_kind(source_file)
-        if source_kind != file_kind:
-            raise ValueError(
-                f"--source-file type mismatch: expected .{file_kind.value}, got .{source_kind.value}"
-            )
-
-    if file_kind in (FileKind.PO, FileKind.XLIFF, FileKind.TS):
-        return build_single_file_bundle(translated_file, file_kind)
-
-    if file_kind == FileKind.ANDROID_XML:
-        if not source_file:
-            raise ValueError(
-                "--source-file is required for .xml revision runs because the translated file "
-                "does not retain the original source text."
-            )
-        entries, save_callback, generated_output_path, warnings = load_paired_android_xml(
-            source_file,
-            translated_file,
-        )
-        items = [build_review_item(entry) for entry in entries if has_reviewable_translation(entry)]
-        return ReviewBundle(
-            file_kind=file_kind,
-            entries=entries,
-            save_callback=save_callback,
-            generated_output_path=generated_output_path,
-            items=items,
-            warnings=warnings,
-        )
-
-    if file_kind == FileKind.TXT:
-        if not source_file:
-            raise ValueError("--source-file is required for .txt revision runs.")
-        return load_paired_txt_bundle(source_file, translated_file)
-
-    if file_kind in (FileKind.STRINGS, FileKind.RESX):
-        if not source_file:
-            raise ValueError(
-                f"--source-file is required for .{file_kind.value} revision runs because "
-                "the translated file does not retain the original source text."
-            )
-        return build_paired_bundle(source_file, translated_file, file_kind)
-
-    raise ValueError(
-        "Unsupported file type. Use .po, .xlf/.xliff, .ts, .resx, .strings, .txt, or Android .xml"
-    )
 
 
 def build_candidate_plural_forms(item: ReviewItem, result: RevisionResult) -> List[str]:
@@ -921,30 +535,30 @@ def run_from_args(args: argparse.Namespace) -> None:
         sys.exit(f"ERROR: {exc}")
 
     try:
-        review_items = limit_review_items(review_bundle.items, args.num_messages)
-        batch_size, parallel_requests, limits_mode = normalize_limits(
-            total_items=len(review_items),
+        review_items = limit_items(review_bundle.items, args.num_messages)
+        if not review_items:
+            print("No translated entries found to review.")
+            return
+        review_run = prepare_review_run(
+            items=review_items,
+            provider_name=args.provider,
+            target_lang=args.target_lang,
+            flex_mode=args.flex_mode,
+            explicit_vocab_path=args.vocab,
+            explicit_rules_path=args.rules,
+            inline_rules=args.rules_str,
             batch_size_arg=args.batch_size,
             parallel_arg=args.parallel_requests,
+            default_batch_size=DEFAULT_REVISION_BATCH_SIZE,
+            default_parallel=DEFAULT_REVISION_PARALLEL,
+            label="revision",
         )
     except ValueError as exc:
         sys.exit(f"ERROR: {exc}")
 
-    if not review_items:
-        print("No translated entries found to review.")
-        return
-
-    runtime_context = build_task_runtime_context(
-        provider_name=args.provider,
-        target_lang=args.target_lang,
-        flex_mode=args.flex_mode,
-        explicit_vocab_path=args.vocab,
-        explicit_rules_path=args.rules,
-        inline_rules=args.rules_str,
-    )
-    provider = runtime_context.provider
-    client = runtime_context.client
-    resource_context = runtime_context.resources
+    provider = review_run.runtime_context.provider
+    client = review_run.runtime_context.client
+    resource_context = review_run.runtime_context.resources
     revision_config = build_revision_generation_config(
         args.thinking_level,
         provider=provider,
@@ -957,27 +571,28 @@ def run_from_args(args: argparse.Namespace) -> None:
         in_place=args.in_place,
     )
 
-    print_startup_configuration(
-        ("Provider", provider.name),
-        ("Model", model_name),
-        ("Flex mode", "yes" if args.flex_mode and getattr(provider, "supports_flex_mode", False) else "no"),
-        ("Thinking level", args.thinking_level or "provider default"),
-        ("Parallel requests", parallel_requests),
-        ("Batch size", batch_size),
-        ("Limits mode", limits_mode),
-        ("Review items", len(review_items)),
-        ("Source file", args.source_file or "embedded in translated file"),
-        ("Vocabulary source", resource_context.vocabulary_source),
-        ("Rules source", resource_context.rules_source or "none"),
-        ("Output path", final_output_path),
-        ("Dry run", "yes" if args.dry_run else "no"),
+    print_review_startup(
+        provider=provider,
+        model_name=model_name,
+        flex_mode=args.flex_mode,
+        thinking_level=args.thinking_level,
+        parallel_requests=review_run.parallel_requests,
+        batch_size=review_run.batch_size,
+        limits_mode=review_run.limits_mode,
+        resource_context=resource_context,
+        item_label="Review items",
+        item_count=len(review_run.items),
+        extra_entries=(
+            ("Source file", args.source_file or "embedded in translated file"),
+            ("Output path", final_output_path),
+            ("Dry run", "yes" if args.dry_run else "no"),
+            ("Total batches", review_run.batch_count),
+        ),
     )
     for warning in review_bundle.warnings:
         print(f"Warning: {warning}")
 
-    all_batches = build_fixed_batches(review_items, batch_size)
-    total_batches = len(all_batches)
-    print(f"Total batches: {total_batches}")
+    total_batches = review_run.batch_count
 
     async def run_revision() -> Tuple[int, List[Tuple[ReviewItem, RevisionResult]], List[Tuple[ReviewItem, RevisionResult]]]:
         changed_total = 0
@@ -987,7 +602,7 @@ def run_from_args(args: argparse.Namespace) -> None:
 
         def build_contents(_batch_index: int, batch: List[ReviewItem]) -> Any:
             return build_revision_request_contents(
-                messages=build_indexed_batch_map(batch, build_review_message_payload),
+                messages=build_review_batch_messages(batch, build_review_message_payload),
                 source_lang=args.source_lang,
                 target_lang=args.target_lang,
                 instruction=args.instruction,
@@ -1002,10 +617,10 @@ def run_from_args(args: argparse.Namespace) -> None:
             missing_indices: List[int],
         ) -> Any:
             return build_revision_request_contents(
-                messages=build_indexed_batch_map(
+                messages=build_retry_review_batch_messages(
+                    batch,
                     missing_indices,
-                    lambda item_index: build_review_message_payload(batch[item_index]),
-                    key_builder=lambda _retry_index, item_index: str(item_index),
+                    build_review_message_payload,
                 ),
                 source_lang=args.source_lang,
                 target_lang=args.target_lang,
@@ -1041,29 +656,35 @@ def run_from_args(args: argparse.Namespace) -> None:
                 f"changed so far: {changed_total}"
             )
 
-        await run_model_batches(
-            batches=all_batches,
-            parallel_requests=parallel_requests,
+        await run_review_batches(
+            batches=review_run.batch_plan.batches,
+            parallel_requests=review_run.parallel_requests,
             provider=provider,
             client=client,
             model=model_name,
             config=revision_config,
             max_attempts=args.max_attempts,
-            build_contents=build_contents,
-            parse_response=parse_revision_response,
-            on_batch_completed=on_batch_completed,
-            build_batch_label=lambda batch_index: f"revision batch {batch_index + 1}/{total_batches}",
-            find_missing_indices=lambda batch, revisions: find_missing_index_keys(len(batch), revisions),
-            build_retry_contents=build_retry_contents,
-            build_retry_label=lambda batch_index: f"revision batch {batch_index + 1}/{total_batches} missing-items",
-            retry_max_attempts=lambda _batch_index: max(2, min(args.max_attempts, 3)),
-            merge_retry_result=merge_mapping_results,
-            on_missing_indices=lambda batch_index, _batch, missing_indices: print(
-                f"  Warning [batch {batch_index + 1}/{total_batches}]: "
-                f"{len(missing_indices)} items missing from response. Retrying them..."
-            ),
-            on_retry_error=lambda batch_index, _batch, _missing_indices, exc: print(
-                f"  Retry failed [batch {batch_index + 1}/{total_batches}]: {exc}"
+            runner_spec=ReviewBatchRunnerSpec(
+                build_contents=build_contents,
+                parse_response=parse_revision_response,
+                on_batch_completed=on_batch_completed,
+                build_batch_label=lambda batch_index: f"revision batch {batch_index + 1}/{total_batches}",
+                retry_spec=ReviewRetryRunnerSpec(
+                    find_missing_indices=find_missing_mapping_indices,
+                    build_retry_contents=build_retry_contents,
+                    build_retry_label=lambda batch_index: (
+                        f"revision batch {batch_index + 1}/{total_batches} missing-items"
+                    ),
+                    merge_retry_result=merge_mapping_review_results,
+                    retry_max_attempts=lambda _batch_index: max(2, min(args.max_attempts, 3)),
+                    on_missing_indices=lambda batch_index, _batch, missing_indices: print(
+                        f"  Warning [batch {batch_index + 1}/{total_batches}]: "
+                        f"{len(missing_indices)} items missing from response. Retrying them..."
+                    ),
+                    on_retry_error=lambda batch_index, _batch, _missing_indices, exc: print(
+                        f"  Retry failed [batch {batch_index + 1}/{total_batches}]: {exc}"
+                    ),
+                ),
             ),
         )
 
@@ -1075,7 +696,7 @@ def run_from_args(args: argparse.Namespace) -> None:
         sys.exit(str(exc))
 
     print("")
-    print(f"Reviewed entries: {len(review_items)}")
+    print(f"Reviewed entries: {len(review_run.items)}")
     print(f"Changed entries: {changed_count}")
     print(f"Entries with revision issues: {len(issue_items)}")
 

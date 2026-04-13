@@ -3,7 +3,8 @@ import unittest
 import xml.etree.ElementTree as ET
 
 import process_gui
-from tasks import extract_terms, extract_terms_local, revise_translations
+from core import review_bundle
+from tasks import extract_terms, extract_terms_local
 from tasks import translate as process
 
 
@@ -171,7 +172,7 @@ class AndroidXmlSmokeTests(unittest.TestCase):
                 "</resources>\n",
             )
 
-            bundle = revise_translations.load_review_bundle(
+            bundle = review_bundle.load_review_bundle(
                 translated_path,
                 source_file=source_path,
             )

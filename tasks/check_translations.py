@@ -7,7 +7,7 @@ import os
 import sys
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List
 
 from core.review_common import (
     build_target_script_guidance as build_shared_target_script_guidance,
@@ -25,7 +25,7 @@ from core.formats import (
     load_ts,
 )
 from core.providers import DEFAULT_PROVIDER, DEFAULT_PROVIDER_NAME, TranslationProvider
-from core.request_contents import TaskRequestSpec, build_task_request_contents, render_text_fallback_prompt
+from core.request_contents import TaskRequestSpec, build_task_request_contents
 from core.task_cli import (
     add_language_arguments,
     add_max_attempts_argument,
@@ -39,9 +39,13 @@ from core.task_cli import (
     run_task_main,
 )
 from core.review_flow import (
+    ReviewBatchRunnerSpec,
+    build_review_batch_messages,
     has_reviewable_translation as has_shared_reviewable_translation,
     limit_items,
-    normalize_limits as normalize_review_limits,
+    prepare_review_run,
+    print_review_startup,
+    run_review_batches,
 )
 from core.system_instructions import (
     SHARED_GLOSSARY_SENSE_RULES,
@@ -49,8 +53,6 @@ from core.system_instructions import (
     join_instruction_sections,
 )
 from core.runtime import DEFAULT_BATCH_SIZE, DEFAULT_PARALLEL_REQUESTS
-from core.task_batches import build_fixed_batches, build_indexed_batch_map, run_model_batches
-from core.task_runtime import build_task_runtime_context, print_startup_configuration
 from core.task_issues import (
     TaskIssue,
     build_task_issue_schema,
@@ -188,27 +190,6 @@ def load_entries_for_check(file_path: str, file_kind: FileKind) -> List[UnifiedE
     return entries
 
 
-def normalize_limits(
-    total_items: int,
-    batch_size_arg: int | None,
-    parallel_arg: int | None,
-) -> Tuple[int, int, str]:
-    """Resolve QA batch limits, applying check-task defaults when omitted."""
-    return normalize_review_limits(
-        total_items=total_items,
-        batch_size_arg=batch_size_arg,
-        parallel_arg=parallel_arg,
-        default_batch_size=DEFAULT_CHECK_BATCH_SIZE,
-        default_parallel=DEFAULT_CHECK_PARALLEL,
-        label="check",
-    )
-
-
-def _normalize_space(text: str) -> str:
-    """Collapse whitespace for stable QA comparisons."""
-    return " ".join(str(text or "").split())
-
-
 def get_translation_plural_forms(entry: Any) -> List[str]:
     """Return plural translation forms in stable plural-slot order."""
     plural_map = getattr(entry, "msgstr_plural", None)
@@ -226,14 +207,6 @@ def get_entry_translation_text(entry: Any) -> str:
     if plural_forms:
         return plural_forms[0]
     return str(getattr(entry, "msgstr", "") or "")
-
-
-def get_joined_translation_text(entry: Any) -> str:
-    """Return all translated text joined for logging and reporting."""
-    plural_forms = get_translation_plural_forms(entry)
-    if plural_forms:
-        return "\n".join(plural_forms)
-    return get_entry_translation_text(entry)
 
 
 def has_reviewable_translation(entry: Any) -> bool:
@@ -350,26 +323,6 @@ def build_check_request_contents(
         provider=provider,
         task_spec=build_check_request_spec(),
         function_name="translation_check_batch",
-        payload=build_check_request_payload(
-            messages=messages,
-            source_lang=source_lang,
-            target_lang=target_lang,
-            vocabulary=vocabulary,
-            translation_rules=translation_rules,
-        ),
-    )
-
-
-def build_check_prompt(
-    messages: Dict[str, Dict[str, Any]],
-    source_lang: str,
-    target_lang: str,
-    vocabulary: str | None,
-    translation_rules: str | None,
-) -> str:
-    """Render the plain-text fallback prompt for one QA batch."""
-    return render_text_fallback_prompt(
-        task_spec=build_check_request_spec(),
         payload=build_check_request_payload(
             messages=messages,
             source_lang=source_lang,
@@ -500,42 +453,36 @@ def run_from_args(args: argparse.Namespace) -> None:
     if file_kind not in (FileKind.PO, FileKind.XLIFF, FileKind.TS):
         sys.exit("ERROR: the check command currently supports only .po, .xlf/.xliff, and .ts files")
 
-    runtime_context = build_task_runtime_context(
-        provider_name=args.provider,
-        target_lang=args.target_lang,
-        flex_mode=args.flex_mode,
-        explicit_vocab_path=args.vocab,
-        explicit_rules_path=args.rules,
-        inline_rules=args.rules_str,
-    )
-    provider = runtime_context.provider
-    client = runtime_context.client
-    resource_context = runtime_context.resources
-
     entries = load_entries_for_check(args.file, file_kind)
     try:
         review_entries = limit_review_entries(
             select_review_entries(entries),
             args.num_messages,
         )
-    except ValueError as e:
-        sys.exit(f"ERROR: {e}")
-
-    total = len(review_entries)
-    if total == 0:
-        print(f"No translated {file_kind.value.upper()} entries found to review.")
-        return
-
-    try:
-        batch_size, parallel_requests, limits_mode = normalize_limits(
-            total_items=total,
+        if not review_entries:
+            print(f"No translated {file_kind.value.upper()} entries found to review.")
+            return
+        review_run = prepare_review_run(
+            items=review_entries,
+            provider_name=args.provider,
+            target_lang=args.target_lang,
+            flex_mode=args.flex_mode,
+            explicit_vocab_path=args.vocab,
+            explicit_rules_path=args.rules,
+            inline_rules=args.rules_str,
             batch_size_arg=args.batch_size,
             parallel_arg=args.parallel_requests,
+            default_batch_size=DEFAULT_CHECK_BATCH_SIZE,
+            default_parallel=DEFAULT_CHECK_PARALLEL,
+            label="check",
         )
     except ValueError as e:
         sys.exit(f"ERROR: {e}")
 
-    all_batches = build_fixed_batches(review_entries, batch_size)
+    provider = review_run.runtime_context.provider
+    client = review_run.runtime_context.client
+    resource_context = review_run.runtime_context.resources
+    total = len(review_run.items)
     out_path = args.out or build_check_output_path(args.file)
     config = build_check_generation_config(
         args.thinking_level,
@@ -544,33 +491,30 @@ def run_from_args(args: argparse.Namespace) -> None:
         flex_mode=args.flex_mode,
     )
 
-    print_startup_configuration(
-        ("Provider", provider.name),
-        ("Model", model_name),
-        ("Flex mode", "yes" if args.flex_mode and getattr(provider, "supports_flex_mode", False) else "no"),
-        ("Thinking level", args.thinking_level or "provider default"),
-        ("Parallel requests", parallel_requests),
-        ("Batch size", batch_size),
-        ("Limits mode", limits_mode),
-        ("Vocabulary source", resource_context.vocabulary_source),
-        ("Rules source", resource_context.rules_source or "none"),
-        ("Probe limit", args.num_messages if args.num_messages is not None else "none"),
-        ("Total translated entries", total),
-        ("Total batches", len(all_batches)),
+    print_review_startup(
+        provider=provider,
+        model_name=model_name,
+        flex_mode=args.flex_mode,
+        thinking_level=args.thinking_level,
+        parallel_requests=review_run.parallel_requests,
+        batch_size=review_run.batch_size,
+        limits_mode=review_run.limits_mode,
+        resource_context=resource_context,
+        item_label="Total translated entries",
+        item_count=total,
+        extra_entries=(
+            ("Probe limit", args.num_messages if args.num_messages is not None else "none"),
+            ("Total batches", review_run.batch_count),
+        ),
     )
 
     async def run_checks() -> List[Dict[str, Any]]:
         results: List[Dict[str, Any]] = []
         completed = 0
-        base_index = 0
-        batch_start_indices: Dict[int, int] = {}
-        for idx, batch in enumerate(all_batches):
-            batch_start_indices[idx] = base_index
-            base_index += len(batch)
 
         def build_contents(_batch_index: int, batch: List[UnifiedEntry]) -> Any:
             return build_check_request_contents(
-                messages=build_indexed_batch_map(batch, build_check_message_payload),
+                messages=build_review_batch_messages(batch, build_check_message_payload),
                 source_lang=args.source_lang,
                 target_lang=args.target_lang,
                 vocabulary=resource_context.vocabulary_text,
@@ -584,7 +528,7 @@ def run_from_args(args: argparse.Namespace) -> None:
             model_issues_by_id: Dict[str, List[CheckIssue]],
         ) -> None:
             nonlocal completed
-            start_index = batch_start_indices[batch_index]
+            start_index = review_run.batch_plan.batch_start_indices[batch_index]
 
             for i, entry in enumerate(batch):
                 item_id = str(i)
@@ -614,23 +558,25 @@ def run_from_args(args: argparse.Namespace) -> None:
             completed += 1
             issue_count = sum(len(item["issues"]) for item in results)
             print(
-                f"Progress: completed batches {completed}/{len(all_batches)} "
-                f"(latest: {batch_index + 1}/{len(all_batches)}), "
+                f"Progress: completed batches {completed}/{review_run.batch_count} "
+                f"(latest: {batch_index + 1}/{review_run.batch_count}), "
                 f"reported issues: {issue_count}"
             )
 
-        await run_model_batches(
-            batches=all_batches,
-            parallel_requests=parallel_requests,
+        await run_review_batches(
+            batches=review_run.batch_plan.batches,
+            parallel_requests=review_run.parallel_requests,
             provider=provider,
             client=client,
             model=model_name,
             config=config,
             max_attempts=args.max_attempts,
-            build_contents=build_contents,
-            parse_response=parse_check_response,
-            on_batch_completed=on_batch_completed,
-            build_batch_label=lambda batch_index: f"check batch {batch_index + 1}/{len(all_batches)}",
+            runner_spec=ReviewBatchRunnerSpec(
+                build_contents=build_contents,
+                parse_response=parse_check_response,
+                on_batch_completed=on_batch_completed,
+                build_batch_label=lambda batch_index: f"check batch {batch_index + 1}/{review_run.batch_count}",
+            ),
         )
 
         results.sort(key=lambda item: int(item["entry_index"]))

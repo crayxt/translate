@@ -93,23 +93,24 @@ tasks.check_translations.run_from_args
         +--> select_review_entries
         |     \--> has_reviewable_translation
         +--> limit_review_entries
-        +--> build_task_runtime_context
-        |     +--> get_translation_provider
-        |     +--> provider.create_client_from_env
-        |     \--> load_task_resource_context
-        +--> normalize_limits
-        +--> build_fixed_batches
+        +--> prepare_review_run
+        |     +--> build_task_runtime_context
+        |     |     +--> get_translation_provider
+        |     |     +--> provider.create_client_from_env
+        |     |     \--> load_task_resource_context
+        |     \--> prepare_review_batches
+        |           \--> build_fixed_batches
         +--> build_check_generation_config
         |     \--> build_check_system_instruction
         |
         \--> asyncio.run(run_checks)
                 |
                 +--> build_check_request_contents
-                |     +--> build_indexed_batch_map
                 |     +--> build_check_message_payload
                 |     +--> build_check_request_payload
                 |     \--> build_task_request_contents
-                +--> run_model_batches
+                +--> run_review_batches
+                |     \--> run_model_batches
                 +--> parse_check_response
                 |     +--> json_load_maybe
                 |     +--> normalize_task_issue
@@ -123,20 +124,18 @@ tasks.check_translations.run_from_args
 ## Detailed Call Order
 
 1. `run_from_args()` resolves the effective model name with `resolve_provider_model()`.
-2. `detect_file_kind()` validates that the input is `.po` or `.ts`.
-3. `build_task_runtime_context()` creates the provider client and loads optional vocabulary and rules resources.
-4. `load_entries_for_check()` loads translated entries through `load_po()` or `load_ts()`.
-5. `select_review_entries()` filters down to translated entries by calling `has_reviewable_translation()`.
-6. `limit_review_entries()` applies `--probe` through the shared `limit_items()` helper.
-7. `normalize_limits()` applies task defaults by delegating to `core.review_flow.normalize_limits()`.
-8. `build_fixed_batches()` groups reviewable entries into QA batches.
-9. `build_check_generation_config()` builds the provider config, and `build_check_system_instruction()` appends any target-script guidance from `build_target_script_guidance()`.
-10. `run_checks()` prepares each batch with `build_check_request_contents()`.
-11. `build_check_request_contents()` calls `build_indexed_batch_map()`, `build_check_message_payload()`, `build_check_request_payload()`, and `build_task_request_contents()`.
-12. `run_model_batches()` executes the provider calls and feeds each raw response into `parse_check_response()`.
-13. `parse_check_response()` normalizes JSON via `json_load_maybe()`, maps legacy issue categories with `_build_legacy_check_issue_code()`, validates each issue through `normalize_task_issue()`, and deduplicates them with `dedupe_issues()`.
-14. `on_batch_completed()` converts normalized issues into report rows, serializes them with `serialize_task_issue()`, and accumulates progress counters.
-15. When all batches complete, `run_from_args()` writes the final `<input>.translation-check.json` report and prints the issue totals.
+2. `detect_file_kind()` validates that the input is `.po`, `.xlf`/`.xliff`, or `.ts`.
+3. `load_entries_for_check()` loads translated entries through `load_po()`, `load_xliff()`, or `load_ts()`.
+4. `select_review_entries()` filters down to translated entries by calling `has_reviewable_translation()`.
+5. `limit_review_entries()` applies `--probe` through the shared `limit_items()` helper.
+6. `prepare_review_run()` creates the provider client and loads optional vocabulary/rules resources with `build_task_runtime_context()`, then resolves fixed batches with `prepare_review_batches()`.
+7. `build_check_generation_config()` builds the provider config, and `build_check_system_instruction()` appends any target-script guidance from `build_target_script_guidance()`.
+8. `run_checks()` prepares each batch with `build_check_request_contents()`.
+9. `build_check_request_contents()` calls `build_check_message_payload()`, `build_check_request_payload()`, and `build_task_request_contents()`.
+10. `run_review_batches()` executes the provider calls through `run_model_batches()` and feeds each raw response into `parse_check_response()`.
+11. `parse_check_response()` normalizes JSON via `json_load_maybe()`, maps legacy issue categories with `_build_legacy_check_issue_code()`, validates each issue through `normalize_task_issue()`, and deduplicates them with `dedupe_issues()`.
+12. `on_batch_completed()` converts normalized issues into report rows, serializes them with `serialize_task_issue()`, and accumulates progress counters.
+13. When all batches complete, `run_from_args()` writes the final `<input>.translation-check.json` report and prints the issue totals.
 
 ## Output
 
