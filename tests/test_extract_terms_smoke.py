@@ -1,5 +1,6 @@
 import unittest
 import os
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import polib
@@ -351,14 +352,18 @@ class ExtractTermsSmokeTests(unittest.TestCase):
                 os.remove(out_path)
 
     def test_main_auto_loads_vocabulary_for_mode_all(self):
+        runtime_context = SimpleNamespace(
+            provider=_DummyProvider(),
+            client=object(),
+            resources=SimpleNamespace(
+                vocabulary_text=None,
+                vocabulary_source=os.path.join("data", "locales", "kk", "vocab.txt"),
+                vocabulary_pairs=[],
+            ),
+        )
         with (
             patch.dict(os.environ, {"GOOGLE_API_KEY": "test-key"}, clear=False),
-            patch("tasks.extract_terms.get_translation_provider", return_value=_DummyProvider()),
-            patch(
-                "tasks.extract_terms.resolve_resource_path",
-                return_value=os.path.join("data", "locales", "kk", "vocab.txt"),
-            ) as resolve_mock,
-            patch("tasks.extract_terms.read_optional_vocabulary_file", return_value=None),
+            patch("tasks.extract_terms.build_task_runtime_context", return_value=runtime_context) as runtime_mock,
             patch("tasks.extract_terms.detect_file_kind", return_value=process.FileKind.TXT),
             patch("tasks.extract_terms.load_entries_for_file", return_value=[]),
             patch("tasks.extract_terms.sys.argv", ["extract_terms.py", "input.po", "--mode", "all"]),
@@ -366,25 +371,29 @@ class ExtractTermsSmokeTests(unittest.TestCase):
         ):
             extract_terms.main()
 
-        resolve_mock.assert_called_once_with(
-            explicit_path=None,
-            prefix="vocab",
-            extension="txt",
+        runtime_mock.assert_called_once_with(
+            provider_name="gemini",
             target_lang="kk",
-            allow_directory=True,
+            flex_mode=False,
+            explicit_vocab_path=None,
+            include_rules=False,
+            load_vocab_pairs_flag=False,
         )
 
     def test_main_missing_po_output_loads_vocabulary_pairs_for_merged_po(self):
         provider = _DummyProvider(response=_DummyResponse(parsed={"terms": []}))
+        runtime_context = SimpleNamespace(
+            provider=provider,
+            client=object(),
+            resources=SimpleNamespace(
+                vocabulary_text="save - saqtau",
+                vocabulary_source=os.path.join("data", "locales", "kk", "vocab.txt"),
+                vocabulary_pairs=[("save", "saqtau")],
+            ),
+        )
         with (
             patch.dict(os.environ, {"GOOGLE_API_KEY": "test-key"}, clear=False),
-            patch("tasks.extract_terms.get_translation_provider", return_value=provider),
-            patch(
-                "tasks.extract_terms.resolve_resource_path",
-                return_value=os.path.join("data", "locales", "kk", "vocab.txt"),
-            ),
-            patch("tasks.extract_terms.read_optional_vocabulary_file", return_value="save - saqtau"),
-            patch("tasks.extract_terms.load_vocabulary_pairs", return_value=[("save", "saqtau")]) as load_pairs_mock,
+            patch("tasks.extract_terms.build_task_runtime_context", return_value=runtime_context) as runtime_mock,
             patch("tasks.extract_terms.detect_file_kind", return_value=process.FileKind.TXT),
             patch("tasks.extract_terms.load_entries_for_file", return_value=[_DummyEntry("Open file")]),
             patch("tasks.extract_terms.normalize_limits", return_value=(100, 1, "manual")),
@@ -393,10 +402,13 @@ class ExtractTermsSmokeTests(unittest.TestCase):
         ):
             extract_terms.main()
 
-        load_pairs_mock.assert_called_once_with(
-            os.path.join("data", "locales", "kk", "vocab.txt"),
-            "Vocabulary",
+        runtime_mock.assert_called_once_with(
+            provider_name="gemini",
             target_lang="kk",
+            flex_mode=False,
+            explicit_vocab_path=None,
+            include_rules=False,
+            load_vocab_pairs_flag=True,
         )
 
 
