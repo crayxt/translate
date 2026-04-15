@@ -61,9 +61,11 @@ def load_extract_word_set(*relative_parts: str) -> set[str]:
 STOP_WORDS = load_extract_word_set("en", "stopwords.txt")
 LOW_VALUE_SINGLE_WORDS = STOP_WORDS | load_extract_word_set("en", "low_value_words.txt")
 FIXED_MULTIWORD_ALLOWLIST = load_extract_word_set("en", "fixed_multiword_allowlist.txt")
-EXCLUDED_SOURCE_TERMS = load_extract_word_set("common", "abbreviations.txt") | load_extract_word_set(
-    "common",
-    "excluded_terms.txt",
+EXCLUDED_FUNCTION_NAMES = load_extract_word_set("common", "function_names.txt")
+EXCLUDED_SOURCE_TERMS = (
+    load_extract_word_set("common", "abbreviations.txt")
+    | load_extract_word_set("common", "excluded_terms.txt")
+    | EXCLUDED_FUNCTION_NAMES
 )
 EXCLUDED_MULTIWORD_SOURCE_PATTERNS = tuple(
     re.compile(rf"(?<!\w){re.escape(term)}(?!\w)", re.IGNORECASE)

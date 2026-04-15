@@ -1,4 +1,5 @@
 # Non-terms, brands, projects, and proper names that should be excluded.
+access2base
 amazon
 android
 any

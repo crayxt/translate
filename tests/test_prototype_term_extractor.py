@@ -317,6 +317,23 @@ class PrototypeTermExtractorTests(unittest.TestCase):
         self.assertEqual({item.source_term for item in result.borderline_terms}, set())
         self.assertEqual({item.source_term for item in result.rejected_terms}, set())
 
+    def test_function_names_file_terms_are_filtered(self):
+        function_name = next(iter(sorted(extraction.load_extract_word_set("common", "function_names.txt"))))
+        result = extraction.extract_terms_locally(
+            [extraction.SourceMessage(source=function_name.upper(), context="Calc functions")],
+            mode="all",
+            vocabulary_pairs=[],
+            max_length=1,
+        )
+
+        all_terms = {
+            item.source_term
+            for bucket in (result.accepted_terms, result.borderline_terms, result.rejected_terms)
+            for item in bucket
+        }
+
+        self.assertEqual(all_terms, set())
+
     def test_known_multiword_brand_term_is_filtered(self):
         result = extraction.extract_terms_locally(
             [extraction.SourceMessage(source="The Document Foundation")],
