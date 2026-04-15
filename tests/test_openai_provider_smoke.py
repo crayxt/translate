@@ -6,7 +6,7 @@ from unittest.mock import patch
 import httpx
 from openai import APIConnectionError
 
-from core.providers.openai import OpenAITranslationProvider
+from core.providers.openai import OpenAIRequestContents, OpenAITranslationProvider
 from tasks import check_translations, translate
 
 
@@ -176,6 +176,37 @@ class OpenAIProviderSmokeTests(unittest.TestCase):
         self.assertEqual(client.responses.calls[0]["input"], "prompt text")
         self.assertEqual(client.responses.calls[0]["instructions"], "Translate")
         self.assertEqual(client.responses.calls[0]["reasoning"], {"effort": "low"})
+
+    def test_generate_with_retry_merges_task_instruction_into_instructions(self):
+        provider = OpenAITranslationProvider()
+        client = _DummyClient('{"translations":[{"id":"0","text":"Ashu"}]}')
+
+        response = asyncio.run(
+            provider.generate_with_retry(
+                client=client,
+                model="gpt-5-mini",
+                contents=OpenAIRequestContents(
+                    task_instruction="Read the batch payload from the user input JSON.",
+                    payload_text='Batch payload (JSON):\n{"items":[{"id":"0"}]}',
+                ),
+                batch_label="batch 1/1",
+                max_attempts=1,
+                config={
+                    "instructions": "You are a translator.",
+                    "reasoning": {"effort": "low"},
+                },
+            )
+        )
+
+        self.assertEqual(response.parsed["translations"][0]["text"], "Ashu")
+        self.assertEqual(
+            client.responses.calls[0]["instructions"],
+            "You are a translator.\n\nRead the batch payload from the user input JSON.",
+        )
+        self.assertEqual(
+            client.responses.calls[0]["input"],
+            'Batch payload (JSON):\n{"items":[{"id":"0"}]}',
+        )
 
 
 if __name__ == "__main__":

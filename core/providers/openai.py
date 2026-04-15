@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from copy import deepcopy
+import json
 import os
 import sys
 from dataclasses import dataclass
@@ -16,6 +17,17 @@ from core.entries import json_load_maybe
 class OpenAIProviderResponse:
     parsed: Any | None = None
     text: str = ""
+
+
+@dataclass(frozen=True)
+class OpenAIRequestContents:
+    """Separates the per-task instruction from the per-batch payload.
+
+    The task instruction is merged into ``instructions`` at request time
+    so OpenAI can cache it across batches, while the payload varies per batch.
+    """
+    task_instruction: str
+    payload_text: str
 
 
 class OpenAITranslationProvider:
@@ -131,11 +143,14 @@ class OpenAITranslationProvider:
         function_name: str,
         payload: dict[str, Any],
         fallback_prompt: str,
-    ) -> Any:
-        _ = task_instruction
+    ) -> OpenAIRequestContents:
+        _ = fallback_prompt
         _ = function_name
-        _ = payload
-        return fallback_prompt
+        payload_json = json.dumps(payload, ensure_ascii=False, indent=2)
+        return OpenAIRequestContents(
+            task_instruction=task_instruction,
+            payload_text=f"Batch payload (JSON):\n{payload_json}",
+        )
 
     def build_generation_config(
         self,
@@ -200,9 +215,20 @@ class OpenAITranslationProvider:
         max_attempts: int,
         config: dict[str, Any] | None,
     ) -> OpenAIProviderResponse:
-        request_kwargs: Dict[str, Any] = {"model": model, "input": contents}
-        if config:
-            request_kwargs.update(config)
+        effective_config = dict(config) if config else {}
+        if isinstance(contents, OpenAIRequestContents):
+            input_text = contents.payload_text
+            if "instructions" in effective_config and contents.task_instruction:
+                effective_config["instructions"] = (
+                    f"{effective_config['instructions']}\n\n{contents.task_instruction}"
+                )
+            elif contents.task_instruction:
+                effective_config["instructions"] = contents.task_instruction
+        else:
+            input_text = contents
+        request_kwargs: Dict[str, Any] = {"model": model, "input": input_text}
+        if effective_config:
+            request_kwargs.update(effective_config)
 
         for attempt in range(1, max_attempts + 1):
             try:

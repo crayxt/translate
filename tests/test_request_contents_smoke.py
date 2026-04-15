@@ -45,30 +45,45 @@ class RequestContentsSmokeTests(unittest.TestCase):
         self.assertEqual(contents[0].parts[1].function_response.name, "sample_batch")
         self.assertEqual(contents[0].parts[1].function_response.response["items"][0]["id"], "0")
 
-    def test_openai_provider_build_request_contents_uses_text_fallback(self):
+    def test_openai_provider_build_request_contents_separates_instruction_and_payload(self):
         provider = OpenAITranslationProvider()
 
-        contents = provider.build_request_contents(
-            task_instruction="Translate items",
+        contents = build_task_request_contents(
+            provider=provider,
+            task_spec=TaskRequestSpec(
+                task_intro="Translate items",
+                payload_lines=("Each item includes `id`.",),
+                output_lines=("Return valid JSON.",),
+            ),
             function_name="sample_batch",
             payload={"items": [{"id": "0"}]},
-            fallback_prompt="plain prompt",
         )
 
-        self.assertEqual(contents, "plain prompt")
+        from core.providers.openai import OpenAIRequestContents
+        self.assertIsInstance(contents, OpenAIRequestContents)
+        self.assertIn("Translate items", contents.task_instruction)
+        self.assertIn("user input JSON", contents.task_instruction)
+        self.assertNotIn("structured function response", contents.task_instruction)
+        self.assertIn('"id": "0"', contents.payload_text)
 
     def test_anthropic_provider_build_request_contents_uses_message_blocks(self):
         provider = AnthropicTranslationProvider()
 
-        contents = provider.build_request_contents(
-            task_instruction="Translate items",
+        contents = build_task_request_contents(
+            provider=provider,
+            task_spec=TaskRequestSpec(
+                task_intro="Translate items",
+                payload_lines=("Each item includes `id`.",),
+                output_lines=("Return valid JSON.",),
+            ),
             function_name="sample_batch",
             payload={"items": [{"id": "0"}]},
-            fallback_prompt="plain prompt",
         )
 
         self.assertEqual(contents[0]["role"], "user")
         self.assertIn("response_payload", contents[0]["content"][0]["text"])
+        self.assertIn("user input JSON", contents[0]["content"][0]["text"])
+        self.assertNotIn("structured function response", contents[0]["content"][0]["text"])
         self.assertIn('"id": "0"', contents[0]["content"][1]["text"])
 
     def test_translate_request_contents_use_structured_batch_payload(self):
@@ -113,7 +128,7 @@ class RequestContentsSmokeTests(unittest.TestCase):
             "start",
         )
 
-    def test_translate_request_spec_explicitly_mentions_context_and_variant_selection(self):
+    def test_translate_request_spec_covers_vocabulary_warnings_and_plurals(self):
         spec = translate.build_translation_request_spec()
 
         self.assertIn(
@@ -125,11 +140,7 @@ class RequestContentsSmokeTests(unittest.TestCase):
             spec.payload_lines,
         )
         self.assertIn(
-            "Use `message.context` and `message.note` to disambiguate meaning and select the correct approved terminology for that message.",
-            spec.output_lines,
-        )
-        self.assertIn(
-            "If multiple `message.relevant_vocabulary` entries share the same `source_term`, choose the variant whose `part_of_speech` and `context_note` best match `message.context` and `message.note`.",
+            "When `relevant_vocabulary` is present for a message, prefer those entries; use `context` and `note` to select the best match.",
             spec.output_lines,
         )
         self.assertIn(
@@ -153,15 +164,11 @@ class RequestContentsSmokeTests(unittest.TestCase):
             spec.output_lines,
         )
         self.assertIn(
-            "Treat `item.source_singular` and `item.source_plural` as separate source forms that must be translated consistently.",
+            "For plural entries, return `plural_texts` with exactly `item.plural_forms` entries aligned to `item.plural_slots`; repeat wording if the target language has fewer distinct forms.",
             spec.output_lines,
         )
         self.assertIn(
-            "Align `plural_texts` to the order of `item.plural_slots`.",
-            spec.output_lines,
-        )
-        self.assertIn(
-            "For plural entries, do not put labeled `Singular:`/`Plural:` output inside `text`; put the actual translated forms into `plural_texts` only.",
+            "Translate both `source_singular` and `source_plural` consistently; put forms in `plural_texts` only, not inside `text`.",
             spec.output_lines,
         )
 

@@ -142,9 +142,8 @@ SYSTEM_INSTRUCTION = join_instruction_sections(
     You are a professional software localization translator.
 
     TRANSLATION REQUIREMENTS:
-    - Do NOT reorder placeholders
-    - Do NOT add, remove, soften, intensify, or reinterpret meaning
-    - Do NOT translate protected tokens such as product names, brand names, API names, code identifiers, command flags, file extensions, paths, or variable-like strings
+    - Preserve source meaning exactly: do not add, remove, soften, intensify, or reinterpret
+    - Keep placeholders in order and leave protected tokens untranslated (product names, brands, API names, code identifiers, command flags, paths, file extensions)
     - Keep original punctuation and capitalization style unless the target language requires a minimal grammatical adjustment
     - If source text is ALL CAPS, keep translation ALL CAPS
     - Translate ONLY the message text, not metadata
@@ -278,17 +277,9 @@ def build_translation_request_spec(force_non_empty: bool = False) -> TaskRequest
             "Use severity `info` for notable but non-risk notes, such as preserved structure or a confident glossary choice worth surfacing.",
             "Keep each warning `message` short and specific to that message.",
             "Do not add warnings for routine confident translations.",
-            "For plural entries (`item.source_singular`/`item.source_plural` present), return non-empty `plural_texts` with exactly `item.plural_forms` forms (or at least 2 if absent).",
-            "Treat `item.source_singular` and `item.source_plural` as separate source forms that must be translated consistently.",
-            "Align `plural_texts` to the order of `item.plural_slots`.",
-            "For plural entries, do not put labeled `Singular:`/`Plural:` output inside `text`; put the actual translated forms into `plural_texts` only.",
-            "If the target language effectively has one plural form but multiple slots are required, repeat the same wording in all required plural slots.",
-            "Run a silent vocabulary audit before finalizing each translation and prefer approved terminology when applicable.",
-            "When `message.relevant_vocabulary` is present, prefer those term translations for that message.",
-            "Use `message.context` and `message.note` to disambiguate meaning and select the correct approved terminology for that message.",
-            "If multiple `message.relevant_vocabulary` entries share the same `source_term`, choose the variant whose `part_of_speech` and `context_note` best match `message.context` and `message.note`.",
-            "If project rules are present, follow them exactly; they are mandatory, not advisory.",
-            "Preserve every numeric placeholder like `%d` or `%n` exactly.",
+            "For plural entries, return `plural_texts` with exactly `item.plural_forms` entries aligned to `item.plural_slots`; repeat wording if the target language has fewer distinct forms.",
+            "Translate both `source_singular` and `source_plural` consistently; put forms in `plural_texts` only, not inside `text`.",
+            "When `relevant_vocabulary` is present for a message, prefer those entries; use `context` and `note` to select the best match.",
             *non_empty_block,
         ),
     )

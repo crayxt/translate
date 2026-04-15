@@ -38,6 +38,7 @@ from core.task_cli import (
     run_task_main,
 )
 from core.runtime import DEFAULT_BATCH_SIZE, DEFAULT_PARALLEL_REQUESTS, resolve_runtime_limits
+from core.system_instructions import join_instruction_sections, render_instruction_section
 from core.task_batches import build_fixed_batches, build_indexed_batch_map, run_model_batches
 from core.task_runtime import build_task_runtime_context, print_startup_configuration
 from core.term_extraction import collect_source_messages as collect_shared_source_messages
@@ -46,21 +47,19 @@ from core.term_extraction import collect_source_messages as collect_shared_sourc
 DiscoveryMode = Literal["all", "missing"]
 OutputFormat = Literal["po", "json"]
 
-TERM_SYSTEM_INSTRUCTION = """
-You are a software localization terminology analyst.
-
-MUST:
-- Extract canonical product, domain, and UI terms rather than full-sentence translations
-- Prefer concise glossary-ready source terms and concise target-language equivalents
-- Prefer atomic reusable terms over message-specific phrases
-- If a phrase is only a loose modifier+noun or verb+object combination, split it into standalone terms when each part is reusable on its own
-- Example: prefer `audio` and `channel` over `audio channel`; prefer `save` and `file` over `save file`
-- Keep a multi-word source term only when it is a fixed concept whose meaning would change if split
-- Example: keep `access token`, `command line`, or `dark mode` as whole terms
-- Skip generic stop words, obvious function words, and low-value noise
-- Keep term casing and number canonical unless the source clearly requires otherwise
-- When vocabulary is provided, use it for consistency and do not invent conflicting alternatives
-"""
+TERM_SYSTEM_INSTRUCTION = join_instruction_sections(
+    "You are a software localization terminology analyst.",
+    render_instruction_section(
+        "EXTRACTION REQUIREMENTS",
+        "Extract canonical product, domain, and UI terms, not full-sentence translations",
+        "Prefer concise glossary-ready source terms and concise target-language equivalents",
+        "Prefer atomic reusable terms; split loose modifier+noun or verb+object into standalone entries when each part is reusable on its own",
+        "Keep a multi-word source term only when it is a fixed concept whose meaning would change if split (e.g. `access token`, `command line`, `dark mode`)",
+        "Skip generic stop words, obvious function words, and low-value noise",
+        "Keep term casing and number canonical unless the source clearly requires otherwise",
+        "When vocabulary is provided, use it for consistency and do not invent conflicting alternatives",
+    ),
+)
 
 
 TERM_DISCOVERY_SCHEMA: dict[str, Any] = {
@@ -125,16 +124,13 @@ def build_term_request_spec(mode: DiscoveryMode, max_terms_per_batch: int) -> Ta
             "Inspect source UI messages and extract a comprehensive project glossary.",
             "Focus on product, domain, and UI terms that should be standardized.",
             "Also extract generic IT terminology as we are updating the glossary.",
-            "Prefer atomic reusable terms over message-specific collocations.",
-            "Exclude generic words and stop words.",
-            "If vocabulary is provided, use it for consistency but do not limit extraction to only missing terms.",
+            "If vocabulary is provided, do not limit extraction to only missing terms.",
         )
     else:
         task_lines = (
             "Inspect source UI messages and find terms that are missing from the provided project vocabulary.",
             "Focus on product, domain, and UI terms that should be standardized in a glossary.",
-            "Prefer atomic reusable terms over message-specific collocations.",
-            "Exclude generic words, stop words, and terms already present in the vocabulary.",
+            "Exclude terms already present in the vocabulary.",
         )
 
     return TaskRequestSpec(
@@ -150,11 +146,8 @@ def build_term_request_spec(mode: DiscoveryMode, max_terms_per_batch: int) -> Ta
             "Return glossary-ready terms, not full-sentence translations.",
             "Keep `source_term` concise and canonical.",
             "Default to the smallest standalone reusable term; prefer one-word entries when they preserve the meaning.",
-            "Do not return loose UI phrases like `audio channel` when `audio` and `channel` should be separate glossary entries.",
-            "Keep a multi-word term only for fixed concepts such as `access token`, `command line`, or `dark mode`.",
             "Keep source terms and suggested translations lowercase and singular where natural.",
             f"Provide at most {max_terms_per_batch} terms for this batch.",
-            "If vocabulary is provided, use it for consistency and avoid conflicting alternatives.",
         ),
     )
 

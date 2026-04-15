@@ -59,11 +59,9 @@ class ProcessSmokeTests(unittest.TestCase):
         self.assertIn("project translation rules/instructions", prompt.lower())
         self.assertIn("Use imperative tone.", prompt)
         self.assertIn('"context": "menu action"', prompt)
-        self.assertIn("mandatory, not advisory", prompt.lower())
-        self.assertIn("run a silent vocabulary audit", prompt.lower())
         self.assertIn("Return only the corrected final JSON.", prompt)
-        self.assertIn("translated consistently", prompt)
-        self.assertIn("numeric placeholder", prompt.lower())
+        self.assertIn("consistently", prompt.lower())
+        self.assertIn("relevant_vocabulary", prompt)
 
     def test_build_scoped_vocabulary_entries_parses_rich_vocabulary_text(self):
         entries = process.build_scoped_vocabulary_entries(

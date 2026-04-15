@@ -125,8 +125,8 @@ class ExtractTermsSmokeTests(unittest.TestCase):
     def test_build_term_system_instruction_prefers_atomic_terms(self):
         instruction = extract_terms.build_term_system_instruction("kk")
         self.assertIn("Prefer atomic reusable terms", instruction)
-        self.assertIn("audio` and `channel`", instruction)
         self.assertIn("access token", instruction)
+        self.assertIn("split loose modifier+noun", instruction)
 
     def test_build_terms_prompt_requires_atomic_term_extraction(self):
         prompt = extract_terms.build_terms_prompt(
@@ -137,10 +137,8 @@ class ExtractTermsSmokeTests(unittest.TestCase):
             vocabulary=None,
             max_terms_per_batch=25,
         )
-        self.assertIn("Prefer atomic reusable terms over message-specific collocations.", prompt)
         self.assertIn("Default to the smallest standalone reusable term", prompt)
-        self.assertIn("Do not return loose UI phrases like `audio channel`", prompt)
-        self.assertIn("Keep a multi-word term only for fixed concepts", prompt)
+        self.assertIn("glossary-ready terms", prompt)
         self.assertIn('"context": "Audio output"', prompt)
 
     def test_parse_term_response_from_parsed_payload(self):
