@@ -2,10 +2,14 @@
 msgid ""
 msgstr ""
 "Project-Id-Version: Glossary\n"
+"POT-Creation-Date: 2026-04-17 14:20+0000\n"
+"PO-Revision-Date: 2026-04-17 14:20+0000\n"
 "Language: kk\n"
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=utf-8\n"
-"X-Glossary-Source: legacy-vocab\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Generated-By: scripts/sync_glossary_catalog.py\n"
+"X-Glossary-Source: jsonl\n"
 
 #. ID: abbreviation.noun.abbreviation
 #. POS: noun

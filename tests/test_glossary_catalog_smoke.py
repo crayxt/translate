@@ -1,4 +1,5 @@
 import os
+import re
 import shutil
 import unittest
 
@@ -79,6 +80,28 @@ class GlossaryCatalogSmokeTests(unittest.TestCase):
         self.assertNotIn("Context:", catalog[0].comment)
         self.assertNotIn("Example:", catalog[0].comment)
 
+    def test_build_glossary_pot_sets_gettext_metadata(self):
+        catalog = build_glossary_pot(
+            [
+                GlossarySourceTerm(
+                    source_term="filter",
+                    part_of_speech="noun",
+                    sense="default",
+                    id="filter.noun.default",
+                )
+            ]
+        )
+
+        self.assertEqual(catalog.metadata["Project-Id-Version"], "Glossary")
+        self.assertEqual(catalog.metadata["PO-Revision-Date"], "YEAR-MO-DA HO:MI+ZONE")
+        self.assertEqual(catalog.metadata["Content-Transfer-Encoding"], "8bit")
+        self.assertEqual(catalog.metadata["Generated-By"], "scripts/sync_glossary_catalog.py")
+        self.assertEqual(catalog.metadata["X-Glossary-Source"], "jsonl")
+        self.assertRegex(
+            catalog.metadata["POT-Creation-Date"],
+            r"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}[+-]\d{4}$",
+        )
+
     def test_build_glossary_entry_id_is_stable_for_identity_triplet(self):
         self.assertEqual(
             build_glossary_entry_id("line", "noun", "geometry"),
@@ -152,7 +175,7 @@ class GlossaryCatalogSmokeTests(unittest.TestCase):
                 msgctxt="old text line context",
                 msgid="text line",
                 msgstr="жол",
-                comment=f"ID: {line_text_ui_id}",
+                comment=f"ID: {line_text_ui_id}\nPOS: noun\nSense: text",
                 tcomment="Reviewed translation",
             )
         )
@@ -166,6 +189,39 @@ class GlossaryCatalogSmokeTests(unittest.TestCase):
         self.assertEqual(line_entry.msgstr, "жол")
         self.assertIn("fuzzy", line_entry.flags)
         self.assertEqual(line_entry.tcomment, "Reviewed translation")
+        self.assertEqual(catalog.metadata["Language"], "kk")
+        self.assertEqual(catalog.metadata["Content-Transfer-Encoding"], "8bit")
+        self.assertEqual(catalog.metadata["Generated-By"], "scripts/sync_glossary_catalog.py")
+        self.assertEqual(catalog.metadata["X-Glossary-Source"], "jsonl")
+        self.assertRegex(
+            catalog.metadata["POT-Creation-Date"],
+            r"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}[+-]\d{4}$",
+        )
+        self.assertRegex(
+            catalog.metadata["PO-Revision-Date"],
+            r"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}[+-]\d{4}$",
+        )
+
+    def test_sync_locale_glossary_po_extracts_id_from_multiline_comment(self):
+        target_term = "kk-filter"
+        terms = build_glossary_source_terms_from_records(
+            [("filter", target_term, "noun", "search or display filter")]
+        )
+        filter_id = terms[0].id
+        existing = polib.POFile()
+        existing.append(
+            polib.POEntry(
+                msgctxt="search or display filter",
+                msgid="filter",
+                msgstr=target_term,
+                comment=f"ID: {filter_id}\nPOS: noun\nSense: default",
+            )
+        )
+
+        catalog = sync_locale_glossary_po(terms, locale="kk", existing_catalog=existing)
+
+        self.assertEqual(len(catalog), 1)
+        self.assertEqual(catalog[0].msgstr, target_term)
 
     def test_build_locale_glossary_po_from_records_preserves_translations(self):
         catalog = build_locale_glossary_po_from_records(

@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from collections import defaultdict
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 import re
 from typing import Iterable, List, Sequence, Tuple
@@ -26,6 +27,32 @@ class GlossarySourceTerm:
 
 def _normalize_field(value: object) -> str:
     return " ".join(str(value or "").split())
+
+
+def _format_gettext_timestamp(value: datetime | None = None) -> str:
+    moment = value or datetime.now(timezone.utc)
+    return moment.astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M%z")
+
+
+def _build_glossary_metadata(
+    *,
+    source_tag: str,
+    language: str | None = None,
+) -> dict[str, str]:
+    timestamp = _format_gettext_timestamp()
+    metadata = {
+        "Project-Id-Version": "Glossary",
+        "POT-Creation-Date": timestamp,
+        "PO-Revision-Date": timestamp if language else "YEAR-MO-DA HO:MI+ZONE",
+        "MIME-Version": "1.0",
+        "Content-Type": "text/plain; charset=utf-8",
+        "Content-Transfer-Encoding": "8bit",
+        "Generated-By": "scripts/sync_glossary_catalog.py",
+        "X-Glossary-Source": source_tag,
+    }
+    if language:
+        metadata["Language"] = language
+    return metadata
 
 
 def _slugify_component(value: str) -> str:
@@ -380,7 +407,7 @@ def _build_msgctxt_map(entries: Iterable[GlossarySourceTerm]) -> dict[str, str]:
 
 
 def _extract_glossary_id(entry: polib.POEntry) -> str:
-    extracted_comment = _normalize_field(getattr(entry, "comment", ""))
+    extracted_comment = str(getattr(entry, "comment", "") or "")
     for raw_line in extracted_comment.splitlines():
         line = raw_line.strip()
         if line.startswith("ID:"):
@@ -394,12 +421,7 @@ def build_glossary_pot(entries: Iterable[GlossarySourceTerm]) -> polib.POFile:
     msgctxt_by_id = _build_msgctxt_map(sorted_entries)
     catalog = polib.POFile()
     catalog.wrapwidth = PO_WRAP_WIDTH
-    catalog.metadata = {
-        "Project-Id-Version": "Glossary",
-        "Content-Type": "text/plain; charset=utf-8",
-        "MIME-Version": "1.0",
-        "X-Glossary-Source": "jsonl",
-    }
+    catalog.metadata = _build_glossary_metadata(source_tag="jsonl")
 
     for entry in sorted_entries:
         catalog.append(
@@ -422,13 +444,10 @@ def build_locale_glossary_po_from_records(
     entries: list[tuple[GlossarySourceTerm, str]] = []
     catalog = polib.POFile()
     catalog.wrapwidth = PO_WRAP_WIDTH
-    catalog.metadata = {
-        "Project-Id-Version": "Glossary",
-        "Language": locale,
-        "Content-Type": "text/plain; charset=utf-8",
-        "MIME-Version": "1.0",
-        "X-Glossary-Source": "imported-glossary",
-    }
+    catalog.metadata = _build_glossary_metadata(
+        source_tag="imported-glossary",
+        language=locale,
+    )
 
     for source_term, target_term, part_of_speech, context_note, sense in _iter_records_with_senses(records):
         normalized_source = _normalize_field(source_term)
@@ -499,13 +518,10 @@ def sync_locale_glossary_po(
     msgctxt_by_id = _build_msgctxt_map(sorted_entries)
     catalog = polib.POFile()
     catalog.wrapwidth = PO_WRAP_WIDTH
-    catalog.metadata = {
-        "Project-Id-Version": "Glossary",
-        "Language": locale,
-        "Content-Type": "text/plain; charset=utf-8",
-        "MIME-Version": "1.0",
-        "X-Glossary-Source": "jsonl",
-    }
+    catalog.metadata = _build_glossary_metadata(
+        source_tag="jsonl",
+        language=locale,
+    )
 
     existing_by_id: dict[str, polib.POEntry] = {}
     for item in existing_catalog or []:
