@@ -79,7 +79,7 @@ def build_json_payload(
     file_path: str,
     out_path: str,
     source_lang: str,
-    target_lang: str,
+    target_lang: str | None,
     mode: DiscoveryMode,
     max_length: int,
     vocabulary_path: str | None,
@@ -233,20 +233,21 @@ def build_po_from_translation_candidates(
     *,
     source_file: str,
     source_lang: str,
-    target_lang: str,
+    target_lang: str | None,
 ) -> polib.POFile:
     """Build a glossary-style PO file for later translation."""
     po = polib.POFile()
     po.wrapwidth = PO_WRAP_WIDTH
     po.metadata = {
         "Project-Id-Version": "Prototype Glossary",
-        "Language": target_lang,
         "X-Source-Language": source_lang,
         "Content-Type": "text/plain; charset=utf-8",
         "MIME-Version": "1.0",
         "Generated-By": "extract_terms_local.py",
         "X-Prototype-Source": source_file,
     }
+    if target_lang:
+        po.metadata["Language"] = target_lang
 
     for candidate in candidates:
         entry = polib.POEntry(msgid=candidate.source_term, msgstr="")
@@ -296,7 +297,7 @@ def convert_json_to_po(
         candidates,
         source_file=json_path,
         source_lang=normalize_space(payload.get("source_lang")) or "en",
-        target_lang=normalize_space(payload.get("target_lang")) or "kk",
+        target_lang=normalize_space(payload.get("target_lang")) or None,
     )
     po.save(final_out_path)
     return final_out_path

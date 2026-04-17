@@ -28,11 +28,11 @@ Core inputs:
 
 - source file, source directory tree, or local extraction JSON
 - source language
-- target language
 
-Optional shared resources:
+Optional glossary source:
 
-- vocabulary from `data/locales/<target-lang>/vocab.txt`, a glossary `.tbx`, or a glossary directory bundle
+- `--glossary-source path\to\glossary.jsonl`
+- default canonical glossary source: `data/glossary/glossary.jsonl`
 
 Extraction behavior is driven by data files under:
 
@@ -58,7 +58,7 @@ Useful options:
 
 - `--mode`
 - `--max-length`
-- `--vocab`
+- `--glossary-source`
 - `--include-rejected`
 - `--also-po`
 - `--include-borderline`
@@ -104,8 +104,8 @@ tasks.extract_terms_local.run_from_args
         |     +--> detect_file_kind
         |     +--> load_entries_for_file
         |     \--> core.term_extraction.collect_source_messages
-        +--> resolve_resource_path
-        +--> load_vocabulary_pairs
+        +--> resolve_local_glossary_path
+        +--> load_local_glossary_pairs
         +--> core.term_extraction.extract_terms_locally
         |     +--> build_source_messages_from_payloads
         |     +--> collect_candidate_evidence
@@ -132,13 +132,14 @@ tasks.extract_terms_local.run_from_args
 3. Otherwise, `load_messages_for_input()` decides whether the input is a single file or a directory tree.
 4. Directory inputs use `discover_supported_source_files()`, which recursively walks the tree and calls `detect_file_kind()` on each candidate.
 5. Each discovered file is normalized with `normalize_source_file_label()`, loaded through `load_entries_for_file()`, and projected into `SourceMessage` objects via `core.term_extraction.collect_source_messages()`.
-6. `resolve_resource_path()` auto-detects the glossary resource when `--vocab` is omitted, and `load_vocabulary_pairs()` reads the normalized vocabulary pairs.
-7. `extract_terms_locally()` runs the deterministic extraction pipeline.
-8. Inside `extract_terms_locally()`, the main stages are `build_source_messages_from_payloads()`, `collect_candidate_evidence()`, `build_vocabulary_exclusion_keys()`, `build_strong_atomic_terms()`, and `decide_candidate()`.
-9. `collect_candidate_evidence()` itself drills into helpers such as `collect_raw_candidate_evidence()`, `extract_message_candidate_counts()`, `tokenize_source_text()`, `parse_location_note()`, and `build_location_scope()`.
-10. Once accepted, borderline, and rejected candidates are classified, `core.term_handoff.build_json_payload()` shapes the JSON report.
-11. The task writes the JSON report directly to disk.
-12. If `--also-po` is enabled, it immediately calls `core.term_handoff.convert_json_to_po()` on the newly written JSON report to produce a PO handoff beside it.
+6. `resolve_local_glossary_path()` picks the explicit `--glossary-source` path when provided, otherwise it falls back to `data/glossary/glossary.jsonl` when that file exists.
+7. `load_local_glossary_pairs()` reads the canonical source terms from the glossary JSONL and uses them for missing-mode exclusion.
+8. `extract_terms_locally()` runs the deterministic extraction pipeline.
+9. Inside `extract_terms_locally()`, the main stages are `build_source_messages_from_payloads()`, `collect_candidate_evidence()`, `build_vocabulary_exclusion_keys()`, `build_strong_atomic_terms()`, and `decide_candidate()`.
+10. `collect_candidate_evidence()` itself drills into helpers such as `collect_raw_candidate_evidence()`, `extract_message_candidate_counts()`, `tokenize_source_text()`, `parse_location_note()`, and `build_location_scope()`.
+11. Once accepted, borderline, and rejected candidates are classified, `core.term_handoff.build_json_payload()` shapes the JSON report.
+12. The task writes the JSON report directly to disk.
+13. If `--also-po` is enabled, it immediately calls `core.term_handoff.convert_json_to_po()` on the newly written JSON report to produce a PO handoff beside the JSON report.
 
 ## Modes
 
@@ -170,7 +171,7 @@ The JSON report includes:
 - borderline terms
 - rejected terms, when requested
 - translation candidates
-- extraction metadata such as mode, max length, vocabulary source, and counts
+- extraction metadata such as mode, max length, glossary source path, and counts
 
 ## Important Behavior
 
@@ -188,7 +189,7 @@ This task is intentionally separate from `extract-terms`.
 Use `extract-terms-local` for:
 
 - deterministic local candidate discovery
-- vocabulary-aware filtering in `missing` mode
+- glossary-aware filtering in `missing` mode
 - JSON and PO handoff preparation
 
 Use `extract-terms` for:

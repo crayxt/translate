@@ -8,6 +8,7 @@ import os
 import sys
 from typing import List, Tuple
 
+from core.glossary_catalog import load_glossary_source_terms
 from core.formats import (
     FileKind,
     UnifiedEntry,
@@ -20,10 +21,11 @@ from core.formats import (
     load_ts,
     load_txt,
 )
-from core.resources import load_vocabulary_pairs, resolve_resource_path
-from core.task_cli import add_language_arguments, add_vocabulary_argument, build_task_parser, run_task_main
+from core.task_cli import build_task_parser, run_task_main
 from core.term_extraction import SourceMessage, collect_source_messages, extract_terms_locally
 from core.term_handoff import build_json_payload, build_output_path, convert_json_to_po
+
+DEFAULT_LOCAL_GLOSSARY_PATH = os.path.join("data", "glossary", "glossary.jsonl")
 
 
 def load_entries_for_file(file_path: str, file_kind: FileKind) -> List[UnifiedEntry]:
@@ -113,6 +115,22 @@ def load_messages_for_input(input_path: str) -> Tuple[List[SourceMessage], List[
     return messages, scanned_files
 
 
+def resolve_local_glossary_path(explicit_path: str | None = None) -> str | None:
+    """Resolve the canonical glossary source used for local extraction exclusion."""
+    if explicit_path:
+        return explicit_path
+    if os.path.isfile(DEFAULT_LOCAL_GLOSSARY_PATH):
+        return DEFAULT_LOCAL_GLOSSARY_PATH
+    return None
+
+
+def load_local_glossary_pairs(glossary_path: str | None) -> List[Tuple[str, str]]:
+    """Load source-side glossary terms for local missing-mode exclusion."""
+    if not glossary_path:
+        return []
+    return [(entry.source_term, "") for entry in load_glossary_source_terms(glossary_path)]
+
+
 def configure_parser(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
     """Configure the CLI for local term discovery and JSON-to-PO conversion."""
     parser.description = (
@@ -122,8 +140,15 @@ def configure_parser(parser: argparse.ArgumentParser) -> argparse.ArgumentParser
         "file",
         help="Input source file, source directory tree, or local extraction JSON file",
     )
-    add_language_arguments(parser)
-    add_vocabulary_argument(parser)
+    parser.add_argument("--source-lang", default="en", help="Default: en")
+    parser.add_argument(
+        "--glossary-source",
+        default=None,
+        help=(
+            "Optional source glossary JSONL for missing-mode exclusion "
+            f"(default: {DEFAULT_LOCAL_GLOSSARY_PATH})."
+        ),
+    )
     parser.add_argument(
         "--to-po",
         action="store_true",
@@ -205,18 +230,8 @@ def run_from_args(args: argparse.Namespace) -> None:
     except ValueError as exc:
         sys.exit(f"ERROR: {exc}")
 
-    vocabulary_path = resolve_resource_path(
-        explicit_path=args.vocab,
-        prefix="vocab",
-        extension="txt",
-        target_lang=args.target_lang,
-        allow_directory=True,
-    )
-    vocabulary_pairs = load_vocabulary_pairs(
-        vocabulary_path,
-        "Vocabulary",
-        target_lang=args.target_lang,
-    )
+    vocabulary_path = resolve_local_glossary_path(args.glossary_source)
+    vocabulary_pairs = load_local_glossary_pairs(vocabulary_path)
     if not messages:
         print("No source messages found for local terminology extraction.")
         return
@@ -232,7 +247,7 @@ def run_from_args(args: argparse.Namespace) -> None:
         file_path=args.file,
         out_path=out_path,
         source_lang=args.source_lang,
-        target_lang=args.target_lang,
+        target_lang=None,
         mode=args.mode,
         max_length=args.max_length,
         vocabulary_path=vocabulary_path,

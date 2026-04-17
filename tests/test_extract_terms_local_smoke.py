@@ -3,6 +3,7 @@ import json
 import os
 import shutil
 import unittest
+from unittest.mock import patch
 
 import polib
 
@@ -22,22 +23,21 @@ class ExtractTermsLocalSmokeTests(unittest.TestCase):
 
     def test_run_from_args_can_write_json_and_po_in_one_shot(self):
         input_path = os.path.abspath("_tmp_extract_terms_local.po")
-        vocab_path = os.path.abspath("_tmp_extract_terms_local_vocab.txt")
         json_path = os.path.abspath("_tmp_extract_terms_local.prototype-missing-terms.json")
         po_path = os.path.abspath("_tmp_extract_terms_local.prototype-missing-terms.po")
-        self._cleanup_paths(input_path, vocab_path, json_path, po_path)
+        glossary_path = os.path.abspath("_tmp_extract_terms_local_glossary.jsonl")
+        self._cleanup_paths(input_path, glossary_path, json_path, po_path)
 
         try:
             with open(input_path, "w", encoding="utf-8") as handle:
                 handle.write('msgid "Access token"\nmsgstr ""\n')
-            with open(vocab_path, "w", encoding="utf-8") as handle:
+            with open(glossary_path, "w", encoding="utf-8") as handle:
                 handle.write("")
 
             args = argparse.Namespace(
                 file=input_path,
                 source_lang="en",
-                target_lang="kk",
-                vocab=vocab_path,
+                glossary_source=None,
                 to_po=False,
                 also_po=True,
                 mode="missing",
@@ -47,7 +47,8 @@ class ExtractTermsLocalSmokeTests(unittest.TestCase):
                 include_borderline=False,
             )
 
-            extract_terms_local.run_from_args(args)
+            with patch.object(extract_terms_local, "DEFAULT_LOCAL_GLOSSARY_PATH", glossary_path):
+                extract_terms_local.run_from_args(args)
 
             self.assertTrue(os.path.isfile(json_path))
             self.assertTrue(os.path.isfile(po_path))
@@ -55,23 +56,25 @@ class ExtractTermsLocalSmokeTests(unittest.TestCase):
             with open(json_path, "r", encoding="utf-8") as handle:
                 payload = json.load(handle)
             self.assertEqual(payload["output_file"], json_path)
+            self.assertIsNone(payload["target_lang"])
             self.assertGreaterEqual(payload["translation_candidate_count"], 1)
 
             po = polib.pofile(po_path, wrapwidth=78)
             self.assertGreaterEqual(len(po), 1)
             self.assertEqual(po[0].msgid, "access token")
+            self.assertFalse(po.metadata.get("Language"))
         finally:
-            self._cleanup_paths(input_path, vocab_path, json_path, po_path)
+            self._cleanup_paths(input_path, glossary_path, json_path, po_path)
 
     def test_run_from_args_can_extract_from_directory_tree(self):
         input_root = os.path.abspath("_tmp_extract_terms_tree")
         nested_root = os.path.join(input_root, "sub")
         po_one = os.path.join(input_root, "first.po")
         po_two = os.path.join(nested_root, "second.po")
-        vocab_path = os.path.abspath("_tmp_extract_terms_tree_vocab.txt")
+        glossary_path = os.path.abspath("_tmp_extract_terms_tree_glossary.jsonl")
         json_path = os.path.abspath("_tmp_extract_terms_tree.json")
         po_path = os.path.abspath("_tmp_extract_terms_tree.po")
-        self._cleanup_paths(input_root, vocab_path, json_path, po_path)
+        self._cleanup_paths(input_root, glossary_path, json_path, po_path)
 
         try:
             os.makedirs(nested_root, exist_ok=True)
@@ -79,14 +82,13 @@ class ExtractTermsLocalSmokeTests(unittest.TestCase):
                 handle.write('msgid "Access token"\nmsgstr ""\n')
             with open(po_two, "w", encoding="utf-8") as handle:
                 handle.write('msgid "Playback speed"\nmsgstr ""\n')
-            with open(vocab_path, "w", encoding="utf-8") as handle:
+            with open(glossary_path, "w", encoding="utf-8") as handle:
                 handle.write("")
 
             args = argparse.Namespace(
                 file=input_root,
                 source_lang="en",
-                target_lang="kk",
-                vocab=vocab_path,
+                glossary_source=None,
                 to_po=False,
                 also_po=True,
                 mode="missing",
@@ -96,7 +98,8 @@ class ExtractTermsLocalSmokeTests(unittest.TestCase):
                 include_borderline=False,
             )
 
-            extract_terms_local.run_from_args(args)
+            with patch.object(extract_terms_local, "DEFAULT_LOCAL_GLOSSARY_PATH", glossary_path):
+                extract_terms_local.run_from_args(args)
 
             self.assertTrue(os.path.isfile(json_path))
             self.assertTrue(os.path.isfile(po_path))
@@ -115,14 +118,14 @@ class ExtractTermsLocalSmokeTests(unittest.TestCase):
             msgids = {entry.msgid for entry in po}
             self.assertIn("access token", msgids)
         finally:
-            self._cleanup_paths(input_root, vocab_path, json_path, po_path)
+            self._cleanup_paths(input_root, glossary_path, json_path, po_path)
 
     def test_run_from_args_preserves_all_caps_term_in_po_handoff(self):
         input_path = os.path.abspath("_tmp_extract_terms_local_caps.po")
-        vocab_path = os.path.abspath("_tmp_extract_terms_local_caps_vocab.txt")
+        glossary_path = os.path.abspath("_tmp_extract_terms_local_caps_glossary.jsonl")
         json_path = os.path.abspath("_tmp_extract_terms_local_caps.prototype-missing-terms.json")
         po_path = os.path.abspath("_tmp_extract_terms_local_caps.prototype-missing-terms.po")
-        self._cleanup_paths(input_path, vocab_path, json_path, po_path)
+        self._cleanup_paths(input_path, glossary_path, json_path, po_path)
 
         try:
             with open(input_path, "w", encoding="utf-8") as handle:
@@ -130,14 +133,13 @@ class ExtractTermsLocalSmokeTests(unittest.TestCase):
                     'msgctxt "Calc functions"\nmsgid "SUM"\nmsgstr ""\n\n'
                     'msgctxt "Formula help"\nmsgid "SUM"\nmsgstr ""\n'
                 )
-            with open(vocab_path, "w", encoding="utf-8") as handle:
+            with open(glossary_path, "w", encoding="utf-8") as handle:
                 handle.write("")
 
             args = argparse.Namespace(
                 file=input_path,
                 source_lang="en",
-                target_lang="kk",
-                vocab=vocab_path,
+                glossary_source=None,
                 to_po=False,
                 also_po=True,
                 mode="missing",
@@ -147,13 +149,53 @@ class ExtractTermsLocalSmokeTests(unittest.TestCase):
                 include_borderline=False,
             )
 
-            extract_terms_local.run_from_args(args)
+            with patch.object(extract_terms_local, "DEFAULT_LOCAL_GLOSSARY_PATH", glossary_path):
+                extract_terms_local.run_from_args(args)
 
             po = polib.pofile(po_path, wrapwidth=78)
             self.assertEqual(len(po), 1)
             self.assertEqual(po[0].msgid, "SUM")
         finally:
-            self._cleanup_paths(input_path, vocab_path, json_path, po_path)
+            self._cleanup_paths(input_path, glossary_path, json_path, po_path)
+
+    def test_run_from_args_uses_default_glossary_jsonl_without_target_lang(self):
+        input_path = os.path.abspath("_tmp_extract_terms_local_default_glossary.po")
+        glossary_path = os.path.abspath("_tmp_extract_terms_local_default_glossary.jsonl")
+        json_path = os.path.abspath("_tmp_extract_terms_local_default_glossary.json")
+        self._cleanup_paths(input_path, glossary_path, json_path)
+
+        try:
+            with open(input_path, "w", encoding="utf-8") as handle:
+                handle.write('msgid "Access token"\nmsgstr ""\n')
+            with open(glossary_path, "w", encoding="utf-8") as handle:
+                handle.write(
+                    '{"source_term":"access token","part_of_speech":"noun","sense":"security","context_note":"security token","id":"access-token.noun.security","example":""}\n'
+                )
+
+            args = argparse.Namespace(
+                file=input_path,
+                source_lang="en",
+                glossary_source=None,
+                to_po=False,
+                also_po=False,
+                mode="missing",
+                max_length=2,
+                out=json_path,
+                include_rejected=False,
+                include_borderline=False,
+            )
+
+            with patch.object(extract_terms_local, "DEFAULT_LOCAL_GLOSSARY_PATH", glossary_path):
+                extract_terms_local.run_from_args(args)
+
+            with open(json_path, "r", encoding="utf-8") as handle:
+                payload = json.load(handle)
+            self.assertEqual(payload["vocabulary_path"], glossary_path)
+            self.assertIsNone(payload["target_lang"])
+            self.assertEqual(payload["accepted_candidate_count"], 0)
+            self.assertEqual(payload["translation_candidate_count"], 0)
+        finally:
+            self._cleanup_paths(input_path, glossary_path, json_path)
 
     def test_directory_extraction_keeps_identical_messages_from_different_files_distinct(self):
         input_root = os.path.abspath("_tmp_extract_terms_provenance")
