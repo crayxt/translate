@@ -8,7 +8,7 @@ import polib
 
 from core.formats import PO_WRAP_WIDTH
 
-VOCABULARY_FILE_EXTENSIONS = (".txt", ".po", ".tbx")
+VOCABULARY_FILE_EXTENSIONS = (".po", ".tbx")
 XML_LANG_ATTR = "{http://www.w3.org/XML/1998/namespace}lang"
 
 
@@ -107,6 +107,15 @@ def _strip_xml_namespace(tag: str) -> str:
 
 def _normalize_language_code(value: str | None) -> str:
     return str(value or "").strip().replace("_", "-").lower()
+
+
+def _extract_catalog_glossary_comment_field(comment: str | None, field_name: str) -> str:
+    prefix = f"{field_name}:"
+    for raw_line in str(comment or "").splitlines():
+        stripped = raw_line.strip()
+        if stripped.startswith(prefix):
+            return _normalize_vocabulary_cell(stripped[len(prefix):])
+    return ""
 
 
 def _build_language_code_match_set(value: str | None) -> set[str]:
@@ -343,7 +352,7 @@ def _resolve_vocabulary_source_paths(
         if not source_paths:
             print(
                 f"Warning: {label} directory '{path}' has no supported glossary files "
-                "(.txt, .po, or .tbx)."
+                "(.po or .tbx)."
             )
         return source_paths
 
@@ -370,16 +379,11 @@ def _load_vocabulary_records_from_path(
         return _load_tbx_vocabulary_records(path, label, target_lang=target_lang)
 
     if not lowered_path.endswith(".po"):
-        content = read_optional_text_file(path, label)
-        if not content:
-            return []
-        records: List[Tuple[str, str, str, str]] = []
-        for raw_line in content.splitlines():
-            parsed = parse_vocabulary_fields(raw_line)
-            if not parsed:
-                continue
-            records.append(parsed)
-        return records
+        print(
+            f"Warning: {label} file '{path}' uses an unsupported glossary format. "
+            "Only .po and .tbx glossary files are supported."
+        )
+        return []
 
     loader = pofile_loader or polib.pofile
     try:
@@ -394,8 +398,13 @@ def _load_vocabulary_records_from_path(
             continue
         source_term = _normalize_vocabulary_cell(getattr(entry, "msgid", ""))
         target_term = _normalize_vocabulary_cell(getattr(entry, "msgstr", ""))
-        part_of_speech = _normalize_vocabulary_cell(getattr(entry, "msgctxt", ""))
-        context_note = _normalize_vocabulary_cell(getattr(entry, "tcomment", ""))
+        extracted_comment = getattr(entry, "comment", "")
+        catalog_part_of_speech = _extract_catalog_glossary_comment_field(extracted_comment, "POS")
+        part_of_speech = catalog_part_of_speech or _normalize_vocabulary_cell(getattr(entry, "msgctxt", ""))
+        if catalog_part_of_speech:
+            context_note = _normalize_vocabulary_cell(getattr(entry, "msgctxt", ""))
+        else:
+            context_note = _normalize_vocabulary_cell(getattr(entry, "tcomment", ""))
         if not source_term or not target_term:
             continue
         records.append((source_term, target_term, part_of_speech, context_note))
@@ -407,7 +416,7 @@ def _load_vocabulary_records_from_path(
 
 def _load_vocabulary_records(
     path: str | None,
-    label: str = "Vocabulary",
+    label: str = "Glossary",
     *,
     pofile_loader: Callable[..., Any] | None = None,
     target_lang: str | None = None,
@@ -433,7 +442,7 @@ def _load_vocabulary_records(
 
 def load_vocabulary_pairs(
     path: str | None,
-    label: str = "Vocabulary",
+    label: str = "Glossary",
     *,
     pofile_loader: Callable[..., Any] | None = None,
     target_lang: str | None = None,
@@ -451,7 +460,7 @@ def load_vocabulary_pairs(
 
 def read_optional_vocabulary_file(
     path: str | None,
-    label: str = "Vocabulary",
+    label: str = "Glossary",
     *,
     pofile_loader: Callable[..., Any] | None = None,
     target_lang: str | None = None,
@@ -526,23 +535,52 @@ def detect_default_text_resource(
             return os.path.join(resource_root, *parts)
         return os.path.join(*parts)
 
+    def iter_candidate_specs() -> List[Tuple[str, str | None, bool]]:
+        if prefix == "vocab":
+            specs: List[Tuple[str, str | None, bool]] = [("glossary", "po", False)]
+            if allow_directory:
+                specs.append((prefix, None, True))
+            specs.append((prefix, "po", False))
+            specs.append((prefix, "tbx", False))
+            return specs
+        return [(prefix, extension, False)] + ([(prefix, None, True)] if allow_directory else [])
+
+    candidate_specs = iter_candidate_specs()
+
     for lang_code in build_language_code_candidates(target_lang):
-        candidate_path = build_candidate("data", "locales", lang_code, f"{prefix}.{extension}")
-        if os.path.isfile(candidate_path):
-            return candidate_path
-        if allow_directory:
-            candidate_dir = build_candidate("data", "locales", lang_code, prefix)
-            if os.path.isdir(candidate_dir):
-                return candidate_dir
+        for candidate_prefix, candidate_extension, is_dir in candidate_specs:
+            if is_dir:
+                candidate_dir = build_candidate("data", "locales", lang_code, candidate_prefix)
+                if os.path.isdir(candidate_dir):
+                    return candidate_dir
+                continue
+            candidate_path = build_candidate(
+                "data",
+                "locales",
+                lang_code,
+                f"{candidate_prefix}.{candidate_extension}",
+            )
+            if os.path.isfile(candidate_path):
+                return candidate_path
     for lang_code in build_language_code_candidates(target_lang):
-        candidate_path = build_candidate("data", lang_code, f"{prefix}.{extension}")
-        if os.path.isfile(candidate_path):
-            return candidate_path
-        if allow_directory:
-            candidate_dir = build_candidate("data", lang_code, prefix)
-            if os.path.isdir(candidate_dir):
-                return candidate_dir
+        for candidate_prefix, candidate_extension, is_dir in candidate_specs:
+            if is_dir:
+                candidate_dir = build_candidate("data", lang_code, candidate_prefix)
+                if os.path.isdir(candidate_dir):
+                    return candidate_dir
+                continue
+            candidate_path = build_candidate(
+                "data",
+                lang_code,
+                f"{candidate_prefix}.{candidate_extension}",
+            )
+            if os.path.isfile(candidate_path):
+                return candidate_path
     for lang_code in build_language_code_candidates(target_lang):
+        if prefix == "vocab":
+            glossary_legacy_path = build_candidate(f"glossary-{lang_code}.po")
+            if os.path.isfile(glossary_legacy_path):
+                return glossary_legacy_path
         legacy_path = build_candidate(f"{prefix}-{lang_code}.{extension}")
         if os.path.isfile(legacy_path):
             return legacy_path

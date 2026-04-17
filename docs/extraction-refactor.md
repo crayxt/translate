@@ -81,7 +81,7 @@ The refactor also separates locale resources from extraction resources:
 data/
   locales/
     kk/
-      vocab.txt
+      glossary.po
       rules.md
   extract/
     common/
@@ -104,7 +104,7 @@ The translation task no longer relies only on a large top-level vocabulary blob.
 
 Current flow:
 
-1. Load the approved vocabulary from `data/locales/<target-lang>/vocab.txt`, a glossary PO, or a glossary TBX.
+1. Load the approved vocabulary from `data/locales/<target-lang>/glossary.po`, a glossary PO, or a glossary TBX.
 2. Parse it into rich entries:
    - `source_term`
    - `target_term`

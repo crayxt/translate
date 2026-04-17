@@ -210,14 +210,15 @@ class ProcessSmokeTests(unittest.TestCase):
 
     def test_read_optional_vocabulary_file_supports_directory_bundle(self):
         vocab_dir = os.path.join(os.getcwd(), "_tmp_vocab_bundle")
-        txt_path = os.path.join(vocab_dir, "10-common.txt")
+        common_po_path = os.path.join(vocab_dir, "10-common.po")
         po_path = os.path.join(vocab_dir, "30-overrides.po")
         ignored_path = os.path.join(vocab_dir, "notes.md")
         try:
             os.makedirs(vocab_dir, exist_ok=True)
-            with open(txt_path, "w", encoding="utf-8") as handle:
-                handle.write("save|saqtau|verb|\n")
-                handle.write("open|ashu|verb|\n")
+            common_po = polib.POFile()
+            common_po.append(polib.POEntry(msgid="save", msgstr="saqtau", msgctxt="verb"))
+            common_po.append(polib.POEntry(msgid="open", msgstr="ashu", msgctxt="verb"))
+            common_po.save(common_po_path)
             with open(ignored_path, "w", encoding="utf-8") as handle:
                 handle.write("not a glossary file\n")
             po = polib.POFile()
@@ -232,7 +233,7 @@ class ProcessSmokeTests(unittest.TestCase):
                 "save|qoru|verb|\nopen|ashu|verb|\nblue|kok|adjective|",
             )
         finally:
-            for path in (txt_path, po_path, ignored_path):
+            for path in (common_po_path, po_path, ignored_path):
                 if os.path.exists(path):
                     os.remove(path)
             if os.path.isdir(vocab_dir):
@@ -250,14 +251,14 @@ class ProcessSmokeTests(unittest.TestCase):
         parsed = process.parse_vocabulary_line("start|бастау|verb|Start playback")
         self.assertEqual(parsed, ("start", "бастау"))
 
-    def test_load_vocabulary_pairs_from_txt_ignores_comments_and_last_duplicate_wins(self):
-        vocab_path = os.path.join(os.getcwd(), "_tmp_vocab_pairs.txt")
+    def test_load_vocabulary_pairs_from_po_preserves_last_duplicate_wins(self):
+        vocab_path = os.path.join(os.getcwd(), "_tmp_vocab_pairs.po")
         try:
-            with open(vocab_path, "w", encoding="utf-8") as f:
-                f.write("# comment\n")
-                f.write("save|saqtau|verb|\n")
-                f.write("save|qoru|verb|\n")
-                f.write("open|ashu|verb|\n")
+            po = polib.POFile()
+            po.append(polib.POEntry(msgid="save", msgstr="saqtau", msgctxt="verb"))
+            po.append(polib.POEntry(msgid="save", msgstr="qoru", msgctxt="verb"))
+            po.append(polib.POEntry(msgid="open", msgstr="ashu", msgctxt="verb"))
+            po.save(vocab_path)
 
             pairs = process.load_vocabulary_pairs(vocab_path)
 
@@ -267,11 +268,16 @@ class ProcessSmokeTests(unittest.TestCase):
                 os.remove(vocab_path)
 
     def test_load_vocabulary_pairs_preserves_same_source_with_different_rich_context(self):
-        vocab_path = os.path.join(os.getcwd(), "_tmp_vocab_pairs_rich.txt")
+        vocab_path = os.path.join(os.getcwd(), "_tmp_vocab_pairs_rich.po")
         try:
-            with open(vocab_path, "w", encoding="utf-8") as f:
-                f.write("start|бастау|verb|Start playback\n")
-                f.write("start|басталу|noun|Playback start\n")
+            po = polib.POFile()
+            first = polib.POEntry(msgid="start", msgstr="бастау", msgctxt="verb")
+            first.tcomment = "Start playback"
+            po.append(first)
+            second = polib.POEntry(msgid="start", msgstr="басталу", msgctxt="noun")
+            second.tcomment = "Playback start"
+            po.append(second)
+            po.save(vocab_path)
 
             pairs = process.load_vocabulary_pairs(vocab_path)
 
@@ -282,16 +288,18 @@ class ProcessSmokeTests(unittest.TestCase):
 
     def test_load_vocabulary_pairs_from_directory_bundle_last_duplicate_wins(self):
         vocab_dir = os.path.join(os.getcwd(), "_tmp_vocab_pairs_bundle")
-        first_path = os.path.join(vocab_dir, "10-common.txt")
-        second_path = os.path.join(vocab_dir, "20-colors.txt")
+        first_path = os.path.join(vocab_dir, "10-common.po")
+        second_path = os.path.join(vocab_dir, "20-colors.po")
         try:
             os.makedirs(vocab_dir, exist_ok=True)
-            with open(first_path, "w", encoding="utf-8") as handle:
-                handle.write("save|saqtau|verb|\n")
-                handle.write("open|ashu|verb|\n")
-            with open(second_path, "w", encoding="utf-8") as handle:
-                handle.write("save|qoru|verb|\n")
-                handle.write("blue|kok|adjective|\n")
+            first_po = polib.POFile()
+            first_po.append(polib.POEntry(msgid="save", msgstr="saqtau", msgctxt="verb"))
+            first_po.append(polib.POEntry(msgid="open", msgstr="ashu", msgctxt="verb"))
+            first_po.save(first_path)
+            second_po = polib.POFile()
+            second_po.append(polib.POEntry(msgid="save", msgstr="qoru", msgctxt="verb"))
+            second_po.append(polib.POEntry(msgid="blue", msgstr="kok", msgctxt="adjective"))
+            second_po.save(second_path)
 
             pairs = process.load_vocabulary_pairs(vocab_dir)
 
@@ -309,7 +317,7 @@ class ProcessSmokeTests(unittest.TestCase):
     def test_load_vocabulary_pairs_from_directory_bundle_supports_tbx(self):
         vocab_dir = os.path.join(os.getcwd(), "_tmp_vocab_tbx_bundle")
         tbx_path = os.path.join(vocab_dir, "10-common.tbx")
-        txt_path = os.path.join(vocab_dir, "20-overrides.txt")
+        po_path = os.path.join(vocab_dir, "20-overrides.po")
         try:
             os.makedirs(vocab_dir, exist_ok=True)
             with open(tbx_path, "w", encoding="utf-8") as handle:
@@ -331,20 +339,21 @@ class ProcessSmokeTests(unittest.TestCase):
 </martif>
 """
                 )
-            with open(txt_path, "w", encoding="utf-8") as handle:
-                handle.write("save|қору||\n")
+            po = polib.POFile()
+            po.append(polib.POEntry(msgid="save", msgstr="қору"))
+            po.save(po_path)
 
             pairs = process.load_vocabulary_pairs(vocab_dir)
 
             self.assertEqual(pairs, [("save", "қору"), ("open", "ашу")])
         finally:
-            for path in (tbx_path, txt_path):
+            for path in (tbx_path, po_path):
                 if os.path.exists(path):
                     os.remove(path)
             if os.path.isdir(vocab_dir):
                 os.rmdir(vocab_dir)
 
-    def test_read_optional_vocabulary_file_normalizes_rich_txt_schema(self):
+    def test_read_optional_vocabulary_file_rejects_txt_glossary(self):
         vocab_path = os.path.join(os.getcwd(), "_tmp_vocab_rich.txt")
         try:
             with open(vocab_path, "w", encoding="utf-8") as f:
@@ -353,10 +362,7 @@ class ProcessSmokeTests(unittest.TestCase):
 
             vocabulary = process.read_optional_vocabulary_file(vocab_path)
 
-            self.assertEqual(
-                vocabulary,
-                "start|бастау|verb|Start playback\nstart|басталу|noun|Playback start",
-            )
+            self.assertIsNone(vocabulary)
         finally:
             if os.path.exists(vocab_path):
                 os.remove(vocab_path)
@@ -404,6 +410,29 @@ class ProcessSmokeTests(unittest.TestCase):
             vocabulary = process.read_optional_vocabulary_file(vocab_path)
 
             self.assertEqual(vocabulary, "start|бастау|verb|Start playback")
+        finally:
+            if os.path.exists(vocab_path):
+                os.remove(vocab_path)
+
+    def test_read_optional_vocabulary_file_supports_generated_glossary_catalog_po(self):
+        vocab_path = os.path.join(os.getcwd(), "_tmp_vocab_glossary_catalog.po")
+        try:
+            po = polib.POFile()
+            entry = polib.POEntry(
+                msgid="line",
+                msgstr="жол",
+                msgctxt="line of text, text layout, editor text",
+            )
+            entry.comment = "ID: line.noun.text\nPOS: noun\nSense: text"
+            po.append(entry)
+            po.save(vocab_path)
+
+            vocabulary = process.read_optional_vocabulary_file(vocab_path)
+
+            self.assertEqual(
+                vocabulary,
+                "line|жол|noun|line of text, text layout, editor text",
+            )
         finally:
             if os.path.exists(vocab_path):
                 os.remove(vocab_path)
@@ -474,7 +503,7 @@ class ProcessSmokeTests(unittest.TestCase):
         source_dir = os.path.join(root_dir, "locale")
         source_po = os.path.join(source_dir, "source.po")
         vocab_dir = os.path.join(root_dir, "data", "locales", "kk")
-        vocab_txt = os.path.join(vocab_dir, "vocab.txt")
+        glossary_po = os.path.join(vocab_dir, "glossary.po")
         logs_dir = os.path.join(root_dir, "logs")
         log_txt = os.path.join(logs_dir, "run.txt")
         requirements_txt = os.path.join(root_dir, "requirements.txt")
@@ -484,8 +513,8 @@ class ProcessSmokeTests(unittest.TestCase):
             os.makedirs(logs_dir, exist_ok=True)
             with open(source_po, "w", encoding="utf-8") as handle:
                 handle.write('msgid "One"\nmsgstr ""\n')
-            with open(vocab_txt, "w", encoding="utf-8") as handle:
-                handle.write("save|сақтау||\n")
+            with open(glossary_po, "w", encoding="utf-8") as handle:
+                handle.write('msgid "save"\nmsgstr "сақтау"\n')
             with open(log_txt, "w", encoding="utf-8") as handle:
                 handle.write("tool log\n")
             with open(requirements_txt, "w", encoding="utf-8") as handle:
@@ -499,7 +528,7 @@ class ProcessSmokeTests(unittest.TestCase):
 
             self.assertEqual(resolved, [source_po])
         finally:
-            for path in (source_po, vocab_txt, log_txt, requirements_txt):
+            for path in (source_po, glossary_po, log_txt, requirements_txt):
                 if os.path.exists(path):
                     os.remove(path)
             for path in (source_dir, vocab_dir, logs_dir):
@@ -535,7 +564,7 @@ class ProcessSmokeTests(unittest.TestCase):
                         thinking_level=None,
                         batch_size=None,
                         parallel_requests=None,
-                        vocab=None,
+                        glossary=None,
                         rules=None,
                         rules_str=None,
                         retranslate_all=False,
@@ -1580,7 +1609,7 @@ class ProcessSmokeTests(unittest.TestCase):
                     thinking_level=None,
                     batch_size=None,
                     parallel_requests=None,
-                    vocab=None,
+                    glossary=None,
                     rules=None,
                     rules_str=None,
                     retranslate_all=False,
@@ -1633,7 +1662,7 @@ class ProcessSmokeTests(unittest.TestCase):
                     thinking_level=None,
                     batch_size=None,
                     parallel_requests=None,
-                    vocab=None,
+                    glossary=None,
                     rules=None,
                     rules_str=None,
                     retranslate_all=False,

@@ -1,17 +1,20 @@
 import os
 import unittest
 
+import polib
+
 from core.task_resources import load_task_resource_context
 
 
 class TaskResourcesSmokeTests(unittest.TestCase):
     def test_load_task_resource_context_loads_vocab_rules_and_pairs(self):
-        vocab_path = os.path.join(os.getcwd(), "_tmp_task_vocab.txt")
+        vocab_path = os.path.join(os.getcwd(), "_tmp_task_vocab.po")
         rules_path = os.path.join(os.getcwd(), "_tmp_task_rules.md")
         try:
-            with open(vocab_path, "w", encoding="utf-8") as handle:
-                handle.write("save|enregistrer|verb|\n")
-                handle.write("open|ouvrir|verb|\n")
+            po = polib.POFile()
+            po.append(polib.POEntry(msgid="save", msgstr="enregistrer", msgctxt="verb"))
+            po.append(polib.POEntry(msgid="open", msgstr="ouvrir", msgctxt="verb"))
+            po.save(vocab_path)
             with open(rules_path, "w", encoding="utf-8") as handle:
                 handle.write("Keep labels short.\n")
 
@@ -40,10 +43,11 @@ class TaskResourcesSmokeTests(unittest.TestCase):
                     os.remove(path)
 
     def test_load_task_resource_context_can_skip_rules(self):
-        vocab_path = os.path.join(os.getcwd(), "_tmp_task_vocab_only.txt")
+        vocab_path = os.path.join(os.getcwd(), "_tmp_task_vocab_only.po")
         try:
-            with open(vocab_path, "w", encoding="utf-8") as handle:
-                handle.write("save|enregistrer|verb|\n")
+            po = polib.POFile()
+            po.append(polib.POEntry(msgid="save", msgstr="enregistrer", msgctxt="verb"))
+            po.save(vocab_path)
 
             context = load_task_resource_context(
                 target_lang="fr",
@@ -61,14 +65,16 @@ class TaskResourcesSmokeTests(unittest.TestCase):
 
     def test_load_task_resource_context_supports_vocabulary_directory(self):
         vocab_dir = os.path.join(os.getcwd(), "_tmp_task_vocab_dir")
-        common_path = os.path.join(vocab_dir, "10-common.txt")
-        colors_path = os.path.join(vocab_dir, "20-colors.txt")
+        common_path = os.path.join(vocab_dir, "10-common.po")
+        colors_path = os.path.join(vocab_dir, "20-colors.po")
         try:
             os.makedirs(vocab_dir, exist_ok=True)
-            with open(common_path, "w", encoding="utf-8") as handle:
-                handle.write("save|enregistrer|verb|\n")
-            with open(colors_path, "w", encoding="utf-8") as handle:
-                handle.write("blue|bleu|adjective|\n")
+            common_po = polib.POFile()
+            common_po.append(polib.POEntry(msgid="save", msgstr="enregistrer", msgctxt="verb"))
+            common_po.save(common_path)
+            colors_po = polib.POFile()
+            colors_po.append(polib.POEntry(msgid="blue", msgstr="bleu", msgctxt="adjective"))
+            colors_po.save(colors_path)
 
             context = load_task_resource_context(
                 target_lang="fr",
