@@ -9,6 +9,7 @@
 *.resx
 *.resources
 *.strings
+*.json
 
 # Include translations in data folder.
 !data/**/*.po
