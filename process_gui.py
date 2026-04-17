@@ -66,8 +66,7 @@ TRANSLATABLE_FILETYPES = [
     ("All files", "*.*"),
 ]
 VOCAB_FILETYPES = [
-    ("Vocabulary files", "*.txt *.po *.tbx"),
-    ("Text files", "*.txt"),
+    ("Glossary files", "*.po *.tbx"),
     ("PO files", "*.po"),
     ("TBX files", "*.tbx"),
     ("All files", "*.*"),
@@ -97,6 +96,10 @@ LOCAL_EXTRACT_SOURCE_FILETYPES = [
     ("Translatable files", "*.po *.xlf *.xliff *.ts *.resx *.strings *.txt *.xml"),
     ("XLIFF files", "*.xlf *.xliff"),
     ("Android XML files", "*.xml"),
+    ("All files", "*.*"),
+]
+GLOSSARY_SOURCE_FILETYPES = [
+    ("Glossary source files", "*.jsonl"),
     ("All files", "*.*"),
 ]
 JSON_FILETYPES = [
@@ -180,8 +183,7 @@ class CheckGuiConfig:
 class LocalExtractGuiConfig:
     input_file: str = ""
     source_lang: str = DEFAULT_SOURCE_LANG
-    target_lang: str = DEFAULT_TARGET_LANG
-    vocab_path: str = ""
+    glossary_source_path: str = ""
     mode: str = "missing"
     max_length: str = "1"
     out_path: str = ""
@@ -323,6 +325,16 @@ def detect_default_resource_paths(
     )
 
 
+def detect_default_glossary_source_path(base_dir: str | None = None) -> str:
+    resolved_path = os.path.join(
+        build_resource_root(base_dir),
+        extract_local_task.DEFAULT_LOCAL_GLOSSARY_PATH,
+    )
+    if os.path.isfile(resolved_path):
+        return resolved_path
+    return ""
+
+
 def build_system_prompt_preview(tool_key: str, target_lang: str) -> str:
     normalized_tool = _clean(tool_key).lower()
     resolved_target_lang = _clean(target_lang) or DEFAULT_TARGET_LANG
@@ -338,7 +350,7 @@ def build_system_prompt_preview(tool_key: str, target_lang: str) -> str:
             "- core/term_extraction.py for normalization, tokenization, filtering, evidence collection, and scoring\n"
             "- core/term_handoff.py for JSON report shaping and JSON-to-PO conversion\n"
             "- data/extract/... resource files for stopwords, low-value words, allowlists, and excluded terms\n"
-            "- the approved vocabulary to filter already-known terms in missing mode\n\n"
+            "- the canonical glossary source JSONL to filter already-known terms in missing mode\n\n"
             "The task can scan one source file or a whole source directory tree.\n"
             "It can also convert a local extraction JSON report into a translation-ready PO glossary handoff."
         )
@@ -521,7 +533,7 @@ def _validate_base_config(
             errors.append(str(exc))
 
     if cleaned_vocab and not path_exists_as_file_or_dir(cleaned_vocab):
-        errors.append(f"Vocabulary file or directory does not exist: {cleaned_vocab}")
+        errors.append(f"Glossary file or directory does not exist: {cleaned_vocab}")
 
     if cleaned_rules and not os.path.isfile(cleaned_rules):
         errors.append(f"Rules file does not exist: {cleaned_rules}")
@@ -636,10 +648,9 @@ def validate_local_extract_gui_config(config: LocalExtractGuiConfig) -> list[str
     errors: list[str] = []
 
     cleaned_input = _clean(config.input_file)
-    cleaned_vocab = _clean(config.vocab_path)
+    cleaned_glossary_source = _clean(config.glossary_source_path)
     cleaned_out = _clean(config.out_path)
     cleaned_source = _clean(config.source_lang)
-    cleaned_target = _clean(config.target_lang)
     cleaned_mode = _clean(config.mode)
     cleaned_max_length = _clean(config.max_length)
 
@@ -654,8 +665,6 @@ def validate_local_extract_gui_config(config: LocalExtractGuiConfig) -> list[str
     if not config.to_po:
         if not cleaned_source:
             errors.append("Source language is required.")
-        if not cleaned_target:
-            errors.append("Target language is required.")
         try:
             _validate_choice(cleaned_mode, EXTRACT_MODE_CHOICES, "Mode")
         except ValueError as exc:
@@ -669,8 +678,8 @@ def validate_local_extract_gui_config(config: LocalExtractGuiConfig) -> list[str
                 validate_max_length(max_length_value)
             except ValueError:
                 errors.append("Max length must be 1, 2, or 3.")
-        if cleaned_vocab and not path_exists_as_file_or_dir(cleaned_vocab):
-            errors.append(f"Vocabulary file or directory does not exist: {cleaned_vocab}")
+        if cleaned_glossary_source and not os.path.isfile(cleaned_glossary_source):
+            errors.append(f"Glossary source file does not exist: {cleaned_glossary_source}")
         if cleaned_out and not cleaned_out.lower().endswith(".json"):
             errors.append("Local extraction output path should end with .json.")
     else:
@@ -853,7 +862,7 @@ def _append_common_cli_args(
 
     vocab_value = _clean(vocab_path)
     if vocab_value:
-        command.extend(["--vocab", vocab_value])
+        command.extend(["--glossary", vocab_value])
 
 
 def build_process_command(
@@ -999,17 +1008,15 @@ def build_local_extract_command(
             [
                 "--source-lang",
                 _clean(config.source_lang),
-                "--target-lang",
-                _clean(config.target_lang),
                 "--mode",
                 _clean(config.mode) or "missing",
                 "--max-length",
                 _clean(config.max_length) or "1",
             ]
         )
-        vocab_path = _clean(config.vocab_path)
-        if vocab_path:
-            command.extend(["--vocab", vocab_path])
+        glossary_source_path = _clean(config.glossary_source_path)
+        if glossary_source_path:
+            command.extend(["--glossary-source", glossary_source_path])
         if config.include_rejected:
             command.append("--include-rejected")
         if config.also_po:
@@ -1216,6 +1223,7 @@ class BaseToolTab(ttk.Frame):
         input_filetypes: list[tuple[str, str]],
         supports_vocab: bool = True,
         supports_rules: bool = False,
+        show_target_lang: bool = True,
         input_label: str = "Input file",
         supports_provider_controls: bool = True,
         preview_label: str = "System prompt",
@@ -1228,6 +1236,7 @@ class BaseToolTab(ttk.Frame):
         self.input_filetypes = input_filetypes
         self.supports_vocab = supports_vocab
         self.supports_rules = supports_rules
+        self.show_target_lang = show_target_lang
         self.input_label = input_label
         self.supports_provider_controls = supports_provider_controls
         self.preview_label = preview_label
@@ -1276,7 +1285,8 @@ class BaseToolTab(ttk.Frame):
         self.api_key_var.trace_add("write", self._on_api_key_changed)
         self.provider_var.trace_add("write", self._on_provider_changed)
         self.gemini_backend_var.trace_add("write", self._on_api_key_changed)
-        self.target_lang_var.trace_add("write", self._on_target_lang_changed)
+        if self.show_target_lang:
+            self.target_lang_var.trace_add("write", self._on_target_lang_changed)
         self.rules_path_var.trace_add("write", self._on_rules_path_changed)
 
     def _build_widgets(self) -> None:
@@ -1299,8 +1309,9 @@ class BaseToolTab(ttk.Frame):
         row += self._build_input_row(form, row)
         self._add_entry_row(form, row=row, label="Source lang", variable=self.source_lang_var)
         row += 1
-        self._add_entry_row(form, row=row, label="Target lang", variable=self.target_lang_var)
-        row += 1
+        if self.show_target_lang:
+            self._add_entry_row(form, row=row, label="Target lang", variable=self.target_lang_var)
+            row += 1
         if self.supports_provider_controls:
             self._add_combo_row(
                 form,
@@ -1356,7 +1367,7 @@ class BaseToolTab(ttk.Frame):
             self._add_entry_row(
                 form,
                 row=row,
-                label="Vocabulary",
+                label="Glossary",
                 variable=self.vocab_path_var,
                 browse_command=self._browse_vocab_file,
             )
@@ -1546,7 +1557,7 @@ class BaseToolTab(ttk.Frame):
 
     def _browse_vocab_file(self) -> None:
         selected = filedialog.askopenfilename(
-            title="Select vocabulary file",
+            title="Select glossary file",
             filetypes=VOCAB_FILETYPES,
         )
         if selected:
@@ -2001,6 +2012,9 @@ class ExtractToolTab(BaseToolTab):
 
 class LocalExtractToolTab(BaseToolTab):
     def __init__(self, app: "ProcessGuiApp", notebook: ttk.Notebook) -> None:
+        self.glossary_source_path_var = tk.StringVar(
+            value=detect_default_glossary_source_path(app.resource_root)
+        )
         self.mode_var = tk.StringVar(value="missing")
         self.max_length_var = tk.StringVar(value="1")
         self.out_path_var = tk.StringVar()
@@ -2020,8 +2034,9 @@ class LocalExtractToolTab(BaseToolTab):
             title="Local Extract",
             script_name="translate_cli.py",
             input_filetypes=LOCAL_EXTRACT_FILETYPES,
-            supports_vocab=True,
+            supports_vocab=False,
             supports_rules=False,
+            show_target_lang=False,
             input_label="Input file / folder / JSON",
             supports_provider_controls=False,
             preview_label="Task info",
@@ -2079,6 +2094,14 @@ class LocalExtractToolTab(BaseToolTab):
         self._add_entry_row(
             parent,
             row=start_row + 3,
+            label="Glossary source",
+            variable=self.glossary_source_path_var,
+            browse_command=self._browse_glossary_source_file,
+        )
+
+        self._add_entry_row(
+            parent,
+            row=start_row + 4,
             label="Output path",
             variable=self.out_path_var,
             browse_command=self._browse_output_file,
@@ -2088,14 +2111,14 @@ class LocalExtractToolTab(BaseToolTab):
             text="Include rejected terms in JSON output",
             variable=self.include_rejected_var,
         )
-        self.include_rejected_button.grid(row=start_row + 4, column=0, columnspan=3, sticky="w", pady=(4, 0))
+        self.include_rejected_button.grid(row=start_row + 5, column=0, columnspan=3, sticky="w", pady=(4, 0))
         self.include_borderline_button = ttk.Checkbutton(
             parent,
             text="Include borderline terms in generated PO handoff",
             variable=self.include_borderline_var,
         )
-        self.include_borderline_button.grid(row=start_row + 5, column=0, columnspan=3, sticky="w", pady=(0, 8))
-        return start_row + 6
+        self.include_borderline_button.grid(row=start_row + 6, column=0, columnspan=3, sticky="w", pady=(0, 8))
+        return start_row + 7
 
     def _on_to_po_changed(self, *_args: object) -> None:
         self._refresh_local_mode_controls()
@@ -2151,12 +2174,19 @@ class LocalExtractToolTab(BaseToolTab):
         if selected:
             self.input_file_var.set(selected)
 
+    def _browse_glossary_source_file(self) -> None:
+        selected = filedialog.askopenfilename(
+            title="Select glossary source file",
+            filetypes=GLOSSARY_SOURCE_FILETYPES,
+        )
+        if selected:
+            self.glossary_source_path_var.set(selected)
+
     def build_config(self) -> LocalExtractGuiConfig:
         return LocalExtractGuiConfig(
             input_file=self.input_file_var.get(),
             source_lang=self.source_lang_var.get(),
-            target_lang=self.target_lang_var.get(),
-            vocab_path=self.vocab_path_var.get(),
+            glossary_source_path=self.glossary_source_path_var.get(),
             mode=self.mode_var.get(),
             max_length=self.max_length_var.get(),
             out_path=self.out_path_var.get(),

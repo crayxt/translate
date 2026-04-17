@@ -27,13 +27,13 @@ from core.formats import (
 from core.providers import DEFAULT_PROVIDER, DEFAULT_PROVIDER_NAME, TranslationProvider
 from core.request_contents import TaskRequestSpec, build_task_request_contents, render_text_fallback_prompt
 from core.task_cli import (
+    add_glossary_argument,
     add_language_arguments,
     add_max_attempts_argument,
     add_probe_argument,
     add_provider_arguments,
     add_rules_arguments,
     add_runtime_limit_arguments,
-    add_vocabulary_argument,
     build_task_parser,
     resolve_provider_model,
     run_task_main,
@@ -464,7 +464,7 @@ def configure_parser(parser: argparse.ArgumentParser) -> argparse.ArgumentParser
         default_model=DEFAULT_PROVIDER.default_model,
     )
     add_runtime_limit_arguments(parser)
-    add_vocabulary_argument(parser)
+    add_glossary_argument(parser)
     add_rules_arguments(
         parser,
         rules_help="Optional translation rules/instructions file (auto: data/locales/<target-lang>/rules.md)",
@@ -504,7 +504,7 @@ def run_from_args(args: argparse.Namespace) -> None:
         provider_name=args.provider,
         target_lang=args.target_lang,
         flex_mode=args.flex_mode,
-        explicit_vocab_path=args.vocab,
+        explicit_vocab_path=args.glossary,
         explicit_rules_path=args.rules,
         inline_rules=args.rules_str,
     )
@@ -552,7 +552,7 @@ def run_from_args(args: argparse.Namespace) -> None:
         ("Parallel requests", parallel_requests),
         ("Batch size", batch_size),
         ("Limits mode", limits_mode),
-        ("Vocabulary source", resource_context.vocabulary_source),
+        ("Glossary source", resource_context.vocabulary_source),
         ("Rules source", resource_context.rules_source or "none"),
         ("Probe limit", args.num_messages if args.num_messages is not None else "none"),
         ("Total translated entries", total),

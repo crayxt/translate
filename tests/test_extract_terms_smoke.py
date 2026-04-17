@@ -355,7 +355,7 @@ class ExtractTermsSmokeTests(unittest.TestCase):
             client=object(),
             resources=SimpleNamespace(
                 vocabulary_text=None,
-                vocabulary_source=os.path.join("data", "locales", "kk", "vocab.txt"),
+                vocabulary_source=os.path.join("data", "locales", "kk", "glossary.po"),
                 vocabulary_pairs=[],
             ),
         )
@@ -385,7 +385,7 @@ class ExtractTermsSmokeTests(unittest.TestCase):
             client=object(),
             resources=SimpleNamespace(
                 vocabulary_text="save - saqtau",
-                vocabulary_source=os.path.join("data", "locales", "kk", "vocab.txt"),
+                vocabulary_source=os.path.join("data", "locales", "kk", "glossary.po"),
                 vocabulary_pairs=[("save", "saqtau")],
             ),
         )

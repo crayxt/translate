@@ -34,12 +34,12 @@ Core inputs:
 
 Optional shared resources:
 
-- vocabulary from `data/locales/<target-lang>/vocab.txt`, a glossary PO, or a glossary TBX
+- glossary from `data/locales/<target-lang>/glossary.po`, a glossary PO, or a glossary TBX
 - rules from `data/locales/<target-lang>/rules.md`
 
 At runtime, the task builds message-scoped glossary hints:
 
-- the full approved vocabulary is parsed into rich entries
+- the full approved glossary is parsed into rich entries
 - only the relevant subset for each message is attached as `relevant_vocabulary`
 
 For plural messages, the task sends structured plural data:
@@ -65,7 +65,7 @@ Useful options:
 - `--flex`
 - `--batch-size`
 - `--parallel-requests`
-- `--vocab`
+- `--glossary`
 - `--rules`
 - `--rules-str`
 - `--retranslate-all`

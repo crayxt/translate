@@ -249,7 +249,7 @@ class CheckTranslationsSmokeTests(unittest.TestCase):
                 resources=SimpleNamespace(
                     vocabulary_text="addon - qosymsha",
                     project_rules="Use imperative tone.",
-                    vocabulary_source=os.path.join("data", "locales", "kk", "vocab.txt"),
+                    vocabulary_source=os.path.join("data", "locales", "kk", "glossary.po"),
                     rules_source=os.path.join("data", "locales", "kk", "rules.md"),
                 ),
             )
@@ -308,7 +308,7 @@ class CheckTranslationsSmokeTests(unittest.TestCase):
                 resources=SimpleNamespace(
                     vocabulary_text="",
                     project_rules="",
-                    vocabulary_source=os.path.join("data", "locales", "kk", "vocab.txt"),
+                    vocabulary_source=os.path.join("data", "locales", "kk", "glossary.po"),
                     rules_source=os.path.join("data", "locales", "kk", "rules.md"),
                 ),
             )
@@ -357,7 +357,7 @@ class CheckTranslationsSmokeTests(unittest.TestCase):
                 resources=SimpleNamespace(
                     vocabulary_text="",
                     project_rules="",
-                    vocabulary_source=os.path.join("data", "locales", "kk", "vocab.txt"),
+                    vocabulary_source=os.path.join("data", "locales", "kk", "glossary.po"),
                     rules_source=os.path.join("data", "locales", "kk", "rules.md"),
                 ),
             )

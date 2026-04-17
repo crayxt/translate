@@ -30,10 +30,10 @@ Supported providers:
 The toolkit is built around three ideas:
 
 1. One task-oriented CLI: `translate`, `revise`, `check`, `extract-terms`, `extract-terms-local`
-2. Shared language resources: vocabulary and rules are loaded by target language
+2. Shared language resources: glossary and rules are loaded by target language
 3. One format backend: supported file types are normalized into a shared entry model and then written back in their native format
 
-That matters because the same vocabulary, rules, runtime controls, batching, and format handling are reused across CLI and GUI instead of being reimplemented per script.
+That matters because the same glossary, rules, runtime controls, batching, and format handling are reused across CLI and GUI instead of being reimplemented per script.
 
 The preferred entry point is:
 
@@ -222,15 +222,15 @@ python translate_cli.py extract-terms source.xml
 Useful variants:
 
 ```powershell
-python translate_cli.py extract-terms source.po --mode missing --vocab data/locales/kk/vocab --out-format po
-python translate_cli.py extract-terms source.po --mode missing --out-format json --vocab data/locales/kk/vocab
+python translate_cli.py extract-terms source.po --mode missing --glossary data/locales/kk/glossary.po --out-format po
+python translate_cli.py extract-terms source.po --mode missing --out-format json --glossary data/locales/kk/glossary.po
 python translate_cli.py extract-terms source.po --out glossary.po --batch-size 200 --parallel-requests 4
 ```
 
 Modes:
 
 - `all`: build a broader glossary from the source content
-- `missing`: focus on terms that are not already in your existing vocabulary
+- `missing`: focus on terms that are not already in your existing glossary
 
 Output defaults:
 
@@ -240,7 +240,7 @@ Output defaults:
 
 When you run missing-term extraction with `--out-format po`, the generated PO is designed to go straight back into review and then translation:
 
-- known terms from the supplied vocabulary are imported
+- known terms from the supplied glossary are imported
 - new missing terms are added as reviewable entries
 
 ### 6. Discover terms locally, without a model
@@ -287,7 +287,7 @@ For larger localization work, the recommended flow is:
 1. Run local extraction first.
 2. Translate the resulting glossary PO handoff.
 3. Review and approve that glossary.
-4. Use the approved glossary as the vocabulary base for the main translation.
+4. Use the approved glossary as the base glossary for the main translation.
 5. Review and approve the main translated source file.
 
 In practice, that looks like this:
@@ -298,22 +298,22 @@ python translate_cli.py extract-terms-local source.po --mode missing --also-po
 python translate_cli.py extract-terms-local C:\path\to\source-tree --mode missing --also-po
 
 # 2. Translate the generated glossary PO handoff
-python translate_cli.py translate source.prototype-missing-terms.po --vocab data/locales/kk/vocab
+python translate_cli.py translate source.prototype-missing-terms.po --glossary data/locales/kk/glossary.po
 
 # 3. Review and approve the glossary PO
 #    Keep only good terms, fix bad translations, and save the approved glossary.
 
-# 4. Use the approved glossary as the base vocabulary for the main translation
-python translate_cli.py translate source.po --vocab approved-glossary.po
+# 4. Use the approved glossary as the base glossary for the main translation
+python translate_cli.py translate source.po --glossary approved-glossary.po
 
 # 5. Review and approve the main translated source file
 ```
 
 Why this workflow is recommended:
 
-- `extract-terms-local` can deterministically avoid terms already present in your approved vocabulary and skip local noise such as stop words, excluded abbreviations, placeholders, tags, and weak phrase candidates
+- `extract-terms-local` can deterministically avoid terms already present in your approved glossary and skip local noise such as stop words, excluded abbreviations, placeholders, tags, and weak phrase candidates
 - the glossary is reviewed before bulk translation, so terminology is stabilized early
-- the main `translate` task can load the approved glossary PO directly through `--vocab`
+- the main `translate` task can load the approved glossary PO directly through `--glossary`
 - the final source translation still needs review, because approved terminology does not replace full QA
 
 Keep a distinction between:
@@ -321,35 +321,32 @@ Keep a distinction between:
 - candidate glossary output from local extraction
 - approved glossary used as translation input
 
-That approved glossary can stay as a reviewed `.po` passed with `--vocab`, or it can be merged into your canonical locale vocabulary under `data/locales/<target-lang>/`.
+That approved glossary can stay as a reviewed `.po` passed with `--glossary`, or it can be merged into your canonical locale glossary under `data/locales/<target-lang>/`.
 
-## Vocabulary And Rules
+## Glossary And Rules
 
 By default, the toolkit looks up language resources from `data/locales/<target-lang>/`.
 
 Auto-detected resources:
 
-- `data/locales/<target-lang>/vocab.txt`
+- `data/locales/<target-lang>/glossary.po`
 - `data/locales/<target-lang>/vocab/`
 - `data/locales/<target-lang>/rules.md`
-
-Locale fallback is supported. For example, `fr_CA` falls back to `fr` if the region-specific resource is not present.
 
 You can override both resources per run:
 
 ```powershell
-python translate_cli.py translate source.po --vocab custom-vocab.txt --rules custom-rules.md
-python translate_cli.py translate source.po --vocab custom-vocab --rules-str "Use concise imperative labels."
+python translate_cli.py translate source.po --glossary approved-glossary.po --rules custom-rules.md
+python translate_cli.py translate source.po --glossary custom-glossary --rules-str "Use concise imperative labels."
 ```
 
-`--vocab` accepts:
+`--glossary` accepts:
 
-- a glossary `.txt`
 - a glossary `.po`
 - a glossary `.tbx`
-- a directory containing glossary `.txt`, `.po`, and `.tbx` files
+- a directory containing glossary `.po` and `.tbx` files
 
-When a vocabulary directory is used:
+When a glossary directory is used:
 
 - files are loaded in filename order
 - later duplicates override earlier ones
@@ -361,12 +358,13 @@ data/
   locales/
     kk/
       vocab/
-        common.txt
-        colors.txt
-        media.txt
+        common.po
+        colors.po
+        media.tbx
+      glossary.po
       rules.md
     fr/
-      vocab.txt
+      glossary.po
       rules.md
   extract/
     common/
@@ -378,7 +376,7 @@ data/
       fixed_multiword_allowlist.txt
 ```
 
-Rich vocabulary entries use this schema:
+Rich glossary entries use this schema:
 
 ```text
 source_term|target_term|part_of_speech|context_note
@@ -391,7 +389,7 @@ archive|package|noun|software package manager context
 save|store|verb|short imperative UI action
 ```
 
-During translation, the toolkit still sends the full vocabulary for compatibility, but it also computes `relevant_vocabulary` per message so each message sees the subset of glossary entries that actually match it.
+During translation, the toolkit still sends the full glossary for compatibility, but it also computes `relevant_vocabulary` per message so each message sees the subset of glossary entries that actually match it.
 
 When warnings reporting is enabled, the translation response can also include a per-message `warnings` field. Those warnings are written to a separate JSON sidecar so you can inspect ambiguous or risky messages without rereading the whole translated file.
 
@@ -442,7 +440,7 @@ translate_cli.py          unified CLI entry point
 process_gui.py            Tk frontend
 tasks/                    task-specific contracts and runners
 core/                     formats, providers, runtime, resources, shared helpers
-data/locales/             per-language vocabulary and rules
+data/locales/             per-language glossary and rules
 data/extract/             local-extraction stop words and filters
 tests/                    smoke and regression coverage
 ```

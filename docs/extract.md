@@ -26,9 +26,9 @@ Core inputs:
 
 Optional shared resources:
 
-- vocabulary from `data/locales/<target-lang>/vocab.txt`, a glossary PO, or a glossary TBX
+- glossary from `data/locales/<target-lang>/glossary.po`, a glossary PO, or a glossary TBX
 
-In `missing` mode, vocabulary is used to suppress already known terms and keep the output focused on missing glossary entries.
+In `missing` mode, the glossary is used to suppress already known terms and keep the output focused on missing glossary entries.
 
 ## Main CLI Shape
 
@@ -45,7 +45,7 @@ Useful options:
 - `--flex`
 - `--batch-size`
 - `--parallel-requests`
-- `--vocab`
+- `--glossary`
 - `--mode`
 - `--out-format`
 - `--out`
@@ -117,7 +117,7 @@ tasks.extract_terms.run_from_args
 ## Detailed Call Order
 
 1. `run_from_args()` resolves the effective model name and validates `--max-terms-per-batch` and `--max-attempts`.
-2. `build_task_runtime_context()` creates the provider client and loads vocabulary resources. This task sets `include_rules=False`.
+2. `build_task_runtime_context()` creates the provider client and loads glossary resources. This task sets `include_rules=False`.
 3. `detect_file_kind()` validates the input format, and `load_entries_for_file()` dispatches to `load_po()`, `load_ts()`, `load_resx()`, `load_strings()`, `load_txt()`, or `load_android_xml()`.
 4. `collect_source_messages()` projects those entries through `core.term_extraction.collect_source_messages()` so extraction batches use contextual source messages instead of raw strings only.
 5. `normalize_limits()` chooses task-default batching when the user omits both runtime knobs.
@@ -136,7 +136,7 @@ tasks.extract_terms.run_from_args
 - `all`
   - broader glossary building from source content
 - `missing`
-  - focus on terms not already present in the supplied vocabulary
+  - focus on terms not already present in the supplied glossary
 
 ## Output
 
@@ -158,7 +158,7 @@ Default paths:
 - the model is instructed to prefer atomic reusable terms over phrase-shaped message fragments
 - term candidates are merged case-insensitively before final output
 
-If `missing` mode is used with `--out-format po`, known vocabulary entries are merged into the generated PO before new missing terms are appended.
+If `missing` mode is used with `--out-format po`, known glossary entries are merged into the generated PO before new missing terms are appended.
 
 ## Relationship To Local Discovery
 

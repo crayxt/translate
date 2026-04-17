@@ -89,15 +89,15 @@ def add_runtime_limit_arguments(parser: argparse.ArgumentParser) -> None:
     )
 
 
-def add_vocabulary_argument(parser: argparse.ArgumentParser) -> None:
-    """Register the shared glossary/vocabulary resource flag."""
+def add_glossary_argument(parser: argparse.ArgumentParser) -> None:
+    """Register the shared glossary resource flag."""
     parser.add_argument(
-        "--vocab",
+        "--glossary",
         default=None,
         help=(
-            "Optional vocabulary file or directory "
-            "(auto: data/locales/<target-lang>/vocab.txt or data/locales/<target-lang>/vocab). "
-            "Supports .txt, glossary .po, and .tbx"
+            "Optional glossary file or directory "
+            "(auto: data/locales/<target-lang>/glossary.po, then optional glossary directories). "
+            "Supports glossary .po, .tbx, and directory bundles of those formats"
         ),
     )
 
@@ -189,7 +189,7 @@ __all__ = [
     "apply_provider_environment_from_args",
     "add_rules_arguments",
     "add_runtime_limit_arguments",
-    "add_vocabulary_argument",
+    "add_glossary_argument",
     "build_task_parser",
     "resolve_provider_model",
     "run_task_main",

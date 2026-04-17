@@ -4,13 +4,13 @@ from unittest.mock import patch
 
 from core.task_cli import (
     apply_provider_environment_from_args,
+    add_glossary_argument,
     add_language_arguments,
     add_max_attempts_argument,
     add_probe_argument,
     add_provider_arguments,
     add_rules_arguments,
     add_runtime_limit_arguments,
-    add_vocabulary_argument,
     build_task_parser,
     resolve_provider_model,
     run_task_main,
@@ -41,7 +41,7 @@ class TaskCliSmokeTests(unittest.TestCase):
             include_thinking=False,
         )
         add_runtime_limit_arguments(parser)
-        add_vocabulary_argument(parser)
+        add_glossary_argument(parser)
         add_rules_arguments(
             parser,
             rules_help="Rules file",
@@ -69,8 +69,8 @@ class TaskCliSmokeTests(unittest.TestCase):
                 "10",
                 "--parallel-requests",
                 "2",
-                "--vocab",
-                "vocab.txt",
+                "--glossary",
+                "glossary.po",
                 "--rules",
                 "rules.md",
                 "--rules-str",
@@ -91,7 +91,7 @@ class TaskCliSmokeTests(unittest.TestCase):
         self.assertTrue(args.flex_mode)
         self.assertEqual(args.batch_size, 10)
         self.assertEqual(args.parallel_requests, 2)
-        self.assertEqual(args.vocab, "vocab.txt")
+        self.assertEqual(args.glossary, "glossary.po")
         self.assertEqual(args.rules, "rules.md")
         self.assertEqual(args.rules_str, "Rule A")
         self.assertEqual(args.num_messages, 5)

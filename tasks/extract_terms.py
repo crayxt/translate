@@ -28,11 +28,11 @@ from core.formats import (
 from core.providers import DEFAULT_PROVIDER, DEFAULT_PROVIDER_NAME, TranslationProvider
 from core.request_contents import TaskRequestSpec, build_task_request_contents, render_text_fallback_prompt
 from core.task_cli import (
+    add_glossary_argument,
     add_language_arguments,
     add_max_attempts_argument,
     add_provider_arguments,
     add_runtime_limit_arguments,
-    add_vocabulary_argument,
     build_task_parser,
     resolve_provider_model,
     run_task_main,
@@ -448,7 +448,7 @@ def configure_parser(parser: argparse.ArgumentParser) -> argparse.ArgumentParser
         default_model=DEFAULT_PROVIDER.default_model,
     )
     add_runtime_limit_arguments(parser)
-    add_vocabulary_argument(parser)
+    add_glossary_argument(parser)
     parser.add_argument(
         "--mode",
         choices=["all", "missing"],
@@ -485,7 +485,7 @@ def run_from_args(args: argparse.Namespace) -> None:
         provider_name=args.provider,
         target_lang=args.target_lang,
         flex_mode=args.flex_mode,
-        explicit_vocab_path=args.vocab,
+        explicit_vocab_path=args.glossary,
         include_rules=False,
         load_vocab_pairs_flag=args.mode == "missing" and args.out_format == "po",
     )
@@ -539,7 +539,7 @@ def run_from_args(args: argparse.Namespace) -> None:
         ("Limits mode", limits_mode),
         ("Discovery mode", args.mode),
         ("Output format", args.out_format),
-        ("Vocabulary source", resource_context.vocabulary_source),
+        ("Glossary source", resource_context.vocabulary_source),
         ("Total source messages", total),
         ("Total batches", len(batches)),
     )

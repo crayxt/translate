@@ -16,7 +16,7 @@ from core.resources import (
 
 @dataclass(slots=True)
 class TaskResourceContext:
-    """Resolved vocabulary and rules resources for a task run."""
+    """Resolved glossary and rules resources for a task run."""
     vocabulary_path: str | None = None
     vocabulary_text: str | None = None
     vocabulary_source: str = "none"
@@ -50,7 +50,7 @@ def load_task_resource_context(
         )
         context.vocabulary_text = read_optional_vocabulary_file(
             context.vocabulary_path,
-            "Vocabulary",
+            "Glossary",
             target_lang=target_lang,
         )
         if context.vocabulary_text and context.vocabulary_path:
@@ -59,7 +59,7 @@ def load_task_resource_context(
         if load_vocab_pairs_flag and context.vocabulary_path:
             context.vocabulary_pairs = load_vocabulary_pairs(
                 context.vocabulary_path,
-                "Vocabulary",
+                "Glossary",
                 target_lang=target_lang,
             )
 

@@ -79,16 +79,16 @@ class ProcessGuiSmokeTests(unittest.TestCase):
         data_dir = os.path.join(os.getcwd(), "_tmp_gui_data", "data", "locales", "fr")
         legacy_dir = os.path.join(os.getcwd(), "_tmp_gui_data")
         os.makedirs(data_dir, exist_ok=True)
-        vocab_path = os.path.join(data_dir, "vocab.txt")
+        vocab_path = os.path.join(data_dir, "glossary.po")
         rules_path = os.path.join(data_dir, "rules.md")
-        legacy_vocab_path = os.path.join(legacy_dir, "vocab-fr.txt")
+        legacy_vocab_path = os.path.join(legacy_dir, "glossary-fr.po")
         try:
             with open(vocab_path, "w", encoding="utf-8") as handle:
-                handle.write("save|enregistrer|verb|\n")
+                handle.write('msgid "save"\nmsgstr "enregistrer"\n')
             with open(rules_path, "w", encoding="utf-8") as handle:
                 handle.write("Use imperative tone.\n")
             with open(legacy_vocab_path, "w", encoding="utf-8") as handle:
-                handle.write("legacy\n")
+                handle.write('msgid "legacy"\nmsgstr "legacy"\n')
 
             detected_vocab, detected_rules = process_gui.detect_default_resource_paths(
                 "fr",
@@ -108,12 +108,12 @@ class ProcessGuiSmokeTests(unittest.TestCase):
         data_dir = os.path.join(os.getcwd(), "_tmp_gui_data_dir", "data", "locales", "fr")
         legacy_dir = os.path.join(os.getcwd(), "_tmp_gui_data_dir")
         vocab_dir = os.path.join(data_dir, "vocab")
-        vocab_file = os.path.join(vocab_dir, "colors.txt")
+        vocab_file = os.path.join(vocab_dir, "colors.po")
         rules_path = os.path.join(data_dir, "rules.md")
         try:
             os.makedirs(vocab_dir, exist_ok=True)
             with open(vocab_file, "w", encoding="utf-8") as handle:
-                handle.write("blue|bleu|adjective|\n")
+                handle.write('msgid "blue"\nmsgstr "bleu"\n')
             with open(rules_path, "w", encoding="utf-8") as handle:
                 handle.write("Use imperative tone.\n")
 
@@ -133,14 +133,64 @@ class ProcessGuiSmokeTests(unittest.TestCase):
             if os.path.isdir(data_dir):
                 os.removedirs(data_dir)
 
+    def test_detect_default_resource_paths_prefers_glossary_po_over_legacy_bundle(self):
+        data_dir = os.path.join(os.getcwd(), "_tmp_gui_glossary_pref", "data", "locales", "fr")
+        legacy_dir = os.path.join(os.getcwd(), "_tmp_gui_glossary_pref")
+        glossary_path = os.path.join(data_dir, "glossary.po")
+        vocab_path = os.path.join(data_dir, "vocab", "common.po")
+        rules_path = os.path.join(data_dir, "rules.md")
+        try:
+            os.makedirs(os.path.dirname(vocab_path), exist_ok=True)
+            with open(glossary_path, "w", encoding="utf-8") as handle:
+                handle.write('msgid "save"\nmsgstr "enregistrer"\n')
+            with open(vocab_path, "w", encoding="utf-8") as handle:
+                handle.write('msgid "save"\nmsgstr "enregistrer"\n')
+            with open(rules_path, "w", encoding="utf-8") as handle:
+                handle.write("Keep labels short.\n")
+
+            detected_vocab, detected_rules = process_gui.detect_default_resource_paths(
+                "fr",
+                base_dir=legacy_dir,
+            )
+
+            self.assertEqual(detected_vocab, glossary_path)
+            self.assertEqual(detected_rules, rules_path)
+        finally:
+            for path in (glossary_path, vocab_path, rules_path):
+                if os.path.exists(path):
+                    os.remove(path)
+            vocab_parent = os.path.dirname(vocab_path)
+            if os.path.isdir(vocab_parent):
+                os.rmdir(vocab_parent)
+            if os.path.isdir(data_dir):
+                os.removedirs(data_dir)
+
+    def test_detect_default_glossary_source_path_prefers_canonical_jsonl(self):
+        glossary_dir = os.path.join(os.getcwd(), "_tmp_gui_glossary", "data", "glossary")
+        base_dir = os.path.join(os.getcwd(), "_tmp_gui_glossary")
+        glossary_path = os.path.join(glossary_dir, "glossary.jsonl")
+        try:
+            os.makedirs(glossary_dir, exist_ok=True)
+            with open(glossary_path, "w", encoding="utf-8") as handle:
+                handle.write("{}\n")
+
+            detected = process_gui.detect_default_glossary_source_path(base_dir)
+
+            self.assertEqual(detected, glossary_path)
+        finally:
+            if os.path.exists(glossary_path):
+                os.remove(glossary_path)
+            if os.path.isdir(glossary_dir):
+                os.removedirs(glossary_dir)
+
     def test_choose_resource_field_value_preserves_manual_path(self):
         value, auto_value = process_gui.choose_resource_field_value(
-            current_value="C:\\manual\\vocab.txt",
+            current_value="C:\\manual\\glossary.po",
             previous_auto_value="C:\\auto\\old.txt",
             new_auto_value="C:\\auto\\new.txt",
         )
 
-        self.assertEqual(value, "C:\\manual\\vocab.txt")
+        self.assertEqual(value, "C:\\manual\\glossary.po")
         self.assertEqual(auto_value, "C:\\auto\\old.txt")
 
     def test_choose_resource_field_value_updates_auto_managed_path(self):
@@ -214,7 +264,7 @@ class ProcessGuiSmokeTests(unittest.TestCase):
                 input_file=input_path,
                 batch_size="abc",
                 parallel_requests="0",
-                vocab_path="missing-vocab.txt",
+                vocab_path="missing-glossary.po",
                 rules_path="missing-rules.md",
                 api_key="test-key",
             )
@@ -223,7 +273,7 @@ class ProcessGuiSmokeTests(unittest.TestCase):
 
             self.assertIn("Batch size must be a whole number.", errors)
             self.assertIn("Parallel requests must be greater than 0.", errors)
-            self.assertIn("Vocabulary file or directory does not exist: missing-vocab.txt", errors)
+            self.assertIn("Glossary file or directory does not exist: missing-glossary.po", errors)
             self.assertIn("Rules file does not exist: missing-rules.md", errors)
         finally:
             if os.path.exists(input_path):
@@ -249,7 +299,7 @@ class ProcessGuiSmokeTests(unittest.TestCase):
             errors = process_gui.validate_process_gui_config(config, environ={})
 
             self.assertFalse(
-                any("Vocabulary file or directory does not exist" in item for item in errors)
+                any("Glossary file or directory does not exist" in item for item in errors)
             )
         finally:
             for path in (input_path, vocab_file):
@@ -362,7 +412,7 @@ class ProcessGuiSmokeTests(unittest.TestCase):
                     "50",
                     "--parallel-requests",
                     "3",
-                    "--vocab",
+                    "--glossary",
                     input_path,
                     "--rules",
                     script_path,
@@ -713,7 +763,7 @@ class ProcessGuiSmokeTests(unittest.TestCase):
                     "80",
                     "--parallel-requests",
                     "4",
-                    "--vocab",
+                    "--glossary",
                     input_path,
                     "--mode",
                     "all",
@@ -741,7 +791,6 @@ class ProcessGuiSmokeTests(unittest.TestCase):
             config = process_gui.LocalExtractGuiConfig(
                 input_file=input_path,
                 source_lang="en",
-                target_lang="kk",
             )
 
             errors = process_gui.validate_local_extract_gui_config(config)
@@ -759,7 +808,6 @@ class ProcessGuiSmokeTests(unittest.TestCase):
             config = process_gui.LocalExtractGuiConfig(
                 input_file=input_dir,
                 source_lang="en",
-                target_lang="kk",
             )
 
             errors = process_gui.validate_local_extract_gui_config(config)
@@ -838,6 +886,28 @@ class ProcessGuiSmokeTests(unittest.TestCase):
             if os.path.isdir(input_dir):
                 os.rmdir(input_dir)
 
+    def test_validate_local_extract_config_rejects_missing_glossary_source(self):
+        input_path = os.path.join(os.getcwd(), "_tmp_gui_local_extract.po")
+        try:
+            with open(input_path, "w", encoding="utf-8") as handle:
+                handle.write('msgid "Open"\nmsgstr ""\n')
+
+            config = process_gui.LocalExtractGuiConfig(
+                input_file=input_path,
+                source_lang="en",
+                glossary_source_path="missing-glossary.jsonl",
+            )
+
+            errors = process_gui.validate_local_extract_gui_config(config)
+
+            self.assertIn(
+                "Glossary source file does not exist: missing-glossary.jsonl",
+                errors,
+            )
+        finally:
+            if os.path.exists(input_path):
+                os.remove(input_path)
+
     def test_build_local_extract_command_includes_local_flags(self):
         input_path = os.path.join(os.getcwd(), "_tmp_gui_local_extract.po")
         script_path = os.path.join(os.getcwd(), "_tmp_local_extract_script.py")
@@ -850,8 +920,7 @@ class ProcessGuiSmokeTests(unittest.TestCase):
             config = process_gui.LocalExtractGuiConfig(
                 input_file=input_path,
                 source_lang="en",
-                target_lang="fr",
-                vocab_path=input_path,
+                glossary_source_path=input_path,
                 mode="all",
                 max_length="3",
                 out_path="terms.json",
@@ -874,13 +943,11 @@ class ProcessGuiSmokeTests(unittest.TestCase):
                     input_path,
                     "--source-lang",
                     "en",
-                    "--target-lang",
-                    "fr",
                     "--mode",
                     "all",
                     "--max-length",
                     "3",
-                    "--vocab",
+                    "--glossary-source",
                     input_path,
                     "--include-rejected",
                     "--out",
@@ -945,7 +1012,6 @@ class ProcessGuiSmokeTests(unittest.TestCase):
             config = process_gui.LocalExtractGuiConfig(
                 input_file=input_path,
                 source_lang="en",
-                target_lang="kk",
                 also_po=True,
                 include_borderline=True,
                 out_path="terms.json",
@@ -967,8 +1033,6 @@ class ProcessGuiSmokeTests(unittest.TestCase):
                     input_path,
                     "--source-lang",
                     "en",
-                    "--target-lang",
-                    "kk",
                     "--mode",
                     "missing",
                     "--max-length",
@@ -1043,7 +1107,7 @@ class ProcessGuiSmokeTests(unittest.TestCase):
                     "60",
                     "--parallel-requests",
                     "2",
-                    "--vocab",
+                    "--glossary",
                     input_path,
                     "--rules",
                     script_path,
@@ -1190,7 +1254,7 @@ class ProcessGuiSmokeTests(unittest.TestCase):
                     "40",
                     "--parallel-requests",
                     "2",
-                    "--vocab",
+                    "--glossary",
                     source_path,
                     "--source-file",
                     source_path,

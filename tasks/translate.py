@@ -70,11 +70,11 @@ from core.resources import (
 from core.providers import DEFAULT_PROVIDER, DEFAULT_PROVIDER_NAME, TranslationProvider
 from core.request_contents import TaskRequestSpec, build_task_request_contents, render_text_fallback_prompt
 from core.task_cli import (
+    add_glossary_argument,
     add_language_arguments,
     add_provider_arguments,
     add_rules_arguments,
     add_runtime_limit_arguments,
-    add_vocabulary_argument,
     build_task_parser,
     resolve_provider_model,
     run_task_main,
@@ -390,7 +390,7 @@ class TranslationRunConfig:
     thinking_level: str | None
     batch_size: int | None
     parallel_requests: int | None
-    vocab: str | None
+    glossary: str | None
     rules: str | None
     rules_str: str | None
     retranslate_all: bool
@@ -437,7 +437,7 @@ def configure_parser(parser: argparse.ArgumentParser) -> argparse.ArgumentParser
         default_model=DEFAULT_PROVIDER.default_model,
     )
     add_runtime_limit_arguments(parser)
-    add_vocabulary_argument(parser)
+    add_glossary_argument(parser)
     add_rules_arguments(
         parser,
         rules_help="Optional translation rules/instructions file (auto: data/locales/<target-lang>/rules.md)",
@@ -473,7 +473,7 @@ def config_from_args(args: argparse.Namespace) -> TranslationRunConfig:
         thinking_level=args.thinking_level,
         batch_size=args.batch_size,
         parallel_requests=args.parallel_requests,
-        vocab=args.vocab,
+        glossary=args.glossary,
         rules=args.rules,
         rules_str=args.rules_str,
         retranslate_all=args.retranslate_all,
@@ -933,7 +933,7 @@ def run_translation(config: TranslationRunConfig) -> None:
         provider_name=config.provider,
         target_lang=config.target_lang,
         flex_mode=config.flex_mode,
-        explicit_vocab_path=config.vocab,
+        explicit_vocab_path=config.glossary,
         explicit_rules_path=config.rules,
         inline_rules=config.rules_str,
     )
@@ -975,7 +975,7 @@ def run_translation(config: TranslationRunConfig) -> None:
         ("Limits mode", limits_mode),
         ("Retranslate all", "yes" if config.retranslate_all else "no"),
         ("Warnings report", "yes" if config.warnings_report else "no"),
-        ("Vocabulary source", resource_context.vocabulary_source),
+        ("Glossary source", resource_context.vocabulary_source),
         ("Scoped vocabulary entries", len(scoped_vocabulary_entries)),
         ("Rules source", resource_context.rules_source or "none"),
         ("Source file", config.source_file or "embedded in input file"),
