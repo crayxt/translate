@@ -128,7 +128,12 @@ def load_local_glossary_pairs(glossary_path: str | None) -> List[Tuple[str, str]
     """Load source-side glossary terms for local missing-mode exclusion."""
     if not glossary_path:
         return []
-    return [(entry.source_term, "") for entry in load_glossary_source_terms(glossary_path)]
+    try:
+        return [(entry.source_term, "") for entry in load_glossary_source_terms(glossary_path)]
+    except FileNotFoundError as exc:
+        raise ValueError(f"Glossary source file '{glossary_path}' not found.") from exc
+    except OSError as exc:
+        raise ValueError(f"Could not read glossary source file '{glossary_path}': {exc}") from exc
 
 
 def configure_parser(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
@@ -230,8 +235,11 @@ def run_from_args(args: argparse.Namespace) -> None:
     except ValueError as exc:
         sys.exit(f"ERROR: {exc}")
 
-    vocabulary_path = resolve_local_glossary_path(args.glossary_source)
-    vocabulary_pairs = load_local_glossary_pairs(vocabulary_path)
+    try:
+        vocabulary_path = resolve_local_glossary_path(args.glossary_source)
+        vocabulary_pairs = load_local_glossary_pairs(vocabulary_path)
+    except ValueError as exc:
+        sys.exit(f"ERROR: {exc}")
     if not messages:
         print("No source messages found for local terminology extraction.")
         return

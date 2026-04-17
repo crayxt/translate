@@ -197,6 +197,37 @@ class ExtractTermsLocalSmokeTests(unittest.TestCase):
         finally:
             self._cleanup_paths(input_path, glossary_path, json_path)
 
+    def test_run_from_args_reports_missing_explicit_glossary_source_cleanly(self):
+        input_path = os.path.abspath("_tmp_extract_terms_local_missing_glossary.po")
+        self._cleanup_paths(input_path)
+
+        try:
+            with open(input_path, "w", encoding="utf-8") as handle:
+                handle.write('msgid "Open"\nmsgstr ""\n')
+
+            args = argparse.Namespace(
+                file=input_path,
+                source_lang="en",
+                glossary_source="missing-glossary.jsonl",
+                to_po=False,
+                also_po=False,
+                mode="missing",
+                max_length=1,
+                out=None,
+                include_rejected=False,
+                include_borderline=False,
+            )
+
+            with self.assertRaises(SystemExit) as raised:
+                extract_terms_local.run_from_args(args)
+
+            self.assertEqual(
+                str(raised.exception),
+                "ERROR: Glossary source file 'missing-glossary.jsonl' not found.",
+            )
+        finally:
+            self._cleanup_paths(input_path)
+
     def test_directory_extraction_keeps_identical_messages_from_different_files_distinct(self):
         input_root = os.path.abspath("_tmp_extract_terms_provenance")
         nested_root = os.path.join(input_root, "sub")
