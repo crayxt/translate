@@ -1,13 +1,18 @@
 # batching
 *.bat
 
-# translations
+# Exclude translations
+*.pot
 *.mo
 *.po
 *.ts
 *.resx
 *.resources
 *.strings
+
+# Include translations in data folder.
+!data/**/*.po
+!data/**/*.pot
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
@@ -61,10 +66,6 @@ coverage.xml
 .hypothesis/
 .pytest_cache/
 cover/
-
-# Translations
-*.mo
-*.pot
 
 # Django stuff:
 *.log
