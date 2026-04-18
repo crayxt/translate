@@ -79,6 +79,19 @@ class GeminiProviderSmokeTests(unittest.TestCase):
 
         self.assertIn("global endpoint", str(ctx.exception))
 
+    def test_build_generation_config_applies_seed_when_provided(self):
+        provider = GeminiTranslationProvider()
+
+        config = provider.build_generation_config(
+            thinking_level=None,
+            json_schema=None,
+            system_instruction="Test instruction",
+            flex_mode=False,
+            seed=42,
+        )
+
+        self.assertEqual(config.seed, 42)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -32,6 +32,7 @@ class TranslationProvider(Protocol):
         json_schema: dict[str, Any] | None,
         system_instruction: str | None,
         flex_mode: bool = False,
+        seed: int | None = None,
     ) -> Any:
         ...
 

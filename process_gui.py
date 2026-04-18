@@ -123,6 +123,7 @@ class ProcessGuiConfig:
     google_cloud_location: str = "global"
     model: str = DEFAULT_MODEL
     thinking_level: str = ""
+    seed: str = ""
     batch_size: str = DEFAULT_BATCH_SIZE_TEXT
     parallel_requests: str = DEFAULT_PARALLEL_REQUESTS_TEXT
     vocab_path: str = ""
@@ -144,6 +145,7 @@ class ExtractGuiConfig:
     google_cloud_location: str = "global"
     model: str = DEFAULT_MODEL
     thinking_level: str = ""
+    seed: str = ""
     batch_size: str = DEFAULT_BATCH_SIZE_TEXT
     parallel_requests: str = DEFAULT_PARALLEL_REQUESTS_TEXT
     vocab_path: str = ""
@@ -166,6 +168,7 @@ class CheckGuiConfig:
     google_cloud_location: str = "global"
     model: str = DEFAULT_MODEL
     thinking_level: str = ""
+    seed: str = ""
     batch_size: str = DEFAULT_BATCH_SIZE_TEXT
     parallel_requests: str = DEFAULT_PARALLEL_REQUESTS_TEXT
     vocab_path: str = ""
@@ -204,6 +207,7 @@ class ReviseGuiConfig:
     google_cloud_location: str = "global"
     model: str = DEFAULT_MODEL
     thinking_level: str = ""
+    seed: str = ""
     batch_size: str = DEFAULT_BATCH_SIZE_TEXT
     parallel_requests: str = DEFAULT_PARALLEL_REQUESTS_TEXT
     vocab_path: str = ""
@@ -252,6 +256,21 @@ def _validate_optional_positive_int(value: str, flag_name: str) -> str | None:
 
     if parsed <= 0:
         raise ValueError(f"{flag_name} must be greater than 0.")
+    return str(parsed)
+
+
+def _validate_optional_non_negative_int(value: str, flag_name: str) -> str | None:
+    cleaned = _clean(value)
+    if not cleaned:
+        return None
+
+    try:
+        parsed = int(cleaned)
+    except ValueError as exc:
+        raise ValueError(f"{flag_name} must be a whole number.") from exc
+
+    if parsed < 0:
+        raise ValueError(f"{flag_name} must be 0 or greater.")
     return str(parsed)
 
 
@@ -451,6 +470,7 @@ def _validate_base_config(
     google_cloud_location: str,
     model: str,
     thinking_level: str,
+    seed: str,
     batch_size: str,
     parallel_requests: str,
     vocab_path: str,
@@ -532,6 +552,11 @@ def _validate_base_config(
         except ValueError as exc:
             errors.append(str(exc))
 
+    try:
+        _validate_optional_non_negative_int(seed, "Seed")
+    except ValueError as exc:
+        errors.append(str(exc))
+
     if cleaned_vocab and not path_exists_as_file_or_dir(cleaned_vocab):
         errors.append(f"Glossary file or directory does not exist: {cleaned_vocab}")
 
@@ -573,6 +598,7 @@ def validate_process_gui_config(
         google_cloud_location=config.google_cloud_location,
         model=config.model,
         thinking_level=config.thinking_level,
+        seed=config.seed,
         batch_size=config.batch_size,
         parallel_requests=config.parallel_requests,
         vocab_path=config.vocab_path,
@@ -615,6 +641,7 @@ def validate_extract_gui_config(
         google_cloud_location=config.google_cloud_location,
         model=config.model,
         thinking_level=config.thinking_level,
+        seed=config.seed,
         batch_size=config.batch_size,
         parallel_requests=config.parallel_requests,
         vocab_path=config.vocab_path,
@@ -706,6 +733,7 @@ def validate_check_gui_config(
         google_cloud_location=config.google_cloud_location,
         model=config.model,
         thinking_level=config.thinking_level,
+        seed=config.seed,
         batch_size=config.batch_size,
         parallel_requests=config.parallel_requests,
         vocab_path=config.vocab_path,
@@ -761,6 +789,7 @@ def validate_revise_gui_config(
         google_cloud_location=config.google_cloud_location,
         model=config.model,
         thinking_level=config.thinking_level,
+        seed=config.seed,
         batch_size=config.batch_size,
         parallel_requests=config.parallel_requests,
         vocab_path=config.vocab_path,
@@ -811,6 +840,7 @@ def _append_common_cli_args(
     google_cloud_location: str,
     model: str,
     thinking_level: str,
+    seed: str,
     flex_mode: bool,
     batch_size: str,
     parallel_requests: str,
@@ -834,6 +864,10 @@ def _append_common_cli_args(
     thinking_level_value = _clean(thinking_level)
     if thinking_level_value:
         command.extend(["--thinking-level", thinking_level_value])
+
+    seed_value = _validate_optional_non_negative_int(seed, "Seed")
+    if seed_value:
+        command.extend(["--seed", seed_value])
 
     try:
         provider_spec = get_translation_provider(provider_name)
@@ -895,6 +929,7 @@ def build_process_command(
         google_cloud_location=config.google_cloud_location,
         model=config.model,
         thinking_level=config.thinking_level,
+        seed=config.seed,
         flex_mode=config.flex_mode,
         batch_size=config.batch_size,
         parallel_requests=config.parallel_requests,
@@ -950,6 +985,7 @@ def build_extract_command(
         google_cloud_location=config.google_cloud_location,
         model=config.model,
         thinking_level=config.thinking_level,
+        seed=config.seed,
         flex_mode=config.flex_mode,
         batch_size=config.batch_size,
         parallel_requests=config.parallel_requests,
@@ -1060,6 +1096,7 @@ def build_check_command(
         google_cloud_location=config.google_cloud_location,
         model=config.model,
         thinking_level=config.thinking_level,
+        seed=config.seed,
         flex_mode=config.flex_mode,
         batch_size=config.batch_size,
         parallel_requests=config.parallel_requests,
@@ -1129,6 +1166,7 @@ def build_revise_command(
         google_cloud_location=config.google_cloud_location,
         model=config.model,
         thinking_level=config.thinking_level,
+        seed=config.seed,
         flex_mode=config.flex_mode,
         batch_size=config.batch_size,
         parallel_requests=config.parallel_requests,
@@ -1249,6 +1287,7 @@ class BaseToolTab(ttk.Frame):
         self.gemini_backend_var = app.gemini_backend_var
         self.google_cloud_location_var = app.google_cloud_location_var
         self.thinking_level_var = app.thinking_level_var
+        self.seed_var = app.seed_var
         self.flex_mode_var = app.flex_mode_var
 
         self.input_file_var = tk.StringVar()
@@ -1268,6 +1307,7 @@ class BaseToolTab(ttk.Frame):
         self.system_prompt_text: ScrolledText | None = None
         self.flex_mode_button: ttk.Checkbutton | None = None
         self.thinking_level_combo: ttk.Combobox | None = None
+        self.seed_entry: ttk.Entry | None = None
         self.gemini_backend_combo: ttk.Combobox | None = None
         self.google_cloud_location_entry: ttk.Entry | None = None
 
@@ -1345,6 +1385,13 @@ class BaseToolTab(ttk.Frame):
                 values=THINKING_LEVEL_CHOICES,
             )
             self.thinking_level_combo.grid(row=row, column=1, sticky="ew", pady=4)
+            row += 1
+            ttk.Label(form, text="Seed").grid(row=row, column=0, sticky="w", pady=4)
+            self.seed_entry = ttk.Entry(
+                form,
+                textvariable=self.seed_var,
+            )
+            self.seed_entry.grid(row=row, column=1, sticky="ew", pady=4)
             row += 1
             self.flex_mode_button = ttk.Checkbutton(
                 form,
@@ -1630,6 +1677,7 @@ class BaseToolTab(ttk.Frame):
         if (
             self.flex_mode_button is None
             and self.thinking_level_combo is None
+            and self.seed_entry is None
             and self.gemini_backend_combo is None
         ):
             return
@@ -1640,10 +1688,12 @@ class BaseToolTab(ttk.Frame):
         except ValueError:
             flex_state = "disabled"
             thinking_state = "disabled"
+            seed_state = "disabled"
             gemini_state = "disabled"
         else:
             flex_state = "normal" if getattr(provider_spec, "supports_flex_mode", False) else "disabled"
             thinking_state = "normal" if getattr(provider_spec, "supports_thinking", False) else "disabled"
+            seed_state = "normal"
             gemini_state = "normal" if provider_name == "gemini" else "disabled"
         if self.flex_mode_button is not None:
             self.flex_mode_button.configure(state=flex_state)
@@ -1651,6 +1701,8 @@ class BaseToolTab(ttk.Frame):
             self.flex_mode_var.set(False)
         if self.thinking_level_combo is not None:
             self.thinking_level_combo.configure(state=thinking_state)
+        if self.seed_entry is not None:
+            self.seed_entry.configure(state=seed_state)
         if thinking_state == "disabled":
             self.thinking_level_var.set("")
         for widget in (
@@ -1904,6 +1956,7 @@ class ProcessToolTab(BaseToolTab):
             google_cloud_location=self.google_cloud_location_var.get(),
             model=self.model_var.get(),
             thinking_level=self.thinking_level_var.get(),
+            seed=self.seed_var.get(),
             batch_size=self.batch_size_var.get(),
             parallel_requests=self.parallel_requests_var.get(),
             vocab_path=self.vocab_path_var.get(),
@@ -1994,6 +2047,7 @@ class ExtractToolTab(BaseToolTab):
             google_cloud_location=self.google_cloud_location_var.get(),
             model=self.model_var.get(),
             thinking_level=self.thinking_level_var.get(),
+            seed=self.seed_var.get(),
             batch_size=self.batch_size_var.get(),
             parallel_requests=self.parallel_requests_var.get(),
             vocab_path=self.vocab_path_var.get(),
@@ -2266,6 +2320,7 @@ class CheckToolTab(BaseToolTab):
             google_cloud_location=self.google_cloud_location_var.get(),
             model=self.model_var.get(),
             thinking_level=self.thinking_level_var.get(),
+            seed=self.seed_var.get(),
             batch_size=self.batch_size_var.get(),
             parallel_requests=self.parallel_requests_var.get(),
             vocab_path=self.vocab_path_var.get(),
@@ -2393,6 +2448,7 @@ class ReviseToolTab(BaseToolTab):
             google_cloud_location=self.google_cloud_location_var.get(),
             model=self.model_var.get(),
             thinking_level=self.thinking_level_var.get(),
+            seed=self.seed_var.get(),
             batch_size=self.batch_size_var.get(),
             parallel_requests=self.parallel_requests_var.get(),
             vocab_path=self.vocab_path_var.get(),
@@ -2422,6 +2478,7 @@ class ProcessGuiApp(ttk.Frame):
         self.gemini_backend_var = tk.StringVar(value=DEFAULT_GEMINI_BACKEND)
         self.google_cloud_location_var = tk.StringVar(value="global")
         self.thinking_level_var = tk.StringVar()
+        self.seed_var = tk.StringVar()
         self.flex_mode_var = tk.BooleanVar(value=False)
         self.queue: queue.Queue[tuple[str, str, object]] = queue.Queue()
         self.process: subprocess.Popen[str] | None = None

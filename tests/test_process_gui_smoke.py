@@ -264,6 +264,7 @@ class ProcessGuiSmokeTests(unittest.TestCase):
                 input_file=input_path,
                 batch_size="abc",
                 parallel_requests="0",
+                seed="-1",
                 vocab_path="missing-glossary.po",
                 rules_path="missing-rules.md",
                 api_key="test-key",
@@ -273,6 +274,7 @@ class ProcessGuiSmokeTests(unittest.TestCase):
 
             self.assertIn("Batch size must be a whole number.", errors)
             self.assertIn("Parallel requests must be greater than 0.", errors)
+            self.assertIn("Seed must be 0 or greater.", errors)
             self.assertIn("Glossary file or directory does not exist: missing-glossary.po", errors)
             self.assertIn("Rules file does not exist: missing-rules.md", errors)
         finally:
@@ -371,6 +373,7 @@ class ProcessGuiSmokeTests(unittest.TestCase):
                 target_lang="fr",
                 model="gemini-test",
                 thinking_level="low",
+                seed="42",
                 batch_size="50",
                 parallel_requests="3",
                 vocab_path=input_path,
@@ -404,6 +407,8 @@ class ProcessGuiSmokeTests(unittest.TestCase):
                     "gemini-test",
                     "--thinking-level",
                     "low",
+                    "--seed",
+                    "42",
                     "--gemini-backend",
                     "vertex",
                     "--google-cloud-location",

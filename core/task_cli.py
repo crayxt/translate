@@ -62,6 +62,12 @@ def add_provider_arguments(
         default=None,
         help="Google Cloud location for Gemini Vertex AI mode (default: global)",
     )
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=None,
+        help="Optional random seed for supported providers (for Gemini/Vertex reproducibility).",
+    )
 
 
 def resolve_provider_model(

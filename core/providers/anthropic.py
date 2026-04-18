@@ -183,7 +183,9 @@ class AnthropicTranslationProvider:
         json_schema: dict[str, Any] | None,
         system_instruction: str | None,
         flex_mode: bool = False,
+        seed: int | None = None,
     ) -> dict[str, Any]:
+        _ = seed
         _ = flex_mode
         config: Dict[str, Any] = {"max_tokens": self.default_max_tokens}
         if system_instruction and system_instruction.strip():

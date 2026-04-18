@@ -141,6 +141,7 @@ class GeminiTranslationProvider:
         json_schema: dict[str, Any] | None,
         system_instruction: str | None,
         flex_mode: bool = False,
+        seed: int | None = None,
     ) -> genai_types.GenerateContentConfig:
         config_kwargs: Dict[str, Any] = {}
         response_schema = self._build_response_schema(json_schema)
@@ -156,6 +157,8 @@ class GeminiTranslationProvider:
         thinking_config = build_thinking_config(thinking_level)
         if thinking_config is not None:
             config_kwargs["thinking_config"] = thinking_config
+        if seed is not None:
+            config_kwargs["seed"] = int(seed)
         return genai_types.GenerateContentConfig(**config_kwargs)
 
     async def generate_with_retry(

@@ -184,14 +184,18 @@ def build_revision_generation_config(
     provider: TranslationProvider = DEFAULT_PROVIDER,
     system_instruction: str | None = None,
     flex_mode: bool = False,
+    seed: int | None = None,
 ) -> Any:
     """Build the provider generation config for revision batches."""
-    return provider.build_generation_config(
-        thinking_level=thinking_level,
-        json_schema=REVISION_RESPONSE_SCHEMA,
-        system_instruction=REVISION_SYSTEM_INSTRUCTION if system_instruction is None else system_instruction,
-        flex_mode=flex_mode,
-    )
+    config_kwargs: Dict[str, Any] = {
+        "thinking_level": thinking_level,
+        "json_schema": REVISION_RESPONSE_SCHEMA,
+        "system_instruction": REVISION_SYSTEM_INSTRUCTION if system_instruction is None else system_instruction,
+        "flex_mode": flex_mode,
+    }
+    if seed is not None:
+        config_kwargs["seed"] = seed
+    return provider.build_generation_config(**config_kwargs)
 
 
 def configure_stdio() -> None:
@@ -950,6 +954,7 @@ def run_from_args(args: argparse.Namespace) -> None:
         provider=provider,
         system_instruction=build_revision_system_instruction(args.target_lang),
         flex_mode=args.flex_mode,
+        seed=args.seed,
     )
     final_output_path = build_final_output_path(
         translated_file=args.file,
@@ -962,6 +967,7 @@ def run_from_args(args: argparse.Namespace) -> None:
         ("Model", model_name),
         ("Flex mode", "yes" if args.flex_mode and getattr(provider, "supports_flex_mode", False) else "no"),
         ("Thinking level", args.thinking_level or "provider default"),
+        ("Seed", args.seed if args.seed is not None else "none"),
         ("Parallel requests", parallel_requests),
         ("Batch size", batch_size),
         ("Limits mode", limits_mode),

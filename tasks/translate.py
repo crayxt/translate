@@ -230,13 +230,19 @@ def build_translation_generation_config(
     provider: TranslationProvider = DEFAULT_PROVIDER,
     system_instruction: str | None = None,
     flex_mode: bool = False,
+    seed: int | None = None,
 ) -> Any:
     """Build the provider generation config for translation batches."""
+    config_kwargs: Dict[str, Any] = {
+        "thinking_level": thinking_level,
+        "json_schema": TRANSLATION_RESPONSE_SCHEMA,
+        "system_instruction": SYSTEM_INSTRUCTION if system_instruction is None else system_instruction,
+        "flex_mode": flex_mode,
+    }
+    if seed is not None:
+        config_kwargs["seed"] = seed
     return provider.build_generation_config(
-        thinking_level=thinking_level,
-        json_schema=TRANSLATION_RESPONSE_SCHEMA,
-        system_instruction=SYSTEM_INSTRUCTION if system_instruction is None else system_instruction,
-        flex_mode=flex_mode,
+        **config_kwargs,
     )
 
 
@@ -388,6 +394,7 @@ class TranslationRunConfig:
     provider: str
     model: str
     thinking_level: str | None
+    seed: int | None
     batch_size: int | None
     parallel_requests: int | None
     glossary: str | None
@@ -471,6 +478,7 @@ def config_from_args(args: argparse.Namespace) -> TranslationRunConfig:
         provider=args.provider,
         model=resolve_provider_model(args.provider, args.model),
         thinking_level=args.thinking_level,
+        seed=args.seed,
         batch_size=args.batch_size,
         parallel_requests=args.parallel_requests,
         glossary=args.glossary,
@@ -960,6 +968,7 @@ def run_translation(config: TranslationRunConfig) -> None:
         config.thinking_level,
         provider=provider,
         flex_mode=config.flex_mode,
+        seed=config.seed,
     )
     scoped_vocabulary_entries = build_scoped_vocabulary_entries(resource_context.vocabulary_text)
 
@@ -970,6 +979,7 @@ def run_translation(config: TranslationRunConfig) -> None:
         ("Model", config.model),
         ("Flex mode", "yes" if config.flex_mode and getattr(provider, "supports_flex_mode", False) else "no"),
         ("Thinking level", config.thinking_level or "provider default"),
+        ("Seed", config.seed if config.seed is not None else "none"),
         ("Parallel requests", parallel_requests),
         ("Batch size", batch_size),
         ("Limits mode", limits_mode),

@@ -62,6 +62,8 @@ class TaskCliSmokeTests(unittest.TestCase):
                 "vertex",
                 "--google-cloud-location",
                 "global",
+                "--seed",
+                "42",
                 "--model",
                 "gemini-2.5-flash",
                 "--flex",
@@ -87,6 +89,7 @@ class TaskCliSmokeTests(unittest.TestCase):
         self.assertEqual(args.provider, "gemini")
         self.assertEqual(args.gemini_backend, "vertex")
         self.assertEqual(args.google_cloud_location, "global")
+        self.assertEqual(args.seed, 42)
         self.assertEqual(args.model, "gemini-2.5-flash")
         self.assertTrue(args.flex_mode)
         self.assertEqual(args.batch_size, 10)

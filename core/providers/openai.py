@@ -159,7 +159,9 @@ class OpenAITranslationProvider:
         json_schema: dict[str, Any] | None,
         system_instruction: str | None,
         flex_mode: bool = False,
+        seed: int | None = None,
     ) -> dict[str, Any]:
+        _ = seed
         config: Dict[str, Any] = {}
         if json_schema is not None:
             normalized_schema = self._normalize_response_schema(json_schema)
