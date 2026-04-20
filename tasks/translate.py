@@ -81,7 +81,6 @@ from core.task_cli import (
 )
 from core.runtime import (
     MIN_ITEMS_PER_WORKER,
-    build_thinking_config,
     resolve_runtime_limits,
 )
 from core.task_batches import build_fixed_batches, run_parallel_batches

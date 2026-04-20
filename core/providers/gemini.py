@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import os
 import sys
 from typing import Any, Dict
@@ -7,7 +8,67 @@ from typing import Any, Dict
 from google import genai
 from google.genai import types as genai_types
 
-from core.runtime import build_thinking_config, generate_with_retry
+from core.runtime import THINKING_LEVEL_CHOICES
+
+
+def build_thinking_config(thinking_level: str | None) -> genai_types.ThinkingConfig | None:
+    if thinking_level is None:
+        return None
+
+    normalized = str(thinking_level).strip().lower()
+    thinking_level_map = {
+        "minimal": genai_types.ThinkingLevel.MINIMAL,
+        "low": genai_types.ThinkingLevel.LOW,
+        "medium": genai_types.ThinkingLevel.MEDIUM,
+        "high": genai_types.ThinkingLevel.HIGH,
+    }
+    resolved = thinking_level_map.get(normalized)
+    if resolved is None:
+        raise ValueError(
+            f"Unsupported thinking level: {thinking_level!r}. "
+            f"Expected one of: {', '.join(THINKING_LEVEL_CHOICES)}"
+        )
+    return genai_types.ThinkingConfig(thinking_level=resolved)
+
+
+async def generate_content_async(
+    client: genai.Client,
+    model: str,
+    contents: Any,
+    config: genai_types.GenerateContentConfig | None = None,
+) -> Any:
+    if hasattr(client, "aio") and client.aio:
+        return await client.aio.models.generate_content(
+            model=model,
+            contents=contents,
+            config=config,
+        )
+    return await asyncio.to_thread(
+        client.models.generate_content,
+        model=model,
+        contents=contents,
+        config=config,
+    )
+
+
+async def generate_with_retry(
+    client: genai.Client,
+    model: str,
+    contents: Any,
+    batch_label: str,
+    max_attempts: int = 5,
+    config: genai_types.GenerateContentConfig | None = None,
+) -> Any:
+    for attempt in range(1, max_attempts + 1):
+        try:
+            return await generate_content_async(client, model, contents, config=config)
+        except Exception as exc:
+            print(f"\nAPI Error [{batch_label}] (Attempt {attempt}/{max_attempts}): {exc}")
+            if attempt == max_attempts:
+                raise RuntimeError(f"Aborting [{batch_label}] due to repeated API errors.") from exc
+            wait_time = 2 ** attempt
+            print(f"Retrying [{batch_label}] in {wait_time}s...")
+            await asyncio.sleep(wait_time)
 
 
 class GeminiTranslationProvider:

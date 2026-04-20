@@ -133,10 +133,6 @@ class ProcessSmokeTests(unittest.TestCase):
             ],
         )
 
-    def test_build_thinking_config_maps_cli_value(self):
-        config = process.build_thinking_config("high")
-        self.assertEqual(config.thinking_level, genai_types.ThinkingLevel.HIGH)
-
     def test_build_translation_generation_config_includes_thinking_level(self):
         config = process.build_translation_generation_config("minimal")
         self.assertEqual(

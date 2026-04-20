@@ -2,10 +2,16 @@ import os
 import unittest
 from unittest.mock import patch
 
-from core.providers.gemini import GeminiTranslationProvider
+from google.genai import types as genai_types
+
+from core.providers.gemini import GeminiTranslationProvider, build_thinking_config
 
 
 class GeminiProviderSmokeTests(unittest.TestCase):
+    def test_build_thinking_config_maps_cli_value(self):
+        config = build_thinking_config("high")
+        self.assertEqual(config.thinking_level, genai_types.ThinkingLevel.HIGH)
+
     def test_create_client_from_env_uses_ai_studio_api_key(self):
         provider = GeminiTranslationProvider()
 
