@@ -1529,12 +1529,19 @@ class ProcessSmokeTests(unittest.TestCase):
 
         self.assertIsNone(resolved)
 
-    def test_detect_default_text_resource_uses_exact_legacy_path(self):
+    def test_detect_default_text_resource_ignores_legacy_root_path(self):
         with patch("core.resources.os.path.isfile") as mocked_exists:
             mocked_exists.side_effect = lambda path: path == "rules-fr_CA.md"
             resolved = process.detect_default_text_resource("rules", "md", "fr_CA")
 
-        self.assertEqual(resolved, "rules-fr_CA.md")
+        self.assertIsNone(resolved)
+
+    def test_detect_default_text_resource_ignores_data_lang_path(self):
+        with patch("core.resources.os.path.isfile") as mocked_exists:
+            mocked_exists.side_effect = lambda path: path == os.path.join("data", "fr_CA", "rules.md")
+            resolved = process.detect_default_text_resource("rules", "md", "fr_CA")
+
+        self.assertIsNone(resolved)
 
     def test_detect_default_text_resource_supports_glossary_directory(self):
         glossary_dir = os.path.join("data", "locales", "fr", "glossary")

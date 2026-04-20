@@ -77,32 +77,50 @@ class ProcessGuiSmokeTests(unittest.TestCase):
 
     def test_detect_default_resource_paths_prefers_data_dir(self):
         data_dir = os.path.join(os.getcwd(), "_tmp_gui_data", "data", "locales", "fr")
-        legacy_dir = os.path.join(os.getcwd(), "_tmp_gui_data")
+        base_dir = os.path.join(os.getcwd(), "_tmp_gui_data")
         os.makedirs(data_dir, exist_ok=True)
         glossary_path = os.path.join(data_dir, "glossary.po")
         rules_path = os.path.join(data_dir, "rules.md")
-        legacy_glossary_path = os.path.join(legacy_dir, "glossary-fr.po")
         try:
             with open(glossary_path, "w", encoding="utf-8") as handle:
                 handle.write('msgid "save"\nmsgstr "enregistrer"\n')
             with open(rules_path, "w", encoding="utf-8") as handle:
                 handle.write("Use imperative tone.\n")
-            with open(legacy_glossary_path, "w", encoding="utf-8") as handle:
-                handle.write('msgid "legacy"\nmsgstr "legacy"\n')
 
             detected_glossary, detected_rules = process_gui.detect_default_resource_paths(
                 "fr",
-                base_dir=legacy_dir,
+                base_dir=base_dir,
             )
 
             self.assertEqual(detected_glossary, glossary_path)
             self.assertEqual(detected_rules, rules_path)
         finally:
-            for path in (glossary_path, rules_path, legacy_glossary_path):
+            for path in (glossary_path, rules_path):
                 if os.path.exists(path):
                     os.remove(path)
             if os.path.isdir(data_dir):
                 os.removedirs(data_dir)
+
+    def test_detect_default_resource_paths_ignores_legacy_root_glossary(self):
+        base_dir = os.path.join(os.getcwd(), "_tmp_gui_legacy_root")
+        glossary_path = os.path.join(base_dir, "glossary-fr.po")
+        try:
+            os.makedirs(base_dir, exist_ok=True)
+            with open(glossary_path, "w", encoding="utf-8") as handle:
+                handle.write('msgid "legacy"\nmsgstr "legacy"\n')
+
+            detected_glossary, detected_rules = process_gui.detect_default_resource_paths(
+                "fr",
+                base_dir=base_dir,
+            )
+
+            self.assertEqual(detected_glossary, "")
+            self.assertEqual(detected_rules, "")
+        finally:
+            if os.path.exists(glossary_path):
+                os.remove(glossary_path)
+            if os.path.isdir(base_dir):
+                os.rmdir(base_dir)
 
     def test_detect_default_resource_paths_supports_glossary_directory(self):
         data_dir = os.path.join(os.getcwd(), "_tmp_gui_data_dir", "data", "locales", "fr")
@@ -133,7 +151,7 @@ class ProcessGuiSmokeTests(unittest.TestCase):
             if os.path.isdir(data_dir):
                 os.removedirs(data_dir)
 
-    def test_detect_default_resource_paths_prefers_glossary_po_over_legacy_bundle(self):
+    def test_detect_default_resource_paths_prefers_glossary_po_over_directory_bundle(self):
         data_dir = os.path.join(os.getcwd(), "_tmp_gui_glossary_pref", "data", "locales", "fr")
         legacy_dir = os.path.join(os.getcwd(), "_tmp_gui_glossary_pref")
         glossary_path = os.path.join(data_dir, "glossary.po")

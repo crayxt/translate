@@ -547,28 +547,6 @@ def detect_default_text_resource(
             )
             if os.path.isfile(candidate_path):
                 return candidate_path
-    for lang_code in build_language_code_candidates(target_lang):
-        for candidate_prefix, candidate_extension, is_dir in candidate_specs:
-            if is_dir:
-                candidate_dir = build_candidate("data", lang_code, candidate_prefix)
-                if os.path.isdir(candidate_dir):
-                    return candidate_dir
-                continue
-            candidate_path = build_candidate(
-                "data",
-                lang_code,
-                f"{candidate_prefix}.{candidate_extension}",
-            )
-            if os.path.isfile(candidate_path):
-                return candidate_path
-    for lang_code in build_language_code_candidates(target_lang):
-        if prefix == "glossary":
-            glossary_legacy_path = build_candidate(f"glossary-{lang_code}.po")
-            if os.path.isfile(glossary_legacy_path):
-                return glossary_legacy_path
-        legacy_path = build_candidate(f"{prefix}-{lang_code}.{extension}")
-        if os.path.isfile(legacy_path):
-            return legacy_path
     return None
 
 
