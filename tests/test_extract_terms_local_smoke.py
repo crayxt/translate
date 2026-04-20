@@ -190,7 +190,7 @@ class ExtractTermsLocalSmokeTests(unittest.TestCase):
 
             with open(json_path, "r", encoding="utf-8") as handle:
                 payload = json.load(handle)
-            self.assertEqual(payload["vocabulary_path"], glossary_path)
+            self.assertEqual(payload["glossary_source_path"], glossary_path)
             self.assertIsNone(payload["target_lang"])
             self.assertEqual(payload["accepted_candidate_count"], 0)
             self.assertEqual(payload["translation_candidate_count"], 0)

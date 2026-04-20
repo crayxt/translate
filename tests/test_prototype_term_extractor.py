@@ -408,7 +408,7 @@ class PrototypeTermExtractorTests(unittest.TestCase):
             target_lang="kk",
             mode="all",
             max_length=3,
-            vocabulary_path=None,
+            glossary_source_path=None,
             total_source_messages=len(messages),
             result=result,
             include_rejected=True,

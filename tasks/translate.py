@@ -60,11 +60,11 @@ from core.resources import (
     build_language_code_candidates,
     detect_default_text_resource,
     detect_rules_source,
-    load_vocabulary_pairs,
+    load_glossary_pairs,
     merge_project_rules,
-    parse_vocabulary_line,
+    parse_glossary_line,
     read_optional_text_file,
-    read_optional_vocabulary_file,
+    read_optional_glossary_file,
     resolve_resource_path,
 )
 from core.providers import DEFAULT_PROVIDER, DEFAULT_PROVIDER_NAME, TranslationProvider
@@ -818,7 +818,7 @@ async def run_translation_batches(
     parallel_requests: int,
     source_lang: str,
     target_lang: str,
-    vocabulary_text: str | None,
+    glossary_text: str | None,
     project_rules: str | None,
     scoped_vocabulary_entries: List[ScopedVocabularyEntry],
     warning_items_by_output_path: Dict[str, List[Dict[str, Any]]] | None = None,
@@ -839,7 +839,7 @@ async def run_translation_batches(
             msg_map,
             source_lang,
             target_lang,
-            vocabulary_text,
+            glossary_text,
             project_rules,
             provider=provider,
         )
@@ -866,7 +866,7 @@ async def run_translation_batches(
                 retry_map,
                 source_lang,
                 target_lang,
-                vocabulary_text,
+                glossary_text,
                 project_rules,
                 provider=provider,
                 force_non_empty=True,
@@ -942,7 +942,7 @@ def run_translation(config: TranslationRunConfig) -> None:
         target_lang=config.target_lang,
         flex_mode=config.flex_mode,
         seed=config.seed,
-        explicit_vocab_path=config.glossary,
+        explicit_glossary_path=config.glossary,
         explicit_rules_path=config.rules,
         inline_rules=config.rules_str,
     )
@@ -971,7 +971,7 @@ def run_translation(config: TranslationRunConfig) -> None:
         flex_mode=config.flex_mode,
         seed=config.seed,
     )
-    scoped_vocabulary_entries = build_scoped_vocabulary_entries(resource_context.vocabulary_text)
+    scoped_vocabulary_entries = build_scoped_vocabulary_entries(resource_context.glossary_text)
 
     print_startup_configuration(
         ("Input files", len(file_jobs)),
@@ -986,7 +986,7 @@ def run_translation(config: TranslationRunConfig) -> None:
         ("Limits mode", limits_mode),
         ("Retranslate all", "yes" if config.retranslate_all else "no"),
         ("Warnings report", "yes" if config.warnings_report else "no"),
-        ("Glossary source", resource_context.vocabulary_source),
+        ("Glossary source", resource_context.glossary_source),
         ("Scoped vocabulary entries", len(scoped_vocabulary_entries)),
         ("Rules source", resource_context.rules_source or "none"),
         ("Source file", config.source_file or "embedded in input file"),
@@ -1012,7 +1012,7 @@ def run_translation(config: TranslationRunConfig) -> None:
                 parallel_requests=parallel_requests,
                 source_lang=config.source_lang,
                 target_lang=config.target_lang,
-                vocabulary_text=resource_context.vocabulary_text,
+                glossary_text=resource_context.glossary_text,
                 project_rules=resource_context.project_rules,
                 scoped_vocabulary_entries=scoped_vocabulary_entries,
                 warning_items_by_output_path=warning_items_by_output_path,

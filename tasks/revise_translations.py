@@ -943,7 +943,7 @@ def run_from_args(args: argparse.Namespace) -> None:
         target_lang=args.target_lang,
         flex_mode=args.flex_mode,
         seed=args.seed,
-        explicit_vocab_path=args.glossary,
+        explicit_glossary_path=args.glossary,
         explicit_rules_path=args.rules,
         inline_rules=args.rules_str,
     )
@@ -974,7 +974,7 @@ def run_from_args(args: argparse.Namespace) -> None:
         ("Limits mode", limits_mode),
         ("Review items", len(review_items)),
         ("Source file", args.source_file or "embedded in translated file"),
-        ("Glossary source", resource_context.vocabulary_source),
+        ("Glossary source", resource_context.glossary_source),
         ("Rules source", resource_context.rules_source or "none"),
         ("Output path", final_output_path),
         ("Dry run", "yes" if args.dry_run else "no"),
@@ -998,7 +998,7 @@ def run_from_args(args: argparse.Namespace) -> None:
                 source_lang=args.source_lang,
                 target_lang=args.target_lang,
                 instruction=args.instruction,
-                vocabulary=resource_context.vocabulary_text,
+                vocabulary=resource_context.glossary_text,
                 translation_rules=resource_context.project_rules,
                 provider=provider,
             )
@@ -1017,7 +1017,7 @@ def run_from_args(args: argparse.Namespace) -> None:
                 source_lang=args.source_lang,
                 target_lang=args.target_lang,
                 instruction=args.instruction,
-                vocabulary=resource_context.vocabulary_text,
+                vocabulary=resource_context.glossary_text,
                 translation_rules=resource_context.project_rules,
                 provider=provider,
             )

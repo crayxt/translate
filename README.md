@@ -330,7 +330,7 @@ By default, the toolkit looks up language resources from `data/locales/<target-l
 Auto-detected resources:
 
 - `data/locales/<target-lang>/glossary.po`
-- `data/locales/<target-lang>/vocab/`
+- `data/locales/<target-lang>/glossary/`
 - `data/locales/<target-lang>/rules.md`
 
 You can override both resources per run:
@@ -357,7 +357,7 @@ Recommended layout:
 data/
   locales/
     kk/
-      vocab/
+      glossary/
         common.po
         colors.po
         media.tbx

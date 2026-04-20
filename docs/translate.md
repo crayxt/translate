@@ -126,7 +126,7 @@ run_translation
                 \--> load_task_resource_context
                         |
                         +--> resolve_resource_path
-                        +--> read_optional_vocabulary_file
+                        +--> read_optional_glossary_file
                         +--> read_optional_text_file
                         +--> merge_project_rules
                         \--> detect_rules_source
@@ -165,7 +165,7 @@ run_translation
 5. `load_entries_for_translation()` dispatches to the format adapter:
    `load_po()`, `load_ts()`, `load_resx()`, `load_strings()`, `load_txt()`, or `load_paired_android_xml()`.
 6. `build_task_runtime_context()` creates the provider client and loads shared resources.
-7. `load_task_resource_context()` resolves glossary and rules files through `resolve_resource_path()`, `read_optional_vocabulary_file()`, `read_optional_text_file()`, `merge_project_rules()`, and `detect_rules_source()`.
+7. `load_task_resource_context()` resolves glossary and rules files through `resolve_resource_path()`, `read_optional_glossary_file()`, `read_optional_text_file()`, `merge_project_rules()`, and `detect_rules_source()`.
 8. `build_translation_queue()` flattens loaded files into entry-level work items using `select_work_items()`.
 9. `resolve_runtime_limits()` chooses batch size and concurrency, then `build_translation_generation_config()` builds the provider config.
 10. `build_scoped_vocabulary_entries()` precomputes glossary matchers for message-scoped hints.

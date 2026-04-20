@@ -6,7 +6,7 @@ import re
 from typing import Any, Dict, Iterable, List, Literal, Mapping, Tuple
 
 from core.entries import get_entry_prompt_context_and_note
-from core.resources import parse_vocabulary_fields
+from core.resources import parse_glossary_fields
 
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -419,7 +419,7 @@ def build_scoped_vocabulary_entries(vocabulary_text: str | None) -> List[ScopedV
         return entries
 
     for raw_line in vocabulary_text.splitlines():
-        parsed = parse_vocabulary_fields(raw_line)
+        parsed = parse_glossary_fields(raw_line)
         if not parsed:
             continue
         source_term, target_term, part_of_speech, context_note = parsed

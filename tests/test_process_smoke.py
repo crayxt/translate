@@ -1,4 +1,4 @@
-﻿import unittest
+import unittest
 from unittest.mock import AsyncMock, Mock, patch
 import os
 from types import SimpleNamespace
@@ -63,7 +63,7 @@ class ProcessSmokeTests(unittest.TestCase):
         self.assertIn("consistently", prompt.lower())
         self.assertIn("relevant_vocabulary", prompt)
 
-    def test_build_scoped_vocabulary_entries_parses_rich_vocabulary_text(self):
+    def test_build_scoped_vocabulary_entries_parses_rich_glossary_text(self):
         entries = process.build_scoped_vocabulary_entries(
             "start|бастау|verb|Start playback\nstart|басталу|noun|Playback start"
         )
@@ -162,25 +162,25 @@ class ProcessSmokeTests(unittest.TestCase):
         )
         self.assertNotIn("You are a professional software localization translator.", prompt)
 
-    def test_read_optional_vocabulary_file_supports_po_glossary(self):
-        vocab_path = os.path.join(os.getcwd(), "_tmp_vocab_glossary.po")
+    def test_read_optional_glossary_file_supports_po_glossary(self):
+        glossary_path = os.path.join(os.getcwd(), "_tmp_glossary_glossary.po")
         try:
             po = polib.POFile()
             po.append(polib.POEntry(msgid="addon", msgstr="qosymsha"))
             po.append(polib.POEntry(msgid="save as", msgstr="qalaysha saqtau"))
-            po.save(vocab_path)
+            po.save(glossary_path)
 
-            vocabulary = process.read_optional_vocabulary_file(vocab_path)
+            vocabulary = process.read_optional_glossary_file(glossary_path)
 
             self.assertEqual(vocabulary, "addon|qosymsha||\nsave as|qalaysha saqtau||")
         finally:
-            if os.path.exists(vocab_path):
-                os.remove(vocab_path)
+            if os.path.exists(glossary_path):
+                os.remove(glossary_path)
 
-    def test_read_optional_vocabulary_file_supports_tbx_glossary(self):
-        vocab_path = os.path.join(os.getcwd(), "_tmp_vocab_glossary.tbx")
+    def test_read_optional_glossary_file_supports_tbx_glossary(self):
+        glossary_path = os.path.join(os.getcwd(), "_tmp_glossary_glossary.tbx")
         try:
-            with open(vocab_path, "w", encoding="utf-8") as handle:
+            with open(glossary_path, "w", encoding="utf-8") as handle:
                 handle.write(
                     """<?xml version="1.0" encoding="UTF-8"?>
 <martif type="TBX" xml:lang="en">
@@ -201,20 +201,20 @@ class ProcessSmokeTests(unittest.TestCase):
 """
                 )
 
-            vocabulary = process.read_optional_vocabulary_file(vocab_path)
+            vocabulary = process.read_optional_glossary_file(glossary_path)
 
             self.assertEqual(vocabulary, "start|бастау||Start playback")
         finally:
-            if os.path.exists(vocab_path):
-                os.remove(vocab_path)
+            if os.path.exists(glossary_path):
+                os.remove(glossary_path)
 
-    def test_read_optional_vocabulary_file_supports_directory_bundle(self):
-        vocab_dir = os.path.join(os.getcwd(), "_tmp_vocab_bundle")
-        common_po_path = os.path.join(vocab_dir, "10-common.po")
-        po_path = os.path.join(vocab_dir, "30-overrides.po")
-        ignored_path = os.path.join(vocab_dir, "notes.md")
+    def test_read_optional_glossary_file_supports_directory_bundle(self):
+        glossary_dir = os.path.join(os.getcwd(), "_tmp_glossary_bundle")
+        common_po_path = os.path.join(glossary_dir, "10-common.po")
+        po_path = os.path.join(glossary_dir, "30-overrides.po")
+        ignored_path = os.path.join(glossary_dir, "notes.md")
         try:
-            os.makedirs(vocab_dir, exist_ok=True)
+            os.makedirs(glossary_dir, exist_ok=True)
             common_po = polib.POFile()
             common_po.append(polib.POEntry(msgid="save", msgstr="saqtau", msgctxt="verb"))
             common_po.append(polib.POEntry(msgid="open", msgstr="ashu", msgctxt="verb"))
@@ -226,7 +226,7 @@ class ProcessSmokeTests(unittest.TestCase):
             po.append(polib.POEntry(msgid="blue", msgstr="kok", msgctxt="adjective"))
             po.save(po_path)
 
-            vocabulary = process.read_optional_vocabulary_file(vocab_dir)
+            vocabulary = process.read_optional_glossary_file(glossary_dir)
 
             self.assertEqual(
                 vocabulary,
@@ -236,39 +236,39 @@ class ProcessSmokeTests(unittest.TestCase):
             for path in (common_po_path, po_path, ignored_path):
                 if os.path.exists(path):
                     os.remove(path)
-            if os.path.isdir(vocab_dir):
-                os.rmdir(vocab_dir)
+            if os.path.isdir(glossary_dir):
+                os.rmdir(glossary_dir)
 
-    def test_parse_vocabulary_line_parses_source_target_pairs(self):
-        parsed = process.parse_vocabulary_line("save as|qalaysha saqtau|verb phrase|")
+    def test_parse_glossary_line_parses_source_target_pairs(self):
+        parsed = process.parse_glossary_line("save as|qalaysha saqtau|verb phrase|")
         self.assertEqual(parsed, ("save as", "qalaysha saqtau"))
 
-    def test_parse_vocabulary_line_rejects_legacy_txt_schema(self):
-        parsed = process.parse_vocabulary_line("save as - qalaysha saqtau")
+    def test_parse_glossary_line_rejects_legacy_txt_schema(self):
+        parsed = process.parse_glossary_line("save as - qalaysha saqtau")
         self.assertIsNone(parsed)
 
-    def test_parse_vocabulary_line_supports_rich_schema(self):
-        parsed = process.parse_vocabulary_line("start|бастау|verb|Start playback")
+    def test_parse_glossary_line_supports_rich_schema(self):
+        parsed = process.parse_glossary_line("start|бастау|verb|Start playback")
         self.assertEqual(parsed, ("start", "бастау"))
 
-    def test_load_vocabulary_pairs_from_po_preserves_last_duplicate_wins(self):
-        vocab_path = os.path.join(os.getcwd(), "_tmp_vocab_pairs.po")
+    def test_load_glossary_pairs_from_po_preserves_last_duplicate_wins(self):
+        glossary_path = os.path.join(os.getcwd(), "_tmp_glossary_pairs.po")
         try:
             po = polib.POFile()
             po.append(polib.POEntry(msgid="save", msgstr="saqtau", msgctxt="verb"))
             po.append(polib.POEntry(msgid="save", msgstr="qoru", msgctxt="verb"))
             po.append(polib.POEntry(msgid="open", msgstr="ashu", msgctxt="verb"))
-            po.save(vocab_path)
+            po.save(glossary_path)
 
-            pairs = process.load_vocabulary_pairs(vocab_path)
+            pairs = process.load_glossary_pairs(glossary_path)
 
             self.assertEqual(pairs, [("save", "qoru"), ("open", "ashu")])
         finally:
-            if os.path.exists(vocab_path):
-                os.remove(vocab_path)
+            if os.path.exists(glossary_path):
+                os.remove(glossary_path)
 
-    def test_load_vocabulary_pairs_preserves_same_source_with_different_rich_context(self):
-        vocab_path = os.path.join(os.getcwd(), "_tmp_vocab_pairs_rich.po")
+    def test_load_glossary_pairs_preserves_same_source_with_different_rich_context(self):
+        glossary_path = os.path.join(os.getcwd(), "_tmp_glossary_pairs_rich.po")
         try:
             po = polib.POFile()
             first = polib.POEntry(msgid="start", msgstr="бастау", msgctxt="verb")
@@ -277,21 +277,21 @@ class ProcessSmokeTests(unittest.TestCase):
             second = polib.POEntry(msgid="start", msgstr="басталу", msgctxt="noun")
             second.tcomment = "Playback start"
             po.append(second)
-            po.save(vocab_path)
+            po.save(glossary_path)
 
-            pairs = process.load_vocabulary_pairs(vocab_path)
+            pairs = process.load_glossary_pairs(glossary_path)
 
             self.assertEqual(pairs, [("start", "бастау"), ("start", "басталу")])
         finally:
-            if os.path.exists(vocab_path):
-                os.remove(vocab_path)
+            if os.path.exists(glossary_path):
+                os.remove(glossary_path)
 
-    def test_load_vocabulary_pairs_from_directory_bundle_last_duplicate_wins(self):
-        vocab_dir = os.path.join(os.getcwd(), "_tmp_vocab_pairs_bundle")
-        first_path = os.path.join(vocab_dir, "10-common.po")
-        second_path = os.path.join(vocab_dir, "20-colors.po")
+    def test_load_glossary_pairs_from_directory_bundle_last_duplicate_wins(self):
+        glossary_dir = os.path.join(os.getcwd(), "_tmp_glossary_pairs_bundle")
+        first_path = os.path.join(glossary_dir, "10-common.po")
+        second_path = os.path.join(glossary_dir, "20-colors.po")
         try:
-            os.makedirs(vocab_dir, exist_ok=True)
+            os.makedirs(glossary_dir, exist_ok=True)
             first_po = polib.POFile()
             first_po.append(polib.POEntry(msgid="save", msgstr="saqtau", msgctxt="verb"))
             first_po.append(polib.POEntry(msgid="open", msgstr="ashu", msgctxt="verb"))
@@ -301,7 +301,7 @@ class ProcessSmokeTests(unittest.TestCase):
             second_po.append(polib.POEntry(msgid="blue", msgstr="kok", msgctxt="adjective"))
             second_po.save(second_path)
 
-            pairs = process.load_vocabulary_pairs(vocab_dir)
+            pairs = process.load_glossary_pairs(glossary_dir)
 
             self.assertEqual(
                 pairs,
@@ -311,15 +311,15 @@ class ProcessSmokeTests(unittest.TestCase):
             for path in (first_path, second_path):
                 if os.path.exists(path):
                     os.remove(path)
-            if os.path.isdir(vocab_dir):
-                os.rmdir(vocab_dir)
+            if os.path.isdir(glossary_dir):
+                os.rmdir(glossary_dir)
 
-    def test_load_vocabulary_pairs_from_directory_bundle_supports_tbx(self):
-        vocab_dir = os.path.join(os.getcwd(), "_tmp_vocab_tbx_bundle")
-        tbx_path = os.path.join(vocab_dir, "10-common.tbx")
-        po_path = os.path.join(vocab_dir, "20-overrides.po")
+    def test_load_glossary_pairs_from_directory_bundle_supports_tbx(self):
+        glossary_dir = os.path.join(os.getcwd(), "_tmp_glossary_tbx_bundle")
+        tbx_path = os.path.join(glossary_dir, "10-common.tbx")
+        po_path = os.path.join(glossary_dir, "20-overrides.po")
         try:
-            os.makedirs(vocab_dir, exist_ok=True)
+            os.makedirs(glossary_dir, exist_ok=True)
             with open(tbx_path, "w", encoding="utf-8") as handle:
                 handle.write(
                     """<?xml version="1.0" encoding="UTF-8"?>
@@ -343,45 +343,45 @@ class ProcessSmokeTests(unittest.TestCase):
             po.append(polib.POEntry(msgid="save", msgstr="қору"))
             po.save(po_path)
 
-            pairs = process.load_vocabulary_pairs(vocab_dir)
+            pairs = process.load_glossary_pairs(glossary_dir)
 
             self.assertEqual(pairs, [("save", "қору"), ("open", "ашу")])
         finally:
             for path in (tbx_path, po_path):
                 if os.path.exists(path):
                     os.remove(path)
-            if os.path.isdir(vocab_dir):
-                os.rmdir(vocab_dir)
+            if os.path.isdir(glossary_dir):
+                os.rmdir(glossary_dir)
 
-    def test_read_optional_vocabulary_file_rejects_txt_glossary(self):
-        vocab_path = os.path.join(os.getcwd(), "_tmp_vocab_rich.txt")
+    def test_read_optional_glossary_file_rejects_txt_glossary(self):
+        glossary_path = os.path.join(os.getcwd(), "_tmp_glossary_rich.txt")
         try:
-            with open(vocab_path, "w", encoding="utf-8") as f:
+            with open(glossary_path, "w", encoding="utf-8") as f:
                 f.write("start|бастау|verb|Start playback\n")
                 f.write("start|басталу|noun|Playback start\n")
 
-            vocabulary = process.read_optional_vocabulary_file(vocab_path)
+            vocabulary = process.read_optional_glossary_file(glossary_path)
 
             self.assertIsNone(vocabulary)
         finally:
-            if os.path.exists(vocab_path):
-                os.remove(vocab_path)
+            if os.path.exists(glossary_path):
+                os.remove(glossary_path)
 
-    def test_read_optional_vocabulary_file_returns_none_for_legacy_txt_schema(self):
-        vocab_path = os.path.join(os.getcwd(), "_tmp_vocab_legacy.txt")
+    def test_read_optional_glossary_file_returns_none_for_legacy_txt_schema(self):
+        glossary_path = os.path.join(os.getcwd(), "_tmp_glossary_legacy.txt")
         try:
-            with open(vocab_path, "w", encoding="utf-8") as f:
+            with open(glossary_path, "w", encoding="utf-8") as f:
                 f.write("save - saqtau\n")
 
-            vocabulary = process.read_optional_vocabulary_file(vocab_path)
+            vocabulary = process.read_optional_glossary_file(glossary_path)
 
             self.assertIsNone(vocabulary)
         finally:
-            if os.path.exists(vocab_path):
-                os.remove(vocab_path)
+            if os.path.exists(glossary_path):
+                os.remove(glossary_path)
 
-    def test_read_optional_vocabulary_file_skips_untranslated_fuzzy_and_obsolete_po_entries(self):
-        vocab_path = os.path.join(os.getcwd(), "_tmp_vocab_glossary_filtered.po")
+    def test_read_optional_glossary_file_skips_untranslated_fuzzy_and_obsolete_po_entries(self):
+        glossary_path = os.path.join(os.getcwd(), "_tmp_glossary_glossary_filtered.po")
         try:
             po = polib.POFile()
             po.append(polib.POEntry(msgid="addon", msgstr="qosymsha"))
@@ -389,33 +389,33 @@ class ProcessSmokeTests(unittest.TestCase):
             po.append(polib.POEntry(msgid="needs review", msgstr="tekseru", flags=["fuzzy"]))
             obsolete = polib.POEntry(msgid="old term", msgstr="old target", obsolete=True)
             po.append(obsolete)
-            po.save(vocab_path)
+            po.save(glossary_path)
 
-            vocabulary = process.read_optional_vocabulary_file(vocab_path)
+            vocabulary = process.read_optional_glossary_file(glossary_path)
 
             self.assertEqual(vocabulary, "addon|qosymsha||")
         finally:
-            if os.path.exists(vocab_path):
-                os.remove(vocab_path)
+            if os.path.exists(glossary_path):
+                os.remove(glossary_path)
 
-    def test_read_optional_vocabulary_file_includes_po_context_and_note_fields(self):
-        vocab_path = os.path.join(os.getcwd(), "_tmp_vocab_glossary_context.po")
+    def test_read_optional_glossary_file_includes_po_context_and_note_fields(self):
+        glossary_path = os.path.join(os.getcwd(), "_tmp_glossary_glossary_context.po")
         try:
             po = polib.POFile()
             entry = polib.POEntry(msgid="start", msgstr="бастау", msgctxt="verb")
             entry.tcomment = "Start playback"
             po.append(entry)
-            po.save(vocab_path)
+            po.save(glossary_path)
 
-            vocabulary = process.read_optional_vocabulary_file(vocab_path)
+            vocabulary = process.read_optional_glossary_file(glossary_path)
 
             self.assertEqual(vocabulary, "start|бастау|verb|Start playback")
         finally:
-            if os.path.exists(vocab_path):
-                os.remove(vocab_path)
+            if os.path.exists(glossary_path):
+                os.remove(glossary_path)
 
-    def test_read_optional_vocabulary_file_supports_generated_glossary_catalog_po(self):
-        vocab_path = os.path.join(os.getcwd(), "_tmp_vocab_glossary_catalog.po")
+    def test_read_optional_glossary_file_supports_generated_glossary_catalog_po(self):
+        glossary_path = os.path.join(os.getcwd(), "_tmp_glossary_glossary_catalog.po")
         try:
             po = polib.POFile()
             entry = polib.POEntry(
@@ -425,17 +425,17 @@ class ProcessSmokeTests(unittest.TestCase):
             )
             entry.comment = "ID: line.noun.text\nPOS: noun\nSense: text"
             po.append(entry)
-            po.save(vocab_path)
+            po.save(glossary_path)
 
-            vocabulary = process.read_optional_vocabulary_file(vocab_path)
+            vocabulary = process.read_optional_glossary_file(glossary_path)
 
             self.assertEqual(
                 vocabulary,
                 "line|жол|noun|line of text, text layout, editor text",
             )
         finally:
-            if os.path.exists(vocab_path):
-                os.remove(vocab_path)
+            if os.path.exists(glossary_path):
+                os.remove(glossary_path)
 
     def test_load_po_uses_wrapwidth_78(self):
         with patch("core.formats.po.polib.pofile", return_value=polib.POFile()) as mocked_pofile:
@@ -502,14 +502,14 @@ class ProcessSmokeTests(unittest.TestCase):
         root_dir = os.path.join(os.getcwd(), "_tmp_translate_repo_root")
         source_dir = os.path.join(root_dir, "locale")
         source_po = os.path.join(source_dir, "source.po")
-        vocab_dir = os.path.join(root_dir, "data", "locales", "kk")
-        glossary_po = os.path.join(vocab_dir, "glossary.po")
+        glossary_dir = os.path.join(root_dir, "data", "locales", "kk")
+        glossary_po = os.path.join(glossary_dir, "glossary.po")
         logs_dir = os.path.join(root_dir, "logs")
         log_txt = os.path.join(logs_dir, "run.txt")
         requirements_txt = os.path.join(root_dir, "requirements.txt")
         try:
             os.makedirs(source_dir, exist_ok=True)
-            os.makedirs(vocab_dir, exist_ok=True)
+            os.makedirs(glossary_dir, exist_ok=True)
             os.makedirs(logs_dir, exist_ok=True)
             with open(source_po, "w", encoding="utf-8") as handle:
                 handle.write('msgid "One"\nmsgstr ""\n')
@@ -531,7 +531,7 @@ class ProcessSmokeTests(unittest.TestCase):
             for path in (source_po, glossary_po, log_txt, requirements_txt):
                 if os.path.exists(path):
                     os.remove(path)
-            for path in (source_dir, vocab_dir, logs_dir):
+            for path in (source_dir, glossary_dir, logs_dir):
                 if os.path.isdir(path):
                     os.rmdir(path)
             data_locales_dir = os.path.join(root_dir, "data", "locales")
@@ -1050,7 +1050,7 @@ class ProcessSmokeTests(unittest.TestCase):
                 parallel_requests=1,
                 source_lang="en",
                 target_lang="kk",
-                vocabulary_text=None,
+                glossary_text=None,
                 project_rules=None,
                 scoped_vocabulary_entries=[],
             )
@@ -1536,21 +1536,21 @@ class ProcessSmokeTests(unittest.TestCase):
 
         self.assertEqual(resolved, "rules-fr_CA.md")
 
-    def test_detect_default_text_resource_supports_vocab_directory(self):
-        vocab_dir = os.path.join("data", "locales", "fr", "vocab")
+    def test_detect_default_text_resource_supports_glossary_directory(self):
+        glossary_dir = os.path.join("data", "locales", "fr", "glossary")
         with (
             patch("core.resources.os.path.isfile", return_value=False),
             patch("core.resources.os.path.isdir") as mocked_isdir,
         ):
-            mocked_isdir.side_effect = lambda path: path == vocab_dir
+            mocked_isdir.side_effect = lambda path: path == glossary_dir
             resolved = process.detect_default_text_resource(
-                "vocab",
-                "txt",
+                "glossary",
+                "po",
                 "fr",
                 allow_directory=True,
             )
 
-        self.assertEqual(resolved, vocab_dir)
+        self.assertEqual(resolved, glossary_dir)
 
     def test_run_translation_skips_outputs_for_jobs_with_no_work_items(self):
         active_job = process.TranslationFileJob(
@@ -1571,9 +1571,9 @@ class ProcessSmokeTests(unittest.TestCase):
             provider=SimpleNamespace(name="gemini", supports_flex_mode=False),
             client=object(),
             resources=SimpleNamespace(
-                vocabulary_text=None,
+                glossary_text=None,
                 project_rules=None,
-                vocabulary_source="none",
+                glossary_source="none",
                 rules_source=None,
             ),
         )
@@ -1636,9 +1636,9 @@ class ProcessSmokeTests(unittest.TestCase):
             provider=SimpleNamespace(name="gemini", supports_flex_mode=False),
             client=object(),
             resources=SimpleNamespace(
-                vocabulary_text=None,
+                glossary_text=None,
                 project_rules=None,
-                vocabulary_source="none",
+                glossary_source="none",
                 rules_source=None,
             ),
         )

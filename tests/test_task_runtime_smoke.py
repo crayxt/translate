@@ -29,14 +29,14 @@ class TaskRuntimeSmokeTests(unittest.TestCase):
         self.assertEqual(mode, "defaults")
 
     def test_build_task_runtime_context_builds_provider_client_and_resources(self):
-        resources = TaskResourceContext(vocabulary_source="file:glossary.po", rules_source="file:rules.md")
+        resources = TaskResourceContext(glossary_source="file:glossary.po", rules_source="file:rules.md")
         provider = _DummyProvider()
 
         context = build_task_runtime_context(
             provider_name="dummy",
             target_lang="kk",
             flex_mode=True,
-            explicit_vocab_path="glossary.po",
+            explicit_glossary_path="glossary.po",
             explicit_rules_path="rules.md",
             inline_rules="Rule A",
             get_translation_provider_fn=lambda name: provider,

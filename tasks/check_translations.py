@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env python3
+#!/usr/bin/env python3
 
 import argparse
 import asyncio
@@ -509,7 +509,7 @@ def run_from_args(args: argparse.Namespace) -> None:
         target_lang=args.target_lang,
         flex_mode=args.flex_mode,
         seed=args.seed,
-        explicit_vocab_path=args.glossary,
+        explicit_glossary_path=args.glossary,
         explicit_rules_path=args.rules,
         inline_rules=args.rules_str,
     )
@@ -559,7 +559,7 @@ def run_from_args(args: argparse.Namespace) -> None:
         ("Parallel requests", parallel_requests),
         ("Batch size", batch_size),
         ("Limits mode", limits_mode),
-        ("Glossary source", resource_context.vocabulary_source),
+        ("Glossary source", resource_context.glossary_source),
         ("Rules source", resource_context.rules_source or "none"),
         ("Probe limit", args.num_messages if args.num_messages is not None else "none"),
         ("Total translated entries", total),
@@ -580,7 +580,7 @@ def run_from_args(args: argparse.Namespace) -> None:
                 messages=build_indexed_batch_map(batch, build_check_message_payload),
                 source_lang=args.source_lang,
                 target_lang=args.target_lang,
-                vocabulary=resource_context.vocabulary_text,
+                vocabulary=resource_context.glossary_text,
                 translation_rules=resource_context.project_rules,
                 provider=provider,
             )
@@ -655,7 +655,7 @@ def run_from_args(args: argparse.Namespace) -> None:
         "model": model_name,
         "source_lang": args.source_lang,
         "target_lang": args.target_lang,
-        "vocabulary_source": resource_context.vocabulary_source,
+        "glossary_source": resource_context.glossary_source,
         "rules_source": resource_context.rules_source or "none",
         "generated_at_utc": datetime.now(timezone.utc).isoformat(),
         "probe_limit": args.num_messages,

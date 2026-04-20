@@ -65,7 +65,7 @@ TRANSLATABLE_FILETYPES = [
     ("Android XML files", "*.xml"),
     ("All files", "*.*"),
 ]
-VOCAB_FILETYPES = [
+GLOSSARY_FILETYPES = [
     ("Glossary files", "*.po *.tbx"),
     ("PO files", "*.po"),
     ("TBX files", "*.tbx"),
@@ -126,7 +126,7 @@ class ProcessGuiConfig:
     seed: str = ""
     batch_size: str = DEFAULT_BATCH_SIZE_TEXT
     parallel_requests: str = DEFAULT_PARALLEL_REQUESTS_TEXT
-    vocab_path: str = ""
+    glossary_path: str = ""
     rules_path: str = ""
     rules_str: str = ""
     api_key: str = ""
@@ -148,7 +148,7 @@ class ExtractGuiConfig:
     seed: str = ""
     batch_size: str = DEFAULT_BATCH_SIZE_TEXT
     parallel_requests: str = DEFAULT_PARALLEL_REQUESTS_TEXT
-    vocab_path: str = ""
+    glossary_path: str = ""
     api_key: str = ""
     flex_mode: bool = False
     mode: str = "missing"
@@ -171,7 +171,7 @@ class CheckGuiConfig:
     seed: str = ""
     batch_size: str = DEFAULT_BATCH_SIZE_TEXT
     parallel_requests: str = DEFAULT_PARALLEL_REQUESTS_TEXT
-    vocab_path: str = ""
+    glossary_path: str = ""
     rules_path: str = ""
     rules_str: str = ""
     api_key: str = ""
@@ -210,7 +210,7 @@ class ReviseGuiConfig:
     seed: str = ""
     batch_size: str = DEFAULT_BATCH_SIZE_TEXT
     parallel_requests: str = DEFAULT_PARALLEL_REQUESTS_TEXT
-    vocab_path: str = ""
+    glossary_path: str = ""
     rules_path: str = ""
     rules_str: str = ""
     api_key: str = ""
@@ -328,7 +328,7 @@ def detect_default_resource_path(
             extension,
             target_lang,
             base_dir=build_resource_root(base_dir),
-            allow_directory=prefix == "vocab",
+            allow_directory=prefix == "glossary",
         )
         or ""
     )
@@ -339,7 +339,7 @@ def detect_default_resource_paths(
     base_dir: str | None = None,
 ) -> tuple[str, str]:
     return (
-        detect_default_resource_path("vocab", "txt", target_lang, base_dir=base_dir),
+        detect_default_resource_path("glossary", "po", target_lang, base_dir=base_dir),
         detect_default_resource_path("rules", "md", target_lang, base_dir=base_dir),
     )
 
@@ -473,7 +473,7 @@ def _validate_base_config(
     seed: str,
     batch_size: str,
     parallel_requests: str,
-    vocab_path: str,
+    glossary_path: str,
     api_key: str,
     environ: dict[str, str] | None = None,
     rules_path: str = "",
@@ -489,7 +489,7 @@ def _validate_base_config(
     cleaned_provider = _clean(provider)
     cleaned_gemini_backend = _clean(gemini_backend).lower()
     cleaned_google_cloud_location = _clean(google_cloud_location)
-    cleaned_vocab = _clean(vocab_path)
+    cleaned_glossary = _clean(glossary_path)
     cleaned_rules = _clean(rules_path)
     cleaned_api_key = _clean(api_key)
 
@@ -557,8 +557,8 @@ def _validate_base_config(
     except ValueError as exc:
         errors.append(str(exc))
 
-    if cleaned_vocab and not path_exists_as_file_or_dir(cleaned_vocab):
-        errors.append(f"Glossary file or directory does not exist: {cleaned_vocab}")
+    if cleaned_glossary and not path_exists_as_file_or_dir(cleaned_glossary):
+        errors.append(f"Glossary file or directory does not exist: {cleaned_glossary}")
 
     if cleaned_rules and not os.path.isfile(cleaned_rules):
         errors.append(f"Rules file does not exist: {cleaned_rules}")
@@ -601,7 +601,7 @@ def validate_process_gui_config(
         seed=config.seed,
         batch_size=config.batch_size,
         parallel_requests=config.parallel_requests,
-        vocab_path=config.vocab_path,
+        glossary_path=config.glossary_path,
         rules_path=config.rules_path,
         api_key=config.api_key,
         environ=environ,
@@ -644,7 +644,7 @@ def validate_extract_gui_config(
         seed=config.seed,
         batch_size=config.batch_size,
         parallel_requests=config.parallel_requests,
-        vocab_path=config.vocab_path,
+        glossary_path=config.glossary_path,
         api_key=config.api_key,
         environ=environ,
     )
@@ -736,7 +736,7 @@ def validate_check_gui_config(
         seed=config.seed,
         batch_size=config.batch_size,
         parallel_requests=config.parallel_requests,
-        vocab_path=config.vocab_path,
+        glossary_path=config.glossary_path,
         rules_path=config.rules_path,
         api_key=config.api_key,
         environ=environ,
@@ -792,7 +792,7 @@ def validate_revise_gui_config(
         seed=config.seed,
         batch_size=config.batch_size,
         parallel_requests=config.parallel_requests,
-        vocab_path=config.vocab_path,
+        glossary_path=config.glossary_path,
         rules_path=config.rules_path,
         api_key=config.api_key,
         environ=environ,
@@ -844,7 +844,7 @@ def _append_common_cli_args(
     flex_mode: bool,
     batch_size: str,
     parallel_requests: str,
-    vocab_path: str = "",
+    glossary_path: str = "",
 ) -> None:
     provider_name = _clean(provider) or DEFAULT_PROVIDER
     model_name = resolve_provider_model(provider_name, _clean(model) or None)
@@ -894,9 +894,9 @@ def _append_common_cli_args(
     if parallel_value:
         command.extend(["--parallel-requests", parallel_value])
 
-    vocab_value = _clean(vocab_path)
-    if vocab_value:
-        command.extend(["--glossary", vocab_value])
+    glossary_value = _clean(glossary_path)
+    if glossary_value:
+        command.extend(["--glossary", glossary_value])
 
 
 def build_process_command(
@@ -933,7 +933,7 @@ def build_process_command(
         flex_mode=config.flex_mode,
         batch_size=config.batch_size,
         parallel_requests=config.parallel_requests,
-        vocab_path=config.vocab_path,
+        glossary_path=config.glossary_path,
     )
 
     rules_path = _clean(config.rules_path)
@@ -989,7 +989,7 @@ def build_extract_command(
         flex_mode=config.flex_mode,
         batch_size=config.batch_size,
         parallel_requests=config.parallel_requests,
-        vocab_path=config.vocab_path,
+        glossary_path=config.glossary_path,
     )
     command.extend(["--mode", _clean(config.mode) or "missing"])
     command.extend(["--out-format", _clean(config.out_format) or "po"])
@@ -1100,7 +1100,7 @@ def build_check_command(
         flex_mode=config.flex_mode,
         batch_size=config.batch_size,
         parallel_requests=config.parallel_requests,
-        vocab_path=config.vocab_path,
+        glossary_path=config.glossary_path,
     )
 
     rules_path = _clean(config.rules_path)
@@ -1170,7 +1170,7 @@ def build_revise_command(
         flex_mode=config.flex_mode,
         batch_size=config.batch_size,
         parallel_requests=config.parallel_requests,
-        vocab_path=config.vocab_path,
+        glossary_path=config.glossary_path,
     )
 
     source_file = _clean(config.source_file)
@@ -1259,7 +1259,7 @@ class BaseToolTab(ttk.Frame):
         title: str,
         script_name: str,
         input_filetypes: list[tuple[str, str]],
-        supports_vocab: bool = True,
+        supports_glossary: bool = True,
         supports_rules: bool = False,
         show_target_lang: bool = True,
         input_label: str = "Input file",
@@ -1272,14 +1272,14 @@ class BaseToolTab(ttk.Frame):
         self.title = title
         self.script_name = script_name
         self.input_filetypes = input_filetypes
-        self.supports_vocab = supports_vocab
+        self.supports_glossary = supports_glossary
         self.supports_rules = supports_rules
         self.show_target_lang = show_target_lang
         self.input_label = input_label
         self.supports_provider_controls = supports_provider_controls
         self.preview_label = preview_label
         self.resource_root = app.resource_root
-        self._auto_vocab_path = ""
+        self._auto_glossary_path = ""
         self._auto_rules_path = ""
         self._auto_model = DEFAULT_MODEL
         self.api_key_var = app.api_key_var
@@ -1296,7 +1296,7 @@ class BaseToolTab(ttk.Frame):
         self.model_var = tk.StringVar(value=DEFAULT_MODEL)
         self.batch_size_var = tk.StringVar(value=DEFAULT_BATCH_SIZE_TEXT)
         self.parallel_requests_var = tk.StringVar(value=DEFAULT_PARALLEL_REQUESTS_TEXT)
-        self.vocab_path_var = tk.StringVar()
+        self.glossary_path_var = tk.StringVar()
         self.rules_path_var = tk.StringVar()
         self.api_status_var = tk.StringVar()
         self.log_text: ScrolledText | None = None
@@ -1410,13 +1410,13 @@ class BaseToolTab(ttk.Frame):
             )
             row += 1
 
-        if self.supports_vocab:
+        if self.supports_glossary:
             self._add_entry_row(
                 form,
                 row=row,
                 label="Glossary",
-                variable=self.vocab_path_var,
-                browse_command=self._browse_vocab_file,
+                variable=self.glossary_path_var,
+                browse_command=self._browse_glossary_file,
             )
             row += 1
 
@@ -1602,13 +1602,13 @@ class BaseToolTab(ttk.Frame):
         if selected:
             self.input_file_var.set(selected)
 
-    def _browse_vocab_file(self) -> None:
+    def _browse_glossary_file(self) -> None:
         selected = filedialog.askopenfilename(
             title="Select glossary file",
-            filetypes=VOCAB_FILETYPES,
+            filetypes=GLOSSARY_FILETYPES,
         )
         if selected:
-            self.vocab_path_var.set(selected)
+            self.glossary_path_var.set(selected)
 
     def _browse_rules_file(self) -> None:
         selected = filedialog.askopenfilename(
@@ -1733,20 +1733,20 @@ class BaseToolTab(ttk.Frame):
             self.model_var.set(model_value)
 
     def _apply_default_resources(self, force: bool = False) -> None:
-        vocab_path, rules_path = detect_default_resource_paths(
+        glossary_path, rules_path = detect_default_resource_paths(
             self.target_lang_var.get(),
             base_dir=self.resource_root,
         )
 
-        if self.supports_vocab:
-            vocab_value, self._auto_vocab_path = choose_resource_field_value(
-                current_value=self.vocab_path_var.get(),
-                previous_auto_value=self._auto_vocab_path,
-                new_auto_value=vocab_path,
+        if self.supports_glossary:
+            glossary_value, self._auto_glossary_path = choose_resource_field_value(
+                current_value=self.glossary_path_var.get(),
+                previous_auto_value=self._auto_glossary_path,
+                new_auto_value=glossary_path,
                 force=force,
             )
-            if vocab_value != self.vocab_path_var.get():
-                self.vocab_path_var.set(vocab_value)
+            if glossary_value != self.glossary_path_var.get():
+                self.glossary_path_var.set(glossary_value)
 
         if self.supports_rules:
             rules_value, self._auto_rules_path = choose_resource_field_value(
@@ -1846,7 +1846,7 @@ class ProcessToolTab(BaseToolTab):
             title="Translate",
             script_name="translate_cli.py",
             input_filetypes=TRANSLATABLE_FILETYPES,
-            supports_vocab=True,
+            supports_glossary=True,
             supports_rules=True,
             input_label="Input file(s) / folder",
         )
@@ -1961,7 +1961,7 @@ class ProcessToolTab(BaseToolTab):
             seed=self.seed_var.get(),
             batch_size=self.batch_size_var.get(),
             parallel_requests=self.parallel_requests_var.get(),
-            vocab_path=self.vocab_path_var.get(),
+            glossary_path=self.glossary_path_var.get(),
             rules_path=self.rules_path_var.get(),
             rules_str=self.rules_text.get("1.0", "end-1c") if self.rules_text else "",
             api_key=self.api_key_var.get(),
@@ -1988,7 +1988,7 @@ class ExtractToolTab(BaseToolTab):
             title="Extract Terms",
             script_name="translate_cli.py",
             input_filetypes=TRANSLATABLE_FILETYPES,
-            supports_vocab=True,
+            supports_glossary=True,
             supports_rules=False,
         )
 
@@ -2052,7 +2052,7 @@ class ExtractToolTab(BaseToolTab):
             seed=self.seed_var.get(),
             batch_size=self.batch_size_var.get(),
             parallel_requests=self.parallel_requests_var.get(),
-            vocab_path=self.vocab_path_var.get(),
+            glossary_path=self.glossary_path_var.get(),
             api_key=self.api_key_var.get(),
             flex_mode=self.flex_mode_var.get(),
             mode=self.mode_var.get(),
@@ -2090,7 +2090,7 @@ class LocalExtractToolTab(BaseToolTab):
             title="Local Extract",
             script_name="translate_cli.py",
             input_filetypes=LOCAL_EXTRACT_FILETYPES,
-            supports_vocab=False,
+            supports_glossary=False,
             supports_rules=False,
             show_target_lang=False,
             input_label="Input file / folder / JSON",
@@ -2272,7 +2272,7 @@ class CheckToolTab(BaseToolTab):
             title="Check Translations",
             script_name="translate_cli.py",
             input_filetypes=CHECK_FILETYPES,
-            supports_vocab=True,
+            supports_glossary=True,
             supports_rules=True,
         )
 
@@ -2325,7 +2325,7 @@ class CheckToolTab(BaseToolTab):
             seed=self.seed_var.get(),
             batch_size=self.batch_size_var.get(),
             parallel_requests=self.parallel_requests_var.get(),
-            vocab_path=self.vocab_path_var.get(),
+            glossary_path=self.glossary_path_var.get(),
             rules_path=self.rules_path_var.get(),
             rules_str=self.rules_text.get("1.0", "end-1c") if self.rules_text else "",
             api_key=self.api_key_var.get(),
@@ -2356,7 +2356,7 @@ class ReviseToolTab(BaseToolTab):
             title="Revise Translations",
             script_name="translate_cli.py",
             input_filetypes=TRANSLATABLE_FILETYPES,
-            supports_vocab=True,
+            supports_glossary=True,
             supports_rules=True,
         )
 
@@ -2453,7 +2453,7 @@ class ReviseToolTab(BaseToolTab):
             seed=self.seed_var.get(),
             batch_size=self.batch_size_var.get(),
             parallel_requests=self.parallel_requests_var.get(),
-            vocab_path=self.vocab_path_var.get(),
+            glossary_path=self.glossary_path_var.get(),
             rules_path=self.rules_path_var.get(),
             rules_str=self.rules_text.get("1.0", "end-1c") if self.rules_text else "",
             api_key=self.api_key_var.get(),

@@ -338,7 +338,7 @@ def save_terms_as_po(
     out_path: str,
     source_lang: str,
     target_lang: str,
-    base_vocabulary_pairs: List[Tuple[str, str]] | None = None,
+    base_glossary_pairs: List[Tuple[str, str]] | None = None,
 ) -> None:
     """Write extracted glossary candidates to a fuzzy PO handoff file."""
     po = polib.POFile()
@@ -357,7 +357,7 @@ def save_terms_as_po(
     def remember_key(text: str) -> str:
         return " ".join(str(text or "").split()).lower()
 
-    for source_term, target_term in base_vocabulary_pairs or []:
+    for source_term, target_term in base_glossary_pairs or []:
         key = remember_key(source_term)
         if not key or key in seen_terms:
             continue
@@ -490,9 +490,9 @@ def run_from_args(args: argparse.Namespace) -> None:
         target_lang=args.target_lang,
         flex_mode=args.flex_mode,
         seed=args.seed,
-        explicit_vocab_path=args.glossary,
+        explicit_glossary_path=args.glossary,
         include_rules=False,
-        load_vocab_pairs_flag=args.mode == "missing" and args.out_format == "po",
+        load_glossary_pairs_flag=args.mode == "missing" and args.out_format == "po",
     )
     provider = runtime_context.provider
     client = runtime_context.client
@@ -546,7 +546,7 @@ def run_from_args(args: argparse.Namespace) -> None:
         ("Limits mode", limits_mode),
         ("Discovery mode", args.mode),
         ("Output format", args.out_format),
-        ("Glossary source", resource_context.vocabulary_source),
+        ("Glossary source", resource_context.glossary_source),
         ("Total source messages", total),
         ("Total batches", len(batches)),
     )
@@ -561,7 +561,7 @@ def run_from_args(args: argparse.Namespace) -> None:
                 source_lang=args.source_lang,
                 target_lang=args.target_lang,
                 mode=args.mode,
-                vocabulary=resource_context.vocabulary_text,
+                vocabulary=resource_context.glossary_text,
                 max_terms_per_batch=args.max_terms_per_batch,
                 provider=provider,
             )
@@ -613,7 +613,7 @@ def run_from_args(args: argparse.Namespace) -> None:
         "model": model_name,
         "source_lang": args.source_lang,
         "target_lang": args.target_lang,
-        "vocabulary_source": resource_context.vocabulary_source,
+        "glossary_source": resource_context.glossary_source,
         "generated_at_utc": datetime.now(timezone.utc).isoformat(),
         "total_source_messages": total,
         "raw_candidate_count": len(raw_candidates),
@@ -627,7 +627,7 @@ def run_from_args(args: argparse.Namespace) -> None:
             out_path=out_path,
             source_lang=args.source_lang,
             target_lang=args.target_lang,
-            base_vocabulary_pairs=resource_context.vocabulary_pairs,
+            base_glossary_pairs=resource_context.glossary_pairs,
         )
     else:
         with open(out_path, "w", encoding="utf-8") as f:

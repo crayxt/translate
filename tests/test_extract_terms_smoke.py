@@ -313,7 +313,7 @@ class ExtractTermsSmokeTests(unittest.TestCase):
         self.assertEqual(fake_po.saved_path, "glossary.po")
         self.assertEqual(len(fake_po.entries), 1)
 
-    def test_save_terms_as_po_merges_base_vocabulary_pairs_first(self):
+    def test_save_terms_as_po_merges_base_glossary_pairs_first(self):
         out_path = os.path.join(os.getcwd(), "_tmp_glossary_merged.po")
         try:
             extract_terms.save_terms_as_po(
@@ -334,7 +334,7 @@ class ExtractTermsSmokeTests(unittest.TestCase):
                 out_path=out_path,
                 source_lang="en",
                 target_lang="kk",
-                base_vocabulary_pairs=[("open", "ashu"), ("save", "saqtau")],
+                base_glossary_pairs=[("open", "ashu"), ("save", "saqtau")],
             )
 
             po = polib.pofile(out_path)
@@ -354,9 +354,9 @@ class ExtractTermsSmokeTests(unittest.TestCase):
             provider=_DummyProvider(),
             client=object(),
             resources=SimpleNamespace(
-                vocabulary_text=None,
-                vocabulary_source=os.path.join("data", "locales", "kk", "glossary.po"),
-                vocabulary_pairs=[],
+                glossary_text=None,
+                glossary_source=os.path.join("data", "locales", "kk", "glossary.po"),
+                glossary_pairs=[],
             ),
         )
         with (
@@ -377,20 +377,20 @@ class ExtractTermsSmokeTests(unittest.TestCase):
             target_lang="kk",
             flex_mode=False,
             seed=None,
-            explicit_vocab_path=None,
+            explicit_glossary_path=None,
             include_rules=False,
-            load_vocab_pairs_flag=False,
+            load_glossary_pairs_flag=False,
         )
 
-    def test_main_missing_po_output_loads_vocabulary_pairs_for_merged_po(self):
+    def test_main_missing_po_output_loads_glossary_pairs_for_merged_po(self):
         provider = _DummyProvider(response=_DummyResponse(parsed={"terms": []}))
         runtime_context = SimpleNamespace(
             provider=provider,
             client=object(),
             resources=SimpleNamespace(
-                vocabulary_text="save - saqtau",
-                vocabulary_source=os.path.join("data", "locales", "kk", "glossary.po"),
-                vocabulary_pairs=[("save", "saqtau")],
+                glossary_text="save - saqtau",
+                glossary_source=os.path.join("data", "locales", "kk", "glossary.po"),
+                glossary_pairs=[("save", "saqtau")],
             ),
         )
         with (
@@ -421,9 +421,9 @@ class ExtractTermsSmokeTests(unittest.TestCase):
             target_lang="kk",
             flex_mode=False,
             seed=None,
-            explicit_vocab_path=None,
+            explicit_glossary_path=None,
             include_rules=False,
-            load_vocab_pairs_flag=True,
+            load_glossary_pairs_flag=True,
         )
 
 

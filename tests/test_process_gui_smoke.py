@@ -79,57 +79,57 @@ class ProcessGuiSmokeTests(unittest.TestCase):
         data_dir = os.path.join(os.getcwd(), "_tmp_gui_data", "data", "locales", "fr")
         legacy_dir = os.path.join(os.getcwd(), "_tmp_gui_data")
         os.makedirs(data_dir, exist_ok=True)
-        vocab_path = os.path.join(data_dir, "glossary.po")
+        glossary_path = os.path.join(data_dir, "glossary.po")
         rules_path = os.path.join(data_dir, "rules.md")
-        legacy_vocab_path = os.path.join(legacy_dir, "glossary-fr.po")
+        legacy_glossary_path = os.path.join(legacy_dir, "glossary-fr.po")
         try:
-            with open(vocab_path, "w", encoding="utf-8") as handle:
+            with open(glossary_path, "w", encoding="utf-8") as handle:
                 handle.write('msgid "save"\nmsgstr "enregistrer"\n')
             with open(rules_path, "w", encoding="utf-8") as handle:
                 handle.write("Use imperative tone.\n")
-            with open(legacy_vocab_path, "w", encoding="utf-8") as handle:
+            with open(legacy_glossary_path, "w", encoding="utf-8") as handle:
                 handle.write('msgid "legacy"\nmsgstr "legacy"\n')
 
-            detected_vocab, detected_rules = process_gui.detect_default_resource_paths(
+            detected_glossary, detected_rules = process_gui.detect_default_resource_paths(
                 "fr",
                 base_dir=legacy_dir,
             )
 
-            self.assertEqual(detected_vocab, vocab_path)
+            self.assertEqual(detected_glossary, glossary_path)
             self.assertEqual(detected_rules, rules_path)
         finally:
-            for path in (vocab_path, rules_path, legacy_vocab_path):
+            for path in (glossary_path, rules_path, legacy_glossary_path):
                 if os.path.exists(path):
                     os.remove(path)
             if os.path.isdir(data_dir):
                 os.removedirs(data_dir)
 
-    def test_detect_default_resource_paths_supports_vocab_directory(self):
+    def test_detect_default_resource_paths_supports_glossary_directory(self):
         data_dir = os.path.join(os.getcwd(), "_tmp_gui_data_dir", "data", "locales", "fr")
         legacy_dir = os.path.join(os.getcwd(), "_tmp_gui_data_dir")
-        vocab_dir = os.path.join(data_dir, "vocab")
-        vocab_file = os.path.join(vocab_dir, "colors.po")
+        glossary_dir = os.path.join(data_dir, "glossary")
+        glossary_file = os.path.join(glossary_dir, "colors.po")
         rules_path = os.path.join(data_dir, "rules.md")
         try:
-            os.makedirs(vocab_dir, exist_ok=True)
-            with open(vocab_file, "w", encoding="utf-8") as handle:
+            os.makedirs(glossary_dir, exist_ok=True)
+            with open(glossary_file, "w", encoding="utf-8") as handle:
                 handle.write('msgid "blue"\nmsgstr "bleu"\n')
             with open(rules_path, "w", encoding="utf-8") as handle:
                 handle.write("Use imperative tone.\n")
 
-            detected_vocab, detected_rules = process_gui.detect_default_resource_paths(
+            detected_glossary, detected_rules = process_gui.detect_default_resource_paths(
                 "fr",
                 base_dir=legacy_dir,
             )
 
-            self.assertEqual(detected_vocab, vocab_dir)
+            self.assertEqual(detected_glossary, glossary_dir)
             self.assertEqual(detected_rules, rules_path)
         finally:
-            for path in (vocab_file, rules_path):
+            for path in (glossary_file, rules_path):
                 if os.path.exists(path):
                     os.remove(path)
-            if os.path.isdir(vocab_dir):
-                os.rmdir(vocab_dir)
+            if os.path.isdir(glossary_dir):
+                os.rmdir(glossary_dir)
             if os.path.isdir(data_dir):
                 os.removedirs(data_dir)
 
@@ -137,31 +137,31 @@ class ProcessGuiSmokeTests(unittest.TestCase):
         data_dir = os.path.join(os.getcwd(), "_tmp_gui_glossary_pref", "data", "locales", "fr")
         legacy_dir = os.path.join(os.getcwd(), "_tmp_gui_glossary_pref")
         glossary_path = os.path.join(data_dir, "glossary.po")
-        vocab_path = os.path.join(data_dir, "vocab", "common.po")
+        glossary_bundle_path = os.path.join(data_dir, "glossary", "common.po")
         rules_path = os.path.join(data_dir, "rules.md")
         try:
-            os.makedirs(os.path.dirname(vocab_path), exist_ok=True)
+            os.makedirs(os.path.dirname(glossary_bundle_path), exist_ok=True)
             with open(glossary_path, "w", encoding="utf-8") as handle:
                 handle.write('msgid "save"\nmsgstr "enregistrer"\n')
-            with open(vocab_path, "w", encoding="utf-8") as handle:
+            with open(glossary_bundle_path, "w", encoding="utf-8") as handle:
                 handle.write('msgid "save"\nmsgstr "enregistrer"\n')
             with open(rules_path, "w", encoding="utf-8") as handle:
                 handle.write("Keep labels short.\n")
 
-            detected_vocab, detected_rules = process_gui.detect_default_resource_paths(
+            detected_glossary, detected_rules = process_gui.detect_default_resource_paths(
                 "fr",
                 base_dir=legacy_dir,
             )
 
-            self.assertEqual(detected_vocab, glossary_path)
+            self.assertEqual(detected_glossary, glossary_path)
             self.assertEqual(detected_rules, rules_path)
         finally:
-            for path in (glossary_path, vocab_path, rules_path):
+            for path in (glossary_path, glossary_bundle_path, rules_path):
                 if os.path.exists(path):
                     os.remove(path)
-            vocab_parent = os.path.dirname(vocab_path)
-            if os.path.isdir(vocab_parent):
-                os.rmdir(vocab_parent)
+            glossary_parent = os.path.dirname(glossary_bundle_path)
+            if os.path.isdir(glossary_parent):
+                os.rmdir(glossary_parent)
             if os.path.isdir(data_dir):
                 os.removedirs(data_dir)
 
@@ -265,7 +265,7 @@ class ProcessGuiSmokeTests(unittest.TestCase):
                 batch_size="abc",
                 parallel_requests="0",
                 seed="-1",
-                vocab_path="missing-glossary.po",
+                glossary_path="missing-glossary.po",
                 rules_path="missing-rules.md",
                 api_key="test-key",
             )
@@ -282,19 +282,19 @@ class ProcessGuiSmokeTests(unittest.TestCase):
                 os.remove(input_path)
 
     def test_validate_config_accepts_vocabulary_directory(self):
-        input_path = os.path.join(os.getcwd(), "_tmp_gui_vocab_dir.po")
-        vocab_dir = os.path.join(os.getcwd(), "_tmp_gui_vocab_dir")
-        vocab_file = os.path.join(vocab_dir, "colors.txt")
+        input_path = os.path.join(os.getcwd(), "_tmp_gui_glossary_dir.po")
+        glossary_dir = os.path.join(os.getcwd(), "_tmp_gui_glossary_dir")
+        glossary_file = os.path.join(glossary_dir, "colors.txt")
         try:
             with open(input_path, "w", encoding="utf-8") as handle:
                 handle.write('msgid "Open"\nmsgstr ""\n')
-            os.makedirs(vocab_dir, exist_ok=True)
-            with open(vocab_file, "w", encoding="utf-8") as handle:
+            os.makedirs(glossary_dir, exist_ok=True)
+            with open(glossary_file, "w", encoding="utf-8") as handle:
                 handle.write("blue|bleu|adjective|\n")
 
             config = process_gui.ProcessGuiConfig(
                 input_file=input_path,
-                vocab_path=vocab_dir,
+                glossary_path=glossary_dir,
                 api_key="test-key",
             )
 
@@ -304,11 +304,11 @@ class ProcessGuiSmokeTests(unittest.TestCase):
                 any("Glossary file or directory does not exist" in item for item in errors)
             )
         finally:
-            for path in (input_path, vocab_file):
+            for path in (input_path, glossary_file):
                 if os.path.exists(path):
                     os.remove(path)
-            if os.path.isdir(vocab_dir):
-                os.rmdir(vocab_dir)
+            if os.path.isdir(glossary_dir):
+                os.rmdir(glossary_dir)
 
     def test_validate_process_config_rejects_mixed_file_types(self):
         input_po = os.path.join(os.getcwd(), "_tmp_gui_input.po")
@@ -377,7 +377,7 @@ class ProcessGuiSmokeTests(unittest.TestCase):
                 seed="42",
                 batch_size="50",
                 parallel_requests="3",
-                vocab_path=input_path,
+                glossary_path=input_path,
                 rules_path=script_path,
                 rules_str="Use imperative tone.",
                 api_key="test-key",
@@ -733,7 +733,7 @@ class ProcessGuiSmokeTests(unittest.TestCase):
                 thinking_level="minimal",
                 batch_size="80",
                 parallel_requests="4",
-                vocab_path=input_path,
+                glossary_path=input_path,
                 api_key="test-key",
                 mode="all",
                 out_format="json",
@@ -1076,7 +1076,7 @@ class ProcessGuiSmokeTests(unittest.TestCase):
                 thinking_level="high",
                 batch_size="60",
                 parallel_requests="2",
-                vocab_path=input_path,
+                glossary_path=input_path,
                 rules_path=script_path,
                 rules_str="Review carefully.",
                 api_key="test-key",
@@ -1221,7 +1221,7 @@ class ProcessGuiSmokeTests(unittest.TestCase):
                 thinking_level="medium",
                 batch_size="40",
                 parallel_requests="2",
-                vocab_path=source_path,
+                glossary_path=source_path,
                 rules_path=rules_path,
                 rules_str="Use approved wording.",
                 api_key="test-key",

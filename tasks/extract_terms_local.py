@@ -236,8 +236,8 @@ def run_from_args(args: argparse.Namespace) -> None:
         sys.exit(f"ERROR: {exc}")
 
     try:
-        vocabulary_path = resolve_local_glossary_path(args.glossary_source)
-        vocabulary_pairs = load_local_glossary_pairs(vocabulary_path)
+        glossary_source_path = resolve_local_glossary_path(args.glossary_source)
+        glossary_pairs = load_local_glossary_pairs(glossary_source_path)
     except ValueError as exc:
         sys.exit(f"ERROR: {exc}")
     if not messages:
@@ -248,7 +248,7 @@ def run_from_args(args: argparse.Namespace) -> None:
     result = extract_terms_locally(
         messages,
         mode=args.mode,
-        vocabulary_pairs=vocabulary_pairs,
+        vocabulary_pairs=glossary_pairs,
         max_length=args.max_length,
     )
     payload = build_json_payload(
@@ -258,7 +258,7 @@ def run_from_args(args: argparse.Namespace) -> None:
         target_lang=None,
         mode=args.mode,
         max_length=args.max_length,
-        vocabulary_path=vocabulary_path,
+        glossary_source_path=glossary_source_path,
         total_source_messages=len(messages),
         result=result,
         include_rejected=args.include_rejected,

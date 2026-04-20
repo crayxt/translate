@@ -8,7 +8,7 @@ import polib
 
 from core.formats import PO_WRAP_WIDTH
 
-VOCABULARY_FILE_EXTENSIONS = (".po", ".tbx")
+GLOSSARY_FILE_EXTENSIONS = (".po", ".tbx")
 XML_LANG_ATTR = "{http://www.w3.org/XML/1998/namespace}lang"
 
 
@@ -27,11 +27,11 @@ def read_optional_text_file(path: str | None, label: str) -> str | None:
     return content
 
 
-def _normalize_vocabulary_cell(value: str | None) -> str:
+def _normalize_glossary_cell(value: str | None) -> str:
     return " ".join(str(value or "").split())
 
 
-def _is_translated_vocabulary_entry(entry: Any) -> bool:
+def _is_translated_glossary_entry(entry: Any) -> bool:
     translated_attr = getattr(entry, "translated", None)
     if callable(translated_attr):
         try:
@@ -41,7 +41,7 @@ def _is_translated_vocabulary_entry(entry: Any) -> bool:
     return False
 
 
-def parse_vocabulary_fields(line: str) -> Tuple[str, str, str, str] | None:
+def parse_glossary_fields(line: str) -> Tuple[str, str, str, str] | None:
     stripped = str(line or "").strip()
     if not stripped or stripped.startswith("#"):
         return None
@@ -52,14 +52,14 @@ def parse_vocabulary_fields(line: str) -> Tuple[str, str, str, str] | None:
     raw_parts = stripped.split("|", 3)
     raw_parts += [""] * (4 - len(raw_parts))
     source_term, target_term, part_of_speech, context_note = (
-        _normalize_vocabulary_cell(value) for value in raw_parts[:4]
+        _normalize_glossary_cell(value) for value in raw_parts[:4]
     )
     if not source_term or not target_term:
         return None
     return source_term, target_term, part_of_speech, context_note
 
 
-def format_vocabulary_text_line(
+def format_glossary_text_line(
     source_term: str,
     target_term: str,
     part_of_speech: str = "",
@@ -67,30 +67,30 @@ def format_vocabulary_text_line(
 ) -> str:
     return "|".join(
         (
-            _normalize_vocabulary_cell(source_term),
-            _normalize_vocabulary_cell(target_term),
-            _normalize_vocabulary_cell(part_of_speech),
-            _normalize_vocabulary_cell(context_note),
+            _normalize_glossary_cell(source_term),
+            _normalize_glossary_cell(target_term),
+            _normalize_glossary_cell(part_of_speech),
+            _normalize_glossary_cell(context_note),
         )
     )
 
 
-def build_vocabulary_identity_key(
+def build_glossary_identity_key(
     source_term: str,
     part_of_speech: str = "",
     context_note: str = "",
 ) -> str:
     return "\u241f".join(
         (
-            _normalize_vocabulary_cell(source_term).lower(),
-            _normalize_vocabulary_cell(part_of_speech).lower(),
-            _normalize_vocabulary_cell(context_note).lower(),
+            _normalize_glossary_cell(source_term).lower(),
+            _normalize_glossary_cell(part_of_speech).lower(),
+            _normalize_glossary_cell(context_note).lower(),
         )
     )
 
 
-def parse_vocabulary_line(line: str) -> Tuple[str, str] | None:
-    parsed = parse_vocabulary_fields(line)
+def parse_glossary_line(line: str) -> Tuple[str, str] | None:
+    parsed = parse_glossary_fields(line)
     if not parsed:
         return None
     source_term, target_term, _part_of_speech, _context_note = parsed
@@ -114,7 +114,7 @@ def _extract_catalog_glossary_comment_field(comment: str | None, field_name: str
     for raw_line in str(comment or "").splitlines():
         stripped = raw_line.strip()
         if stripped.startswith(prefix):
-            return _normalize_vocabulary_cell(stripped[len(prefix):])
+            return _normalize_glossary_cell(stripped[len(prefix):])
     return ""
 
 
@@ -153,7 +153,7 @@ def _iter_xml_descendants(element: ET.Element, local_name: str) -> List[ET.Eleme
 
 
 def _append_unique_text(values: List[str], raw_value: str | None) -> None:
-    normalized = _normalize_vocabulary_cell(raw_value)
+    normalized = _normalize_glossary_cell(raw_value)
     if normalized and normalized not in values:
         values.append(normalized)
 
@@ -257,20 +257,20 @@ def _extract_tbx_part_of_speech(
             if lang_code not in {source_lang, target_lang}:
                 continue
         for term_note in _iter_xml_descendants(scope, "termNote"):
-            note_type = _normalize_vocabulary_cell(
+            note_type = _normalize_glossary_cell(
                 term_note.attrib.get("type")
                 or term_note.attrib.get("termNoteType")
                 or ""
             ).lower().replace(" ", "")
             if note_type not in {"pos", "partofspeech"} and "speech" not in note_type:
                 continue
-            value = _normalize_vocabulary_cell("".join(term_note.itertext()))
+            value = _normalize_glossary_cell("".join(term_note.itertext()))
             if value:
                 return value
     return ""
 
 
-def _load_tbx_vocabulary_records(
+def _load_tbx_glossary_records(
     path: str,
     label: str,
     *,
@@ -335,7 +335,7 @@ def _load_tbx_vocabulary_records(
     return records
 
 
-def _resolve_vocabulary_source_paths(
+def _resolve_glossary_source_paths(
     path: str | None,
     label: str,
 ) -> List[str]:
@@ -347,7 +347,7 @@ def _resolve_vocabulary_source_paths(
             os.path.join(path, name)
             for name in sorted(os.listdir(path), key=str.lower)
             if os.path.isfile(os.path.join(path, name))
-            and os.path.splitext(name)[1].lower() in VOCABULARY_FILE_EXTENSIONS
+            and os.path.splitext(name)[1].lower() in GLOSSARY_FILE_EXTENSIONS
         ]
         if not source_paths:
             print(
@@ -367,7 +367,7 @@ def _resolve_vocabulary_source_paths(
     return [path]
 
 
-def _load_vocabulary_records_from_path(
+def _load_glossary_records_from_path(
     path: str,
     label: str,
     *,
@@ -376,7 +376,7 @@ def _load_vocabulary_records_from_path(
 ) -> List[Tuple[str, str, str, str]]:
     lowered_path = path.lower()
     if lowered_path.endswith(".tbx"):
-        return _load_tbx_vocabulary_records(path, label, target_lang=target_lang)
+        return _load_tbx_glossary_records(path, label, target_lang=target_lang)
 
     if not lowered_path.endswith(".po"):
         print(
@@ -394,17 +394,17 @@ def _load_vocabulary_records_from_path(
 
     records: List[Tuple[str, str, str, str]] = []
     for entry in glossary:
-        if not _is_translated_vocabulary_entry(entry):
+        if not _is_translated_glossary_entry(entry):
             continue
-        source_term = _normalize_vocabulary_cell(getattr(entry, "msgid", ""))
-        target_term = _normalize_vocabulary_cell(getattr(entry, "msgstr", ""))
+        source_term = _normalize_glossary_cell(getattr(entry, "msgid", ""))
+        target_term = _normalize_glossary_cell(getattr(entry, "msgstr", ""))
         extracted_comment = getattr(entry, "comment", "")
         catalog_part_of_speech = _extract_catalog_glossary_comment_field(extracted_comment, "POS")
-        part_of_speech = catalog_part_of_speech or _normalize_vocabulary_cell(getattr(entry, "msgctxt", ""))
+        part_of_speech = catalog_part_of_speech or _normalize_glossary_cell(getattr(entry, "msgctxt", ""))
         if catalog_part_of_speech:
-            context_note = _normalize_vocabulary_cell(getattr(entry, "msgctxt", ""))
+            context_note = _normalize_glossary_cell(getattr(entry, "msgctxt", ""))
         else:
-            context_note = _normalize_vocabulary_cell(getattr(entry, "tcomment", ""))
+            context_note = _normalize_glossary_cell(getattr(entry, "tcomment", ""))
         if not source_term or not target_term:
             continue
         records.append((source_term, target_term, part_of_speech, context_note))
@@ -414,7 +414,7 @@ def _load_vocabulary_records_from_path(
     return records
 
 
-def _load_vocabulary_records(
+def _load_glossary_records(
     path: str | None,
     label: str = "Glossary",
     *,
@@ -423,14 +423,14 @@ def _load_vocabulary_records(
 ) -> List[Tuple[str, str, str, str]]:
     records: List[Tuple[str, str, str, str]] = []
     seen_indices: Dict[str, int] = {}
-    for source_path in _resolve_vocabulary_source_paths(path, label):
-        for source_term, target_term, part_of_speech, context_note in _load_vocabulary_records_from_path(
+    for source_path in _resolve_glossary_source_paths(path, label):
+        for source_term, target_term, part_of_speech, context_note in _load_glossary_records_from_path(
             source_path,
             label,
             pofile_loader=pofile_loader,
             target_lang=target_lang,
         ):
-            key = build_vocabulary_identity_key(source_term, part_of_speech, context_note)
+            key = build_glossary_identity_key(source_term, part_of_speech, context_note)
             record = (source_term, target_term, part_of_speech, context_note)
             if key in seen_indices:
                 records[seen_indices[key]] = record
@@ -440,7 +440,7 @@ def _load_vocabulary_records(
     return records
 
 
-def load_vocabulary_pairs(
+def load_glossary_pairs(
     path: str | None,
     label: str = "Glossary",
     *,
@@ -449,7 +449,7 @@ def load_vocabulary_pairs(
 ) -> List[Tuple[str, str]]:
     return [
         (source_term, target_term)
-        for source_term, target_term, _part_of_speech, _context_note in _load_vocabulary_records(
+        for source_term, target_term, _part_of_speech, _context_note in _load_glossary_records(
             path,
             label,
             pofile_loader=pofile_loader,
@@ -458,14 +458,14 @@ def load_vocabulary_pairs(
     ]
 
 
-def read_optional_vocabulary_file(
+def read_optional_glossary_file(
     path: str | None,
     label: str = "Glossary",
     *,
     pofile_loader: Callable[..., Any] | None = None,
     target_lang: str | None = None,
 ) -> str | None:
-    records = _load_vocabulary_records(
+    records = _load_glossary_records(
         path,
         label,
         pofile_loader=pofile_loader,
@@ -475,7 +475,7 @@ def read_optional_vocabulary_file(
         return None
 
     normalized_lines = [
-        format_vocabulary_text_line(
+        format_glossary_text_line(
             source_term,
             target_term,
             part_of_speech,
@@ -522,11 +522,10 @@ def detect_default_text_resource(
         return os.path.join(*parts)
 
     def iter_candidate_specs() -> List[Tuple[str, str | None, bool]]:
-        if prefix == "vocab":
+        if prefix == "glossary":
             specs: List[Tuple[str, str | None, bool]] = [("glossary", "po", False)]
             if allow_directory:
                 specs.append((prefix, None, True))
-            specs.append((prefix, "po", False))
             specs.append((prefix, "tbx", False))
             return specs
         return [(prefix, extension, False)] + ([(prefix, None, True)] if allow_directory else [])
@@ -563,7 +562,7 @@ def detect_default_text_resource(
             if os.path.isfile(candidate_path):
                 return candidate_path
     for lang_code in build_language_code_candidates(target_lang):
-        if prefix == "vocab":
+        if prefix == "glossary":
             glossary_legacy_path = build_candidate(f"glossary-{lang_code}.po")
             if os.path.isfile(glossary_legacy_path):
                 return glossary_legacy_path
@@ -622,14 +621,14 @@ def detect_rules_source(
 __all__ = [
     "build_language_code_candidates",
     "detect_default_text_resource",
-    "build_vocabulary_identity_key",
-    "format_vocabulary_text_line",
+    "build_glossary_identity_key",
+    "format_glossary_text_line",
     "detect_rules_source",
-    "load_vocabulary_pairs",
+    "load_glossary_pairs",
     "merge_project_rules",
-    "parse_vocabulary_fields",
-    "parse_vocabulary_line",
+    "parse_glossary_fields",
+    "parse_glossary_line",
     "read_optional_text_file",
-    "read_optional_vocabulary_file",
+    "read_optional_glossary_file",
     "resolve_resource_path",
 ]
