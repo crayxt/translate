@@ -1,6 +1,6 @@
 {"source_term": "abbreviation", "part_of_speech": "noun", "sense": "abbreviation", "context_note": "abbreviation or short form", "id": "abbreviation.noun.abbreviation", "example": ""}
 {"source_term": "abort", "part_of_speech": "verb", "sense": "operation", "context_note": "abort operation", "id": "abort.verb.operation", "example": ""}
-{"source_term": "about", "part_of_speech": "preposition", "sense": "help", "context_note": "осы туралы if in help - about", "id": "about.preposition.help", "example": ""}
+{"source_term": "about", "part_of_speech": "preposition", "sense": "help", "context_note": "help or about dialog topic", "id": "about.preposition.help", "example": ""}
 {"source_term": "abstract", "part_of_speech": "adjective", "sense": "art", "context_note": "abstract art", "id": "abstract.adjective.art", "example": ""}
 {"source_term": "abstract", "part_of_speech": "noun", "sense": "summary", "context_note": "generated abstract or summary", "id": "abstract.noun.summary", "example": ""}
 {"source_term": "accelerate", "part_of_speech": "verb", "sense": "animation", "context_note": "accelerate animation or process", "id": "accelerate.verb.animation", "example": ""}
@@ -148,7 +148,7 @@
 {"source_term": "basis", "part_of_speech": "noun", "sense": "calculation", "context_note": "calculation basis or basis value", "id": "basis.noun.calculation", "example": ""}
 {"source_term": "batch", "part_of_speech": "noun", "sense": "rename", "context_note": "batch rename operation", "id": "batch.noun.rename", "example": ""}
 {"source_term": "battery", "part_of_speech": "noun", "sense": "device", "context_note": "battery device or state", "id": "battery.noun.device", "example": ""}
-{"source_term": "bcc", "part_of_speech": "noun", "sense": "blind", "context_note": "blind carbon copy field, жасырын көшірме", "id": "bcc.noun.blind", "example": ""}
+{"source_term": "bcc", "part_of_speech": "noun", "sense": "blind", "context_note": "blind carbon copy field", "id": "bcc.noun.blind", "example": ""}
 {"source_term": "beginning", "part_of_speech": "noun", "sense": "field", "context_note": "beginning of field or document", "id": "beginning.noun.field", "example": ""}
 {"source_term": "bengali", "part_of_speech": "noun", "sense": "language", "context_note": "Bengali language or Bengali characters", "id": "bengali.noun.language", "example": ""}
 {"source_term": "between", "part_of_speech": "preposition", "sense": "separator", "context_note": "separator or position between marks or categories", "id": "between.preposition.separator", "example": ""}
@@ -233,7 +233,7 @@
 {"source_term": "categorical", "part_of_speech": "adjective", "sense": "values", "context_note": "categorical values", "id": "categorical.adjective.values", "example": ""}
 {"source_term": "category", "part_of_speech": "noun", "sense": "field", "context_note": "category field or value class", "id": "category.noun.field", "example": ""}
 {"source_term": "caused", "part_of_speech": "verb", "sense": "error", "context_note": "error or action caused issue", "id": "caused.verb.error", "example": ""}
-{"source_term": "cc", "part_of_speech": "noun", "sense": "carbon", "context_note": "carbon copy field, көшірме", "id": "cc.noun.carbon", "example": ""}
+{"source_term": "cc", "part_of_speech": "noun", "sense": "carbon", "context_note": "carbon copy field", "id": "cc.noun.carbon", "example": ""}
 {"source_term": "cell", "part_of_speech": "noun", "sense": "spreadsheet", "context_note": "spreadsheet cell or cell range", "id": "cell.noun.spreadsheet", "example": ""}
 {"source_term": "center", "part_of_speech": "noun", "sense": "default", "context_note": "center as a UI, document, or technical noun", "id": "center.noun.default", "example": ""}
 {"source_term": "centered", "part_of_speech": "adjective", "sense": "alignment", "context_note": "centered alignment or centered outline", "id": "centered.adjective.alignment", "example": ""}
@@ -1711,7 +1711,7 @@
 {"source_term": "transparent", "part_of_speech": "adjective", "sense": "background", "context_note": "transparent background or color", "id": "transparent.adjective.background", "example": ""}
 {"source_term": "trash", "part_of_speech": "noun", "sense": "default", "context_note": "trash as a UI, document, or technical noun", "id": "trash.noun.default", "example": ""}
 {"source_term": "trashed", "part_of_speech": "adjective", "sense": "item", "context_note": "trashed item", "id": "trashed.adjective.item", "example": ""}
-{"source_term": "tray", "part_of_speech": "noun", "sense": "printer", "context_note": "printer paper tray, жүйелік сөре", "id": "tray.noun.printer", "example": ""}
+{"source_term": "tray", "part_of_speech": "noun", "sense": "printer", "context_note": "printer paper tray", "id": "tray.noun.printer", "example": ""}
 {"source_term": "tree", "part_of_speech": "noun", "sense": "view", "context_note": "tree view", "id": "tree.noun.view", "example": ""}
 {"source_term": "trigger", "part_of_speech": "noun", "sense": "event", "context_note": "event that triggers a macro", "id": "trigger.noun.event", "example": ""}
 {"source_term": "trim", "part_of_speech": "verb", "sense": "geometry", "context_note": "trim geometry or text", "id": "trim.verb.geometry", "example": ""}
@@ -1826,7 +1826,7 @@
 {"source_term": "whole", "part_of_speech": "adjective", "sense": "words", "context_note": "whole words or whole lines", "id": "whole.adjective.words", "example": ""}
 {"source_term": "wide", "part_of_speech": "adjective", "sense": "layout", "context_note": "wide layout or spacing", "id": "wide.adjective.layout", "example": ""}
 {"source_term": "width", "part_of_speech": "noun", "sense": "default", "context_note": "width as a UI, document, or technical noun", "id": "width.noun.default", "example": ""}
-{"source_term": "wildcard", "part_of_speech": "noun", "sense": "search", "context_note": "wildcard search characterф", "id": "wildcard.noun.search", "example": ""}
+{"source_term": "wildcard", "part_of_speech": "noun", "sense": "search", "context_note": "wildcard search character", "id": "wildcard.noun.search", "example": ""}
 {"source_term": "window", "part_of_speech": "noun", "sense": "default", "context_note": "window as a UI control, window, or interaction term", "id": "window.noun.default", "example": ""}
 {"source_term": "wired", "part_of_speech": "adjective", "sense": "network", "context_note": "wired network", "id": "wired.adjective.network", "example": ""}
 {"source_term": "wireless", "part_of_speech": "adjective", "sense": "device", "context_note": "wireless device or network", "id": "wireless.adjective.device", "example": ""}

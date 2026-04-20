@@ -28,7 +28,7 @@ msgstr "доғару"
 #. ID: about.preposition.help
 #. POS: preposition
 #. Sense: help
-msgctxt "осы туралы if in help - about"
+msgctxt "help or about dialog topic"
 msgid "about"
 msgstr "туралы"
 
@@ -1064,7 +1064,7 @@ msgstr "батарея"
 #. ID: bcc.noun.blind
 #. POS: noun
 #. Sense: blind
-msgctxt "blind carbon copy field, жасырын көшірме"
+msgctxt "blind carbon copy field"
 msgid "bcc"
 msgstr "BCC"
 
@@ -1659,7 +1659,7 @@ msgstr "себеп болды"
 #. ID: cc.noun.carbon
 #. POS: noun
 #. Sense: carbon
-msgctxt "carbon copy field, көшірме"
+msgctxt "carbon copy field"
 msgid "cc"
 msgstr "CC"
 
@@ -12005,7 +12005,7 @@ msgstr "қоқысқа тасталған"
 #. ID: tray.noun.printer
 #. POS: noun
 #. Sense: printer
-msgctxt "printer paper tray, жүйелік сөре"
+msgctxt "printer paper tray"
 msgid "tray"
 msgstr "науа"
 
@@ -12810,7 +12810,7 @@ msgstr "ені"
 #. ID: wildcard.noun.search
 #. POS: noun
 #. Sense: search
-msgctxt "wildcard search characterф"
+msgctxt "wildcard search character"
 msgid "wildcard"
 msgstr "алмастырғыш таңба"
 
