@@ -364,7 +364,10 @@ class ExtractTermsSmokeTests(unittest.TestCase):
             patch("tasks.extract_terms.build_task_runtime_context", return_value=runtime_context) as runtime_mock,
             patch("tasks.extract_terms.detect_file_kind", return_value=process.FileKind.TXT),
             patch("tasks.extract_terms.load_entries_for_file", return_value=[]),
-            patch("tasks.extract_terms.sys.argv", ["extract_terms.py", "input.po", "--mode", "all"]),
+            patch(
+                "tasks.extract_terms.sys.argv",
+                ["extract_terms.py", "input.po", "--target-lang", "kk", "--mode", "all"],
+            ),
             patch("builtins.print"),
         ):
             extract_terms.main()
@@ -395,7 +398,19 @@ class ExtractTermsSmokeTests(unittest.TestCase):
             patch("tasks.extract_terms.detect_file_kind", return_value=process.FileKind.TXT),
             patch("tasks.extract_terms.load_entries_for_file", return_value=[_DummyEntry("Open file")]),
             patch("tasks.extract_terms.normalize_limits", return_value=(100, 1, "manual")),
-            patch("tasks.extract_terms.sys.argv", ["extract_terms.py", "input.po", "--mode", "missing", "--out-format", "po"]),
+            patch(
+                "tasks.extract_terms.sys.argv",
+                [
+                    "extract_terms.py",
+                    "input.po",
+                    "--target-lang",
+                    "kk",
+                    "--mode",
+                    "missing",
+                    "--out-format",
+                    "po",
+                ],
+            ),
             patch("builtins.print"),
         ):
             extract_terms.main()

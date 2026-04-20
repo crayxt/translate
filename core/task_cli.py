@@ -16,11 +16,16 @@ def add_language_arguments(
     parser: argparse.ArgumentParser,
     *,
     source_default: str = "en",
-    target_default: str = "kk",
+    target_default: str | None = None,
 ) -> None:
     """Register the shared source/target language flags."""
     parser.add_argument("--source-lang", default=source_default, help=f"Default: {source_default}")
-    parser.add_argument("--target-lang", default=target_default, help=f"Default: {target_default}")
+    parser.add_argument(
+        "--target-lang",
+        default=target_default,
+        required=target_default is None,
+        help="Target language code (required)" if target_default is None else f"Default: {target_default}",
+    )
 
 
 def add_provider_arguments(

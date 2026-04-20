@@ -52,9 +52,9 @@ For plural messages, the task sends structured plural data:
 ## Main CLI Shape
 
 ```powershell
-python translate_cli.py translate file.po
-python translate_cli.py translate first.po second.po third.po
-python translate_cli.py translate translated.xml --source-file source.xml
+python translate_cli.py translate file.po --target-lang kk
+python translate_cli.py translate first.po second.po third.po --target-lang kk
+python translate_cli.py translate translated.xml --source-file source.xml --target-lang kk
 ```
 
 Useful options:

@@ -83,41 +83,41 @@ Notes:
 Translate one file:
 
 ```powershell
-python translate_cli.py translate source.po
-python translate_cli.py translate source.ts
-python translate_cli.py translate source.resx
-python translate_cli.py translate source.strings
-python translate_cli.py translate source.txt
+python translate_cli.py translate source.po --target-lang kk
+python translate_cli.py translate source.ts --target-lang kk
+python translate_cli.py translate source.resx --target-lang kk
+python translate_cli.py translate source.strings --target-lang kk
+python translate_cli.py translate source.txt --target-lang kk
 ```
 
 Translate several files in one run when they are the same format:
 
 ```powershell
-python translate_cli.py translate first.po second.po third.po
+python translate_cli.py translate first.po second.po third.po --target-lang kk
 ```
 
 Choose provider and model explicitly:
 
 ```powershell
-python translate_cli.py translate source.po --provider openai --model your-model
-python translate_cli.py translate source.po --provider anthropic --model your-model
-python translate_cli.py translate source.po --provider gemini --model your-model
+python translate_cli.py translate source.po --target-lang kk --provider openai --model your-model
+python translate_cli.py translate source.po --target-lang kk --provider anthropic --model your-model
+python translate_cli.py translate source.po --target-lang kk --provider gemini --model your-model
 ```
 
 Useful controls:
 
 ```powershell
-python translate_cli.py translate source.po --target-lang fr
-python translate_cli.py translate source.po --thinking-level medium
-python translate_cli.py translate source.po --batch-size 100 --parallel-requests 4
-python translate_cli.py translate source.po --retranslate-all
-python translate_cli.py translate source.po --flex
-python translate_cli.py translate source.po --warnings-report
+python translate_cli.py translate source.po --target-lang kk
+python translate_cli.py translate source.po --target-lang kk --thinking-level medium
+python translate_cli.py translate source.po --target-lang kk --batch-size 100 --parallel-requests 4
+python translate_cli.py translate source.po --target-lang kk --retranslate-all
+python translate_cli.py translate source.po --target-lang kk --flex
+python translate_cli.py translate source.po --target-lang kk --warnings-report
 ```
 
 Behavior:
 
-- default target language is `kk`
+- target language is explicit; pass `--target-lang` for translation, revision, checking, and model-based extraction
 - by default, only unfinished messages are translated
 - `--retranslate-all` forces already translated messages through translation again
 - recursive directory translation skips generated toolkit artifacts such as `*.ai-translated.*`, `*.glossary.po`, `*.missing-terms.po`, and `*.prototype-*.po`
@@ -138,7 +138,7 @@ Warnings sidecar behavior:
 Android translated exports often contain only resource IDs on the target side, so translation uses a paired-source workflow:
 
 ```powershell
-python translate_cli.py translate translated.xml --source-file source.xml
+python translate_cli.py translate translated.xml --source-file source.xml --target-lang kk
 ```
 
 The Android XML backend:
@@ -160,17 +160,17 @@ Use `revise` when a file is already translated and you want targeted changes rat
 For formats that still contain source and translation together:
 
 ```powershell
-python translate_cli.py revise translated.po --instruction "Use a shorter term for Preferences"
-python translate_cli.py revise translated.ts --instruction "Replace archive with package where the source says package"
+python translate_cli.py revise translated.po --target-lang kk --instruction "Use a shorter term for Preferences"
+python translate_cli.py revise translated.ts --target-lang kk --instruction "Replace archive with package where the source says package"
 ```
 
 For formats where the translated file no longer carries the original source text, pass the matching source file:
 
 ```powershell
-python translate_cli.py revise translated.ai-translated.xml --source-file source.xml --instruction "Use natural confirmation questions and preserve literal \\n escapes"
-python translate_cli.py revise translated.ai-translated.strings --source-file source.strings --instruction "Shorten viewer labels where possible"
-python translate_cli.py revise translated.ai-translated.resx --source-file source.resx --instruction "Use command bar instead of toolbar"
-python translate_cli.py revise translated.txt --source-file source.txt --instruction "Use formal tone for Exit"
+python translate_cli.py revise translated.ai-translated.xml --target-lang kk --source-file source.xml --instruction "Use natural confirmation questions and preserve literal \\n escapes"
+python translate_cli.py revise translated.ai-translated.strings --target-lang kk --source-file source.strings --instruction "Shorten viewer labels where possible"
+python translate_cli.py revise translated.ai-translated.resx --target-lang kk --source-file source.resx --instruction "Use command bar instead of toolbar"
+python translate_cli.py revise translated.txt --target-lang kk --source-file source.txt --instruction "Use formal tone for Exit"
 ```
 
 Revision behavior:
@@ -185,10 +185,10 @@ Revision behavior:
 Use `check` for QA on an already translated PO or TS file:
 
 ```powershell
-python translate_cli.py check translated.po
-python translate_cli.py check translated.ts
-python translate_cli.py check translated.po --probe 50
-python translate_cli.py check translated.po --out report.json --include-ok
+python translate_cli.py check translated.po --target-lang kk
+python translate_cli.py check translated.ts --target-lang kk
+python translate_cli.py check translated.po --target-lang kk --probe 50
+python translate_cli.py check translated.po --target-lang kk --out report.json --include-ok
 ```
 
 The checker combines model findings with deterministic local checks for:
@@ -215,16 +215,16 @@ Check-report issue shape:
 Use `extract-terms` when you want the model to propose glossary entries:
 
 ```powershell
-python translate_cli.py extract-terms source.po
-python translate_cli.py extract-terms source.xml
+python translate_cli.py extract-terms source.po --target-lang kk
+python translate_cli.py extract-terms source.xml --target-lang kk
 ```
 
 Useful variants:
 
 ```powershell
-python translate_cli.py extract-terms source.po --mode missing --glossary data/locales/kk/glossary.po --out-format po
-python translate_cli.py extract-terms source.po --mode missing --out-format json --glossary data/locales/kk/glossary.po
-python translate_cli.py extract-terms source.po --out glossary.po --batch-size 200 --parallel-requests 4
+python translate_cli.py extract-terms source.po --target-lang kk --mode missing --glossary data/locales/kk/glossary.po --out-format po
+python translate_cli.py extract-terms source.po --target-lang kk --mode missing --out-format json --glossary data/locales/kk/glossary.po
+python translate_cli.py extract-terms source.po --target-lang kk --out glossary.po --batch-size 200 --parallel-requests 4
 ```
 
 Modes:
@@ -298,13 +298,13 @@ python translate_cli.py extract-terms-local source.po --mode missing --also-po
 python translate_cli.py extract-terms-local C:\path\to\source-tree --mode missing --also-po
 
 # 2. Translate the generated glossary PO handoff
-python translate_cli.py translate source.prototype-missing-terms.po --glossary data/locales/kk/glossary.po
+python translate_cli.py translate source.prototype-missing-terms.po --target-lang kk --glossary data/locales/kk/glossary.po
 
 # 3. Review and approve the glossary PO
 #    Keep only good terms, fix bad translations, and save the approved glossary.
 
 # 4. Use the approved glossary as the base glossary for the main translation
-python translate_cli.py translate source.po --glossary approved-glossary.po
+python translate_cli.py translate source.po --target-lang kk --glossary approved-glossary.po
 
 # 5. Review and approve the main translated source file
 ```
@@ -336,8 +336,8 @@ Auto-detected resources:
 You can override both resources per run:
 
 ```powershell
-python translate_cli.py translate source.po --glossary approved-glossary.po --rules custom-rules.md
-python translate_cli.py translate source.po --glossary custom-glossary --rules-str "Use concise imperative labels."
+python translate_cli.py translate source.po --target-lang kk --glossary approved-glossary.po --rules custom-rules.md
+python translate_cli.py translate source.po --target-lang kk --glossary custom-glossary --rules-str "Use concise imperative labels."
 ```
 
 `--glossary` accepts:

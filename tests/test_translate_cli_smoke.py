@@ -16,7 +16,7 @@ class TranslateCliSmokeTests(unittest.TestCase):
 
     def test_translate_subcommand_reports_invalid_provider_as_error(self):
         with self.assertRaises(SystemExit) as raised:
-            translate_cli.main(["translate", "input.po", "--provider", "nope"])
+            translate_cli.main(["translate", "input.po", "--target-lang", "fr", "--provider", "nope"])
 
         self.assertEqual(
             str(raised.exception),
@@ -25,7 +25,7 @@ class TranslateCliSmokeTests(unittest.TestCase):
 
     def test_translate_subcommand_reports_missing_input_file_as_error(self):
         with self.assertRaises(SystemExit) as raised:
-            translate_cli.main(["translate", "_missing_translate_input.po"])
+            translate_cli.main(["translate", "_missing_translate_input.po", "--target-lang", "fr"])
 
         self.assertEqual(
             str(raised.exception),
@@ -34,7 +34,7 @@ class TranslateCliSmokeTests(unittest.TestCase):
 
     def test_translate_subcommand_accepts_multiple_files(self):
         with patch("translate_cli.run_translate") as mocked_main:
-            translate_cli.main(["translate", "one.po", "two.po"])
+            translate_cli.main(["translate", "one.po", "two.po", "--target-lang", "fr"])
         mocked_main.assert_called_once()
         self.assertEqual(mocked_main.call_args.args[0].command, "translate")
         self.assertEqual(mocked_main.call_args.args[0].files, ["one.po", "two.po"])
@@ -46,6 +46,8 @@ class TranslateCliSmokeTests(unittest.TestCase):
                     [
                         "translate",
                         "input.po",
+                        "--target-lang",
+                        "fr",
                         "--provider",
                         "gemini",
                         "--gemini-backend",
@@ -60,7 +62,7 @@ class TranslateCliSmokeTests(unittest.TestCase):
 
     def test_extract_subcommand_dispatches_to_extract_terms(self):
         with patch("translate_cli.run_extract_terms") as mocked_main:
-            translate_cli.main(["extract-terms", "input.po"])
+            translate_cli.main(["extract-terms", "input.po", "--target-lang", "fr"])
         mocked_main.assert_called_once()
         self.assertEqual(mocked_main.call_args.args[0].command, "extract-terms")
         self.assertEqual(mocked_main.call_args.args[0].file, "input.po")
@@ -74,7 +76,7 @@ class TranslateCliSmokeTests(unittest.TestCase):
 
     def test_check_subcommand_dispatches_to_check_translations(self):
         with patch("translate_cli.run_check") as mocked_main:
-            translate_cli.main(["check", "input.po", "--probe", "5"])
+            translate_cli.main(["check", "input.po", "--target-lang", "fr", "--probe", "5"])
         mocked_main.assert_called_once()
         self.assertEqual(mocked_main.call_args.args[0].command, "check")
         self.assertEqual(mocked_main.call_args.args[0].file, "input.po")
@@ -82,7 +84,9 @@ class TranslateCliSmokeTests(unittest.TestCase):
 
     def test_revise_subcommand_dispatches_to_revise_translations(self):
         with patch("translate_cli.run_revise") as mocked_main:
-            translate_cli.main(["revise", "input.po", "--instruction", "Use shorter term"])
+            translate_cli.main(
+                ["revise", "input.po", "--target-lang", "fr", "--instruction", "Use shorter term"]
+            )
         mocked_main.assert_called_once()
         self.assertEqual(mocked_main.call_args.args[0].command, "revise")
         self.assertEqual(mocked_main.call_args.args[0].file, "input.po")

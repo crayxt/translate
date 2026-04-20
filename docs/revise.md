@@ -48,9 +48,9 @@ Optional shared resources:
 ## Main CLI Shape
 
 ```powershell
-python translate_cli.py revise translated.po --instruction "Use a shorter term for Preferences"
-python translate_cli.py revise translated.ts --instruction "Replace archive with package where the source says package"
-python translate_cli.py revise translated.ai-translated.xml --source-file source.xml --instruction "Use natural confirmation questions"
+python translate_cli.py revise translated.po --target-lang kk --instruction "Use a shorter term for Preferences"
+python translate_cli.py revise translated.ts --target-lang kk --instruction "Replace archive with package where the source says package"
+python translate_cli.py revise translated.ai-translated.xml --target-lang kk --source-file source.xml --instruction "Use natural confirmation questions"
 ```
 
 Useful options:

@@ -40,7 +40,7 @@ from tasks import translate as translate_task
 
 
 DEFAULT_SOURCE_LANG = "en"
-DEFAULT_TARGET_LANG = "kk"
+DEFAULT_TARGET_LANG = ""
 DEFAULT_PROVIDER = DEFAULT_PROVIDER_NAME
 SUPPORTED_PROVIDER_CHOICES = tuple(sorted(SUPPORTED_TRANSLATION_PROVIDERS))
 DEFAULT_MODEL = DEFAULT_PROVIDER_SPEC.default_model
@@ -356,7 +356,7 @@ def detect_default_glossary_source_path(base_dir: str | None = None) -> str:
 
 def build_system_prompt_preview(tool_key: str, target_lang: str) -> str:
     normalized_tool = _clean(tool_key).lower()
-    resolved_target_lang = _clean(target_lang) or DEFAULT_TARGET_LANG
+    resolved_target_lang = _clean(target_lang)
 
     if normalized_tool in {"process", "translate"}:
         return translate_task.SYSTEM_INSTRUCTION.strip()

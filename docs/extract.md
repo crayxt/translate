@@ -33,8 +33,8 @@ In `missing` mode, the glossary is used to suppress already known terms and keep
 ## Main CLI Shape
 
 ```powershell
-python translate_cli.py extract-terms source.po
-python translate_cli.py extract-terms source.xml
+python translate_cli.py extract-terms source.po --target-lang kk
+python translate_cli.py extract-terms source.xml --target-lang kk
 ```
 
 Useful options:

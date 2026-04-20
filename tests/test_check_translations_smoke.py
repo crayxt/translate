@@ -260,7 +260,16 @@ class CheckTranslationsSmokeTests(unittest.TestCase):
                 patch("tasks.check_translations.load_po", return_value=(entries, None, None)),
                 patch(
                     "tasks.check_translations.sys.argv",
-                    ["check_translations.py", "input.po", "--out", out_path, "--probe", "1"],
+                    [
+                        "check_translations.py",
+                        "input.po",
+                        "--target-lang",
+                        "kk",
+                        "--out",
+                        out_path,
+                        "--probe",
+                        "1",
+                    ],
                 ),
                 patch("builtins.print"),
             ):
@@ -319,7 +328,7 @@ class CheckTranslationsSmokeTests(unittest.TestCase):
                 patch("tasks.check_translations.load_ts", return_value=(entries, None, None)),
                 patch(
                     "tasks.check_translations.sys.argv",
-                    ["check_translations.py", "input.ts", "--out", out_path],
+                    ["check_translations.py", "input.ts", "--target-lang", "kk", "--out", out_path],
                 ),
                 patch("builtins.print"),
             ):
@@ -368,7 +377,7 @@ class CheckTranslationsSmokeTests(unittest.TestCase):
                 patch("tasks.check_translations.load_xliff", return_value=(entries, None, None)),
                 patch(
                     "tasks.check_translations.sys.argv",
-                    ["check_translations.py", "input.xliff", "--out", out_path],
+                    ["check_translations.py", "input.xliff", "--target-lang", "kk", "--out", out_path],
                 ),
                 patch("builtins.print"),
             ):

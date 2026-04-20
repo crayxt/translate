@@ -35,8 +35,8 @@ The checker combines:
 ## Main CLI Shape
 
 ```powershell
-python translate_cli.py check translated.po
-python translate_cli.py check translated.ts
+python translate_cli.py check translated.po --target-lang kk
+python translate_cli.py check translated.ts --target-lang kk
 ```
 
 Useful options:

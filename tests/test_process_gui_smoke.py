@@ -346,6 +346,7 @@ class ProcessGuiSmokeTests(unittest.TestCase):
 
             config = process_gui.ProcessGuiConfig(
                 input_file=input_dir,
+                target_lang="fr",
                 api_key="test-key",
             )
 
@@ -444,6 +445,7 @@ class ProcessGuiSmokeTests(unittest.TestCase):
 
             config = process_gui.ProcessGuiConfig(
                 input_file=input_dir,
+                target_lang="fr",
                 api_key="test-key",
             )
 
@@ -481,6 +483,7 @@ class ProcessGuiSmokeTests(unittest.TestCase):
 
             config = process_gui.ProcessGuiConfig(
                 input_file=input_path,
+                target_lang="fr",
                 provider="openai",
                 model="",
                 api_key="openai-key",
@@ -568,6 +571,7 @@ class ProcessGuiSmokeTests(unittest.TestCase):
 
             config = process_gui.ProcessGuiConfig(
                 input_file=input_path,
+                target_lang="fr",
                 provider="openai",
                 model="gpt-4.1-mini",
                 api_key="test-key",
@@ -597,6 +601,7 @@ class ProcessGuiSmokeTests(unittest.TestCase):
 
             config = process_gui.ProcessGuiConfig(
                 input_file=input_path,
+                target_lang="fr",
                 provider="gemini",
                 model="gemini-test",
                 api_key="test-key",
@@ -626,6 +631,7 @@ class ProcessGuiSmokeTests(unittest.TestCase):
 
             config = process_gui.ProcessGuiConfig(
                 input_file=input_path,
+                target_lang="fr",
                 provider="gemini",
                 gemini_backend="vertex",
                 google_cloud_location="global",
@@ -1175,6 +1181,7 @@ class ProcessGuiSmokeTests(unittest.TestCase):
 
             config = process_gui.ReviseGuiConfig(
                 input_file=input_path,
+                target_lang="fr",
                 instruction="Change to imperative mood",
                 api_key="test-key",
             )
