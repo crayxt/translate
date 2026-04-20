@@ -2,12 +2,12 @@ from __future__ import annotations
 
 import asyncio
 import os
-import sys
 from typing import Any, Dict
 
 from google import genai
 from google.genai import types as genai_types
 
+from core.cli_errors import CliError
 from core.runtime import THINKING_LEVEL_CHOICES
 
 
@@ -156,10 +156,10 @@ class GeminiTranslationProvider:
                 or self.default_vertex_location
             )
             if not api_key:
-                sys.exit(f"ERROR: {self.api_key_env} environment variable is not set")
+                raise CliError(f"{self.api_key_env} environment variable is not set")
             if location.lower() != self.default_vertex_location:
-                sys.exit(
-                    "ERROR: Gemini Vertex API-key mode currently supports only the global endpoint"
+                raise CliError(
+                    "Gemini Vertex API-key mode currently supports only the global endpoint"
                 )
             client_kwargs: Dict[str, Any] = {
                 "vertexai": True,
@@ -171,7 +171,7 @@ class GeminiTranslationProvider:
 
         api_key = os.getenv(self.api_key_env)
         if not api_key:
-            sys.exit(f"ERROR: {self.api_key_env} environment variable is not set")
+            raise CliError(f"{self.api_key_env} environment variable is not set")
         return genai.Client(api_key=api_key, http_options=http_options)
 
     def build_request_contents(

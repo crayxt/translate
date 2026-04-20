@@ -4,6 +4,7 @@ import argparse
 import os
 from typing import Callable
 
+from core.cli_errors import CliError, format_cli_error
 from core.providers import get_translation_provider
 from core.runtime import DEFAULT_BATCH_SIZE, DEFAULT_PARALLEL_REQUESTS, add_thinking_level_argument
 
@@ -167,7 +168,10 @@ def run_task_main(
     parser = build_task_parser(configure_parser_fn)
     args = parser.parse_args(argv)
     apply_provider_environment_from_args(args)
-    run_from_args_fn(args)
+    try:
+        run_from_args_fn(args)
+    except CliError as exc:
+        raise SystemExit(format_cli_error(exc)) from exc
 
 
 def apply_provider_environment_from_args(

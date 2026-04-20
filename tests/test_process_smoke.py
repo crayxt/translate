@@ -7,6 +7,7 @@ import xml.etree.ElementTree as ET
 import polib
 from google.genai import types as genai_types
 
+from core.cli_errors import CliError
 from tasks import translate as process
 
 
@@ -548,7 +549,7 @@ class ProcessSmokeTests(unittest.TestCase):
             with open(file_path, "w", encoding="utf-8", newline="") as handle:
                 handle.write("<TS><context>")
 
-            with self.assertRaises(SystemExit) as raised:
+            with self.assertRaises(CliError) as raised:
                 process.run_translation(
                     process.TranslationRunConfig(
                         files=[file_path],
@@ -569,7 +570,7 @@ class ProcessSmokeTests(unittest.TestCase):
                     )
                 )
 
-            self.assertIn("ERROR: Failed to load translation input", str(raised.exception))
+            self.assertIn("Failed to load translation input", str(raised.exception))
             self.assertIn("_tmp_malformed_translate.ts", str(raised.exception))
         finally:
             if os.path.exists(file_path):

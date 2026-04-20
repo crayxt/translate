@@ -6,6 +6,7 @@ from unittest.mock import patch
 import httpx
 from openai import APIConnectionError
 
+from core.cli_errors import CliError
 from core.providers.openai import OpenAIRequestContents, OpenAITranslationProvider
 from tasks import check_translations, translate
 
@@ -36,7 +37,7 @@ class OpenAIProviderSmokeTests(unittest.TestCase):
             },
             clear=True,
         ):
-            with self.assertRaises(SystemExit) as ctx:
+            with self.assertRaises(CliError) as ctx:
                 provider._read_api_key()
 
         self.assertIn("appears to contain log output", str(ctx.exception))
@@ -51,7 +52,7 @@ class OpenAIProviderSmokeTests(unittest.TestCase):
             },
             clear=True,
         ):
-            with self.assertRaises(SystemExit) as ctx:
+            with self.assertRaises(CliError) as ctx:
                 provider._read_api_key()
 
         self.assertIn("contains whitespace or line breaks", str(ctx.exception))

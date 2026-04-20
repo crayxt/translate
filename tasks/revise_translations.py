@@ -10,6 +10,7 @@ import sys
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Tuple
 
+from core.cli_errors import CliError
 from core.review_common import (
     build_target_script_guidance as build_shared_target_script_guidance,
     json_load_maybe,
@@ -915,14 +916,14 @@ def run_from_args(args: argparse.Namespace) -> None:
     model_name = resolve_provider_model(args.provider, args.model)
 
     if args.out and args.in_place:
-        sys.exit("ERROR: --out and --in-place cannot be used together")
+        raise CliError("--out and --in-place cannot be used together")
     if args.max_attempts <= 0:
-        sys.exit("ERROR: --max-attempts must be greater than 0")
+        raise CliError("--max-attempts must be greater than 0")
 
     try:
         review_bundle = load_review_bundle(args.file, source_file=args.source_file)
     except ValueError as exc:
-        sys.exit(f"ERROR: {exc}")
+        raise CliError(str(exc)) from exc
 
     try:
         review_items = limit_review_items(review_bundle.items, args.num_messages)
@@ -932,7 +933,7 @@ def run_from_args(args: argparse.Namespace) -> None:
             parallel_arg=args.parallel_requests,
         )
     except ValueError as exc:
-        sys.exit(f"ERROR: {exc}")
+        raise CliError(str(exc)) from exc
 
     if not review_items:
         print("No translated entries found to review.")
@@ -1079,7 +1080,7 @@ def run_from_args(args: argparse.Namespace) -> None:
     try:
         changed_count, changed_items, issue_items = asyncio.run(run_revision())
     except RuntimeError as exc:
-        sys.exit(str(exc))
+        raise CliError(str(exc)) from exc
 
     print("")
     print(f"Reviewed entries: {len(review_items)}")

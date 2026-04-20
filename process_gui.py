@@ -16,6 +16,7 @@ from tkinter.scrolledtext import ScrolledText
 from types import SimpleNamespace
 from typing import TextIO
 
+from core.cli_errors import CliError
 from core.formats import FileKind, detect_file_kind
 from core.providers import (
     DEFAULT_PROVIDER as DEFAULT_PROVIDER_SPEC,
@@ -519,7 +520,7 @@ def _validate_base_config(
     else:
         try:
             get_translation_provider(cleaned_provider)
-        except ValueError as exc:
+        except CliError as exc:
             errors.append(str(exc))
 
     if cleaned_provider == "gemini":
@@ -566,7 +567,7 @@ def _validate_base_config(
     if cleaned_provider:
         try:
             provider_spec = get_translation_provider(cleaned_provider)
-        except ValueError:
+        except CliError:
             provider_spec = None
         if provider_spec is not None:
             api_key_env = provider_spec.api_key_env
@@ -867,7 +868,7 @@ def _append_common_cli_args(
 
     try:
         provider_spec = get_translation_provider(provider_name)
-    except ValueError:
+    except CliError:
         provider_spec = None
 
     seed_value = _validate_optional_non_negative_int(seed, "Seed")
@@ -1640,7 +1641,7 @@ class BaseToolTab(ttk.Frame):
         provider_name = _clean(self.provider_var.get()) or DEFAULT_PROVIDER
         try:
             provider_spec = get_translation_provider(provider_name)
-        except ValueError:
+        except CliError:
             self.api_status_var.set(f"API key source: invalid provider ({provider_name})")
             return
 
@@ -1685,7 +1686,7 @@ class BaseToolTab(ttk.Frame):
         provider_name = _clean(self.provider_var.get()) or DEFAULT_PROVIDER
         try:
             provider_spec = get_translation_provider(provider_name)
-        except ValueError:
+        except CliError:
             flex_state = "disabled"
             thinking_state = "disabled"
             seed_state = "disabled"
@@ -1720,7 +1721,7 @@ class BaseToolTab(ttk.Frame):
         provider_name = _clean(self.provider_var.get()) or DEFAULT_PROVIDER
         try:
             new_default_model = resolve_provider_model(provider_name, None)
-        except ValueError:
+        except CliError:
             new_default_model = DEFAULT_MODEL
 
         model_value, self._auto_model = choose_resource_field_value(

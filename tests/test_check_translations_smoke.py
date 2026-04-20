@@ -258,22 +258,17 @@ class CheckTranslationsSmokeTests(unittest.TestCase):
                 patch("tasks.check_translations.build_task_runtime_context", return_value=runtime_context),
                 patch("tasks.check_translations.detect_file_kind", return_value=process.FileKind.PO),
                 patch("tasks.check_translations.load_po", return_value=(entries, None, None)),
-                patch(
-                    "tasks.check_translations.sys.argv",
-                    [
-                        "check_translations.py",
-                        "input.po",
-                        "--target-lang",
-                        "kk",
-                        "--out",
-                        out_path,
-                        "--probe",
-                        "1",
-                    ],
-                ),
                 patch("builtins.print"),
             ):
-                check_translations.main()
+                check_translations.main([
+                    "input.po",
+                    "--target-lang",
+                    "kk",
+                    "--out",
+                    out_path,
+                    "--probe",
+                    "1",
+                ])
 
             with open(out_path, "r", encoding="utf-8") as f:
                 payload = json.load(f)
@@ -326,13 +321,9 @@ class CheckTranslationsSmokeTests(unittest.TestCase):
                 patch("tasks.check_translations.build_task_runtime_context", return_value=runtime_context),
                 patch("tasks.check_translations.detect_file_kind", return_value=process.FileKind.TS),
                 patch("tasks.check_translations.load_ts", return_value=(entries, None, None)),
-                patch(
-                    "tasks.check_translations.sys.argv",
-                    ["check_translations.py", "input.ts", "--target-lang", "kk", "--out", out_path],
-                ),
                 patch("builtins.print"),
             ):
-                check_translations.main()
+                check_translations.main(["input.ts", "--target-lang", "kk", "--out", out_path])
 
             with open(out_path, "r", encoding="utf-8") as f:
                 payload = json.load(f)
@@ -375,13 +366,9 @@ class CheckTranslationsSmokeTests(unittest.TestCase):
                 patch("tasks.check_translations.build_task_runtime_context", return_value=runtime_context),
                 patch("tasks.check_translations.detect_file_kind", return_value=process.FileKind.XLIFF),
                 patch("tasks.check_translations.load_xliff", return_value=(entries, None, None)),
-                patch(
-                    "tasks.check_translations.sys.argv",
-                    ["check_translations.py", "input.xliff", "--target-lang", "kk", "--out", out_path],
-                ),
                 patch("builtins.print"),
             ):
-                check_translations.main()
+                check_translations.main(["input.xliff", "--target-lang", "kk", "--out", out_path])
 
             with open(out_path, "r", encoding="utf-8") as f:
                 payload = json.load(f)

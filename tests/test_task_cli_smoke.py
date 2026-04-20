@@ -2,6 +2,7 @@ import argparse
 import unittest
 from unittest.mock import patch
 
+from core.cli_errors import CliError
 from core.task_cli import (
     apply_provider_environment_from_args,
     add_glossary_argument,
@@ -122,6 +123,22 @@ class TaskCliSmokeTests(unittest.TestCase):
             )
 
         self.assertEqual(captured, ["sample.po"])
+
+    def test_run_task_main_renders_cli_error_at_boundary(self):
+        def configure(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
+            return parser
+
+        def run_from_args(_args):
+            raise CliError("bad input")
+
+        with self.assertRaises(SystemExit) as raised:
+            run_task_main(
+                configure_parser_fn=configure,
+                run_from_args_fn=run_from_args,
+                argv=[],
+            )
+
+        self.assertEqual(str(raised.exception), "ERROR: bad input")
 
     def test_resolve_provider_model_uses_selected_provider_default(self):
         model = resolve_provider_model("openai", None)

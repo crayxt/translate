@@ -8,11 +8,11 @@ from datetime import datetime, timezone
 import json
 import math
 import os
-import sys
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, List
 
+from core.cli_errors import CliError
 from core.entries import (
     TranslationResult,
     TranslationWarning,
@@ -648,10 +648,7 @@ def write_translation_warning_report(
 
 def load_entries_for_translation(file_path: str, source_file: str | None = None):
     """Load entries, save hooks, and warnings for one translation input file."""
-    try:
-        file_kind = detect_file_kind(file_path)
-    except ValueError as exc:
-        sys.exit(f"ERROR: {exc}")
+    file_kind = detect_file_kind(file_path)
 
     try:
         if file_kind == FileKind.ANDROID_XML:
@@ -934,7 +931,7 @@ def run_translation(config: TranslationRunConfig) -> None:
         file_kind = validate_translation_files(resolved_files, source_file=config.source_file)
         file_jobs = load_translation_jobs(resolved_files, source_file=config.source_file)
     except ValueError as exc:
-        sys.exit(f"ERROR: {exc}")
+        raise CliError(str(exc)) from exc
 
     runtime_context = build_task_runtime_context(
         provider_name=config.provider,
@@ -962,7 +959,7 @@ def run_translation(config: TranslationRunConfig) -> None:
             parallel_arg=config.parallel_requests,
         )
     except ValueError as exc:
-        sys.exit(f"ERROR: {exc}")
+        raise CliError(str(exc)) from exc
 
     translation_config = build_translation_generation_config(
         config.thinking_level,
@@ -1018,7 +1015,7 @@ def run_translation(config: TranslationRunConfig) -> None:
             )
         )
     except RuntimeError as exc:
-        sys.exit(str(exc))
+        raise CliError(str(exc)) from exc
 
     saved_jobs = [job for job in file_jobs if job.output_path in touched_output_paths]
     for job in saved_jobs:
@@ -1068,7 +1065,7 @@ def run_from_args(args: argparse.Namespace) -> None:
     try:
         config = config_from_args(args)
     except ValueError as exc:
-        sys.exit(f"ERROR: {exc}")
+        raise CliError(str(exc)) from exc
     run_translation(config)
 
 

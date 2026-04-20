@@ -4,6 +4,7 @@ from unittest.mock import patch
 
 from google.genai import types as genai_types
 
+from core.cli_errors import CliError
 from core.providers.gemini import GeminiTranslationProvider, build_thinking_config
 
 
@@ -63,7 +64,7 @@ class GeminiProviderSmokeTests(unittest.TestCase):
             },
             clear=True,
         ):
-            with self.assertRaises(SystemExit) as ctx:
+            with self.assertRaises(CliError) as ctx:
                 provider.create_client_from_env()
 
         self.assertIn(provider.api_key_env, str(ctx.exception))
@@ -80,7 +81,7 @@ class GeminiProviderSmokeTests(unittest.TestCase):
             },
             clear=True,
         ):
-            with self.assertRaises(SystemExit) as ctx:
+            with self.assertRaises(CliError) as ctx:
                 provider.create_client_from_env()
 
         self.assertIn("global endpoint", str(ctx.exception))

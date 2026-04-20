@@ -5,9 +5,9 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import sys
 from typing import List, Tuple
 
+from core.cli_errors import CliError
 from core.glossary_catalog import load_glossary_source_terms
 from core.formats import (
     FileKind,
@@ -206,17 +206,17 @@ def build_parser() -> argparse.ArgumentParser:
 def run_from_args(args: argparse.Namespace) -> None:
     """Execute local term discovery or JSON-to-PO conversion from parsed CLI args."""
     if args.to_po and args.also_po:
-        sys.exit("ERROR: --to-po and --also-po cannot be used together.")
+        raise CliError("--to-po and --also-po cannot be used together.")
 
     if not args.to_po and args.out and not str(args.out).lower().endswith(".json"):
-        sys.exit("ERROR: Local extraction output path should end with .json.")
+        raise CliError("Local extraction output path should end with .json.")
 
     if args.to_po and args.out and not str(args.out).lower().endswith(".po"):
-        sys.exit("ERROR: JSON to PO output path should end with .po.")
+        raise CliError("JSON to PO output path should end with .po.")
 
     if args.to_po:
         if os.path.isdir(args.file):
-            sys.exit("ERROR: JSON to PO mode requires a JSON file, not a directory.")
+            raise CliError("JSON to PO mode requires a JSON file, not a directory.")
         try:
             out_path = convert_json_to_po(
                 args.file,
@@ -224,7 +224,7 @@ def run_from_args(args: argparse.Namespace) -> None:
                 include_borderline=args.include_borderline,
             )
         except (OSError, ValueError, json.JSONDecodeError) as exc:
-            sys.exit(f"ERROR: {exc}")
+            raise CliError(str(exc)) from exc
 
         print("Local term PO conversion complete.")
         print(f"Saved file: {out_path}")
@@ -233,13 +233,13 @@ def run_from_args(args: argparse.Namespace) -> None:
     try:
         messages, scanned_files = load_messages_for_input(args.file)
     except ValueError as exc:
-        sys.exit(f"ERROR: {exc}")
+        raise CliError(str(exc)) from exc
 
     try:
         glossary_source_path = resolve_local_glossary_path(args.glossary_source)
         glossary_pairs = load_local_glossary_pairs(glossary_source_path)
     except ValueError as exc:
-        sys.exit(f"ERROR: {exc}")
+        raise CliError(str(exc)) from exc
     if not messages:
         print("No source messages found for local terminology extraction.")
         return
@@ -278,7 +278,7 @@ def run_from_args(args: argparse.Namespace) -> None:
                 include_borderline=args.include_borderline,
             )
         except (OSError, ValueError, json.JSONDecodeError) as exc:
-            sys.exit(f"ERROR: JSON report was written, but PO conversion failed: {exc}")
+            raise CliError(f"JSON report was written, but PO conversion failed: {exc}") from exc
         print(f"Saved PO handoff: {po_out_path}")
     print(f"Accepted terms: {len(result.accepted_terms)}")
     print(f"Borderline terms: {len(result.borderline_terms)}")

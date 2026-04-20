@@ -7,6 +7,7 @@ from unittest.mock import patch
 
 import polib
 
+from core.cli_errors import CliError
 from tasks import extract_terms_local
 
 
@@ -218,12 +219,12 @@ class ExtractTermsLocalSmokeTests(unittest.TestCase):
                 include_borderline=False,
             )
 
-            with self.assertRaises(SystemExit) as raised:
+            with self.assertRaises(CliError) as raised:
                 extract_terms_local.run_from_args(args)
 
             self.assertEqual(
                 str(raised.exception),
-                "ERROR: Glossary source file 'missing-glossary.jsonl' not found.",
+                "Glossary source file 'missing-glossary.jsonl' not found.",
             )
         finally:
             self._cleanup_paths(input_path)

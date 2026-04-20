@@ -4,13 +4,13 @@ import argparse
 import asyncio
 import json
 import os
-import sys
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Literal, Tuple
 
 import polib
 
+from core.cli_errors import CliError
 from core.review_common import build_target_script_guidance as build_shared_target_script_guidance
 from core.formats import (
     FileKind,
@@ -481,9 +481,9 @@ def run_from_args(args: argparse.Namespace) -> None:
     model_name = resolve_provider_model(args.provider, args.model)
 
     if args.max_terms_per_batch <= 0:
-        sys.exit("ERROR: --max-terms-per-batch must be greater than 0")
+        raise CliError("--max-terms-per-batch must be greater than 0")
     if args.max_attempts <= 0:
-        sys.exit("ERROR: --max-attempts must be greater than 0")
+        raise CliError("--max-attempts must be greater than 0")
 
     runtime_context = build_task_runtime_context(
         provider_name=args.provider,
@@ -501,7 +501,7 @@ def run_from_args(args: argparse.Namespace) -> None:
     try:
         file_kind = detect_file_kind(args.file)
     except ValueError as e:
-        sys.exit(f"ERROR: {e}")
+        raise CliError(str(e)) from e
 
     entries = load_entries_for_file(args.file, file_kind)
     source_messages = collect_source_messages(entries)
@@ -518,7 +518,7 @@ def run_from_args(args: argparse.Namespace) -> None:
             parallel_arg=args.parallel_requests,
         )
     except ValueError as e:
-        sys.exit(f"ERROR: {e}")
+        raise CliError(str(e)) from e
 
     batches = build_fixed_batches(source_messages, batch_size)
 
@@ -599,7 +599,7 @@ def run_from_args(args: argparse.Namespace) -> None:
     try:
         raw_candidates = asyncio.run(run_extraction())
     except RuntimeError as e:
-        sys.exit(str(e))
+        raise CliError(str(e)) from e
 
     merged_terms = merge_term_candidates(raw_candidates)
     merged_terms.sort(key=lambda x: x.source_term.lower())

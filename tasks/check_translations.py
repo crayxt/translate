@@ -4,11 +4,11 @@ import argparse
 import asyncio
 import json
 import os
-import sys
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Tuple
 
+from core.cli_errors import CliError
 from core.review_common import (
     build_target_script_guidance as build_shared_target_script_guidance,
     json_load_maybe,
@@ -494,15 +494,15 @@ def run_from_args(args: argparse.Namespace) -> None:
     model_name = resolve_provider_model(args.provider, args.model)
 
     if args.max_attempts <= 0:
-        sys.exit("ERROR: --max-attempts must be greater than 0")
+        raise CliError("--max-attempts must be greater than 0")
 
     try:
         file_kind = detect_file_kind(args.file)
     except ValueError as e:
-        sys.exit(f"ERROR: {e}")
+        raise CliError(str(e)) from e
 
     if file_kind not in (FileKind.PO, FileKind.XLIFF, FileKind.TS):
-        sys.exit("ERROR: the check command currently supports only .po, .xlf/.xliff, and .ts files")
+        raise CliError("the check command currently supports only .po, .xlf/.xliff, and .ts files")
 
     runtime_context = build_task_runtime_context(
         provider_name=args.provider,
@@ -524,7 +524,7 @@ def run_from_args(args: argparse.Namespace) -> None:
             args.num_messages,
         )
     except ValueError as e:
-        sys.exit(f"ERROR: {e}")
+        raise CliError(str(e)) from e
 
     total = len(review_entries)
     if total == 0:
@@ -538,7 +538,7 @@ def run_from_args(args: argparse.Namespace) -> None:
             parallel_arg=args.parallel_requests,
         )
     except ValueError as e:
-        sys.exit(f"ERROR: {e}")
+        raise CliError(str(e)) from e
 
     all_batches = build_fixed_batches(review_entries, batch_size)
     out_path = args.out or build_check_output_path(args.file)
@@ -646,7 +646,7 @@ def run_from_args(args: argparse.Namespace) -> None:
     try:
         results = asyncio.run(run_checks())
     except RuntimeError as e:
-        sys.exit(str(e))
+        raise CliError(str(e)) from e
 
     payload = {
         "source_file": args.file,

@@ -2,6 +2,7 @@ import unittest
 from unittest.mock import patch
 
 from core import runtime
+from core.cli_errors import CliError
 from core.task_resources import TaskResourceContext
 from core.task_runtime import build_task_runtime_context, print_startup_configuration
 
@@ -51,7 +52,7 @@ class TaskRuntimeSmokeTests(unittest.TestCase):
     def test_build_task_runtime_context_rejects_seed_for_unsupported_provider(self):
         provider = _DummyProvider()
 
-        with self.assertRaises(ValueError) as raised:
+        with self.assertRaises(CliError) as raised:
             build_task_runtime_context(
                 provider_name="dummy",
                 target_lang="kk",

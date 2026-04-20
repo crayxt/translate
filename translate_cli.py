@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import sys
 
+from core.cli_errors import CliError, format_cli_error
 from core.task_cli import apply_provider_environment_from_args
 from tasks import check_translations, extract_terms, extract_terms_local, revise_translations, translate
 
@@ -77,7 +78,10 @@ def main(argv: list[str] | None = None) -> None:
     handler = getattr(args, "handler", None)
     if handler is None:
         parser.error(f"Unknown command: {args.command}")
-    handler(args)
+    try:
+        handler(args)
+    except CliError as exc:
+        raise SystemExit(format_cli_error(exc)) from exc
 
 
 if __name__ == "__main__":

@@ -5,6 +5,7 @@ from functools import lru_cache
 from importlib import import_module
 from typing import Any
 
+from core.cli_errors import CliError
 from core.providers.base import TranslationProvider
 
 
@@ -70,7 +71,7 @@ def _load_translation_provider(provider_name: str) -> TranslationProvider:
     try:
         module = import_module(spec.module_name)
     except ImportError as exc:
-        raise RuntimeError(
+        raise CliError(
             f"Provider '{spec.name}' requires an optional dependency that is not installed."
         ) from exc
     provider_class = getattr(module, spec.class_name)
@@ -145,13 +146,13 @@ def get_translation_provider(name: str | None = None) -> TranslationProvider:
     provider = SUPPORTED_TRANSLATION_PROVIDERS.get(provider_name)
     if provider is None:
         supported = ", ".join(sorted(SUPPORTED_TRANSLATION_PROVIDERS))
-        raise ValueError(f"Unsupported provider: {provider_name!r}. Supported providers: {supported}")
+        raise CliError(f"Unsupported provider: {provider_name!r}. Supported providers: {supported}")
     return provider
 
 
 def validate_provider_seed(provider: TranslationProvider, seed: int | None) -> None:
     if seed is not None and not getattr(provider, "supports_seed", False):
-        raise ValueError(f"Provider '{provider.name}' does not support --seed.")
+        raise CliError(f"Provider '{provider.name}' does not support --seed.")
 
 
 __all__ = [

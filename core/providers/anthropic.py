@@ -4,10 +4,10 @@ import asyncio
 from copy import deepcopy
 import json
 import os
-import sys
 from dataclasses import dataclass
 from typing import Any, Dict
 
+from core.cli_errors import CliError
 from core.entries import json_load_maybe
 
 
@@ -57,29 +57,29 @@ class AnthropicTranslationProvider:
         try:
             timeout_seconds = float(raw_timeout)
         except ValueError:
-            sys.exit(f"ERROR: {self.timeout_env} must be a positive number")
+            raise CliError(f"{self.timeout_env} must be a positive number")
         if timeout_seconds <= 0:
-            sys.exit(f"ERROR: {self.timeout_env} must be a positive number")
+            raise CliError(f"{self.timeout_env} must be a positive number")
         return timeout_seconds
 
     def _read_api_key(self) -> str:
         api_key = os.getenv(self.api_key_env)
         if not api_key:
-            sys.exit(f"ERROR: {self.api_key_env} environment variable is not set")
+            raise CliError(f"{self.api_key_env} environment variable is not set")
 
         cleaned_api_key = str(api_key).strip()
         if not cleaned_api_key:
-            sys.exit(f"ERROR: {self.api_key_env} environment variable is empty")
+            raise CliError(f"{self.api_key_env} environment variable is empty")
 
         if "API Error [" in cleaned_api_key or "Retrying [" in cleaned_api_key:
-            sys.exit(
-                f"ERROR: {self.api_key_env} appears to contain log output instead of an API key. "
+            raise CliError(
+                f"{self.api_key_env} appears to contain log output instead of an API key. "
                 "Clear the GUI field or environment variable and paste the real Anthropic API key."
             )
 
         if any(ch.isspace() for ch in cleaned_api_key):
-            sys.exit(
-                f"ERROR: {self.api_key_env} contains whitespace or line breaks. "
+            raise CliError(
+                f"{self.api_key_env} contains whitespace or line breaks. "
                 "Paste only the raw Anthropic API key."
             )
 
