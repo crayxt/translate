@@ -19,6 +19,7 @@ SHARED_LOCALIZATION_INVARIANTS = render_instruction_section(
     "Leading and trailing spaces must be preserved exactly",
     "Escapes, entities, and meaningful punctuation must be preserved when they carry formatting or structure",
     "Literal escape sequences such as `\\n` and `\\t` must remain literal backslash sequences when the source uses them",
+    "Never output NUL bytes or hidden control characters in translated text",
     "Approved vocabulary and project rules are mandatory when supplied",
     "Use message context and notes to disambiguate meaning, UI role, and terminology whenever they are present",
 )

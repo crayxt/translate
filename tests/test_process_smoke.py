@@ -678,6 +678,22 @@ class ProcessSmokeTests(unittest.TestCase):
         results = process.parse_response(_DummyResponse(text=text))
         self.assertEqual(results["7"].text, "Gamma")
 
+    def test_parse_response_sanitizes_null_and_control_characters(self):
+        payload = {
+            "translations": [
+                {
+                    "id": "0",
+                    "text": "A\x00B\x07C\uFFFD",
+                    "plural_texts": ["X\x00Y", "P\uFFFDQ"],
+                }
+            ]
+        }
+
+        results = process.parse_response(_DummyResponse(parsed=payload))
+
+        self.assertEqual(results["0"].text, "ABC")
+        self.assertEqual(results["0"].plural_texts, ["XY", "PQ"])
+
     def test_parse_response_preserves_message_warnings(self):
         payload = {
             "translations": [
@@ -796,6 +812,17 @@ class ProcessSmokeTests(unittest.TestCase):
         self.assertEqual(entry.msgstr_plural[0], "Kun")
         self.assertEqual(entry.msgstr_plural[1], "Kun")
         self.assertEqual(entry.msgstr_plural[2], "Kun")
+
+    def test_apply_translation_to_entry_strips_null_and_control_characters(self):
+        entry = polib.POEntry(msgid="Save")
+
+        applied = process.apply_translation_to_entry(
+            entry,
+            process.TranslationResult(text="Sa\x00q\x07ta\uFFFDu"),
+        )
+
+        self.assertTrue(applied)
+        self.assertEqual(entry.msgstr, "Saqtau")
 
     def test_apply_translation_to_plural_entry_rejects_labeled_plural_text_in_text(self):
         entry = polib.POEntry(msgid="Day", msgid_plural="Days")
@@ -1434,7 +1461,7 @@ class ProcessSmokeTests(unittest.TestCase):
                 if os.path.exists(path):
                     os.remove(path)
 
-    def test_load_strings_normalizes_literal_bell_escape_from_model(self):
+    def test_load_strings_drops_bell_escape_from_model(self):
         in_path = os.path.join(os.getcwd(), "_tmp_escape_bell.strings")
         out_path = os.path.join(os.getcwd(), "_tmp_escape_bell.ai-translated.strings")
         try:
@@ -1455,8 +1482,8 @@ class ProcessSmokeTests(unittest.TestCase):
 
             with open(out_path, "r", encoding="utf-8") as f:
                 out_text = f.read()
-            self.assertIn('"a|bell" = "AAA\\aBBB";', out_text)
-            self.assertNotIn('"a|bell" = "AAA\\\\aBBB";', out_text)
+            self.assertIn('"a|bell" = "AAABBB";', out_text)
+            self.assertNotIn("\\a", out_text)
         finally:
             for path in (in_path, out_path):
                 if os.path.exists(path):

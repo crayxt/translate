@@ -30,6 +30,24 @@ class TranslationResult:
     warnings: List[TaskIssue] = field(default_factory=list)
 
 
+def sanitize_model_text(text: str) -> str:
+    """Drop NUL/control/surrogate/replacement chars from model output text."""
+    if not isinstance(text, str) or not text:
+        return text
+
+    sanitized_chars: List[str] = []
+    for char in text:
+        codepoint = ord(char)
+        # Keep horizontal tab, LF, and CR; drop all other ASCII control chars.
+        if (0 <= codepoint <= 31 and char not in ("\t", "\n", "\r")) or codepoint == 127:
+            continue
+        # Drop Unicode surrogate code points and replacement char U+FFFD.
+        if 0xD800 <= codepoint <= 0xDFFF or codepoint == 0xFFFD:
+            continue
+        sanitized_chars.append(char)
+    return "".join(sanitized_chars)
+
+
 def json_load_maybe(text: str) -> Any:
     payload = text.strip()
     if not payload:
@@ -62,13 +80,15 @@ def _normalize_translation_payload(payload: Any) -> Dict[str, TranslationResult]
                     text = ""
                 if not isinstance(text, str):
                     text = str(text)
+                text = sanitize_model_text(text)
                 plural_texts_raw = item.get("plural_texts")
                 plural_texts: List[str] = []
                 if isinstance(plural_texts_raw, list):
                     for value in plural_texts_raw:
                         if value is None:
                             continue
-                        plural_texts.append(value if isinstance(value, str) else str(value))
+                        normalized_value = value if isinstance(value, str) else str(value)
+                        plural_texts.append(sanitize_model_text(normalized_value))
                 warnings_raw = item.get("warnings")
                 warnings: List[TaskIssue] = []
                 if isinstance(warnings_raw, list):
@@ -84,10 +104,11 @@ def _normalize_translation_payload(payload: Any) -> Dict[str, TranslationResult]
             return results
         for key, value in payload.items():
             if isinstance(value, str):
-                results[str(key)] = TranslationResult(text=value)
+                results[str(key)] = TranslationResult(text=sanitize_model_text(value))
             elif isinstance(value, dict):
                 text = value.get("text")
                 if isinstance(text, str):
+                    text = sanitize_model_text(text)
                     warnings_raw = value.get("warnings")
                     warnings: List[TaskIssue] = []
                     if isinstance(warnings_raw, list):
@@ -130,7 +151,7 @@ def normalize_model_escaped_text(source_text: str, candidate_text: str) -> str:
     if not isinstance(candidate_text, str):
         return candidate_text
 
-    normalized = candidate_text
+    normalized = sanitize_model_text(candidate_text)
     replacements = (
         ("\n", "\\n"),
         ("\t", "\\t"),
