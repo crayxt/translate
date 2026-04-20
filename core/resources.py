@@ -491,31 +491,17 @@ def build_language_code_candidates(target_lang: str) -> List[str]:
     if not raw:
         return []
 
-    seeds: List[str] = []
-    for candidate in (raw, raw.replace("-", "_"), raw.replace("_", "-")):
-        if candidate and candidate not in seeds:
-            seeds.append(candidate)
-
     results: List[str] = []
 
     def add(code: str | None) -> None:
         if code and code not in results:
             results.append(code)
 
-    for seed in seeds:
-        add(seed)
-        if "_" in seed:
-            add(seed.split("_", 1)[0])
-        if "-" in seed:
-            add(seed.split("-", 1)[0])
+    for candidate in (raw, raw.replace("-", "_"), raw.replace("_", "-")):
+        add(candidate)
 
     for value in list(results):
-        lower = value.lower()
-        add(lower)
-        if "_" in lower:
-            add(lower.split("_", 1)[0])
-        if "-" in lower:
-            add(lower.split("-", 1)[0])
+        add(value.lower())
 
     return results
 

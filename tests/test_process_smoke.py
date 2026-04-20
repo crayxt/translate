@@ -1504,10 +1504,11 @@ class ProcessSmokeTests(unittest.TestCase):
             if os.path.exists(out_path):
                 os.remove(out_path)
 
-    def test_build_language_code_candidates_include_locale_and_base(self):
+    def test_build_language_code_candidates_include_exact_locale_variants_only(self):
         candidates = process.build_language_code_candidates("fr_CA")
         self.assertIn("fr_CA", candidates)
-        self.assertIn("fr", candidates)
+        self.assertIn("fr-CA", candidates)
+        self.assertNotIn("fr", candidates)
 
     def test_detect_default_text_resource_prefers_exact_match(self):
         with patch("core.resources.os.path.isfile") as mocked_exists:
@@ -1519,21 +1520,21 @@ class ProcessSmokeTests(unittest.TestCase):
 
         self.assertEqual(resolved, os.path.join("data", "locales", "fr_CA", "rules.md"))
 
-    def test_detect_default_text_resource_falls_back_to_base_language(self):
+    def test_detect_default_text_resource_does_not_fall_back_to_base_language(self):
         with patch("core.resources.os.path.isfile") as mocked_exists:
             mocked_exists.side_effect = lambda path: path in {
                 os.path.join("data", "locales", "fr", "rules.md")
             }
             resolved = process.detect_default_text_resource("rules", "md", "fr_CA")
 
-        self.assertEqual(resolved, os.path.join("data", "locales", "fr", "rules.md"))
+        self.assertIsNone(resolved)
 
-    def test_detect_default_text_resource_uses_legacy_fallback(self):
+    def test_detect_default_text_resource_uses_exact_legacy_path(self):
         with patch("core.resources.os.path.isfile") as mocked_exists:
-            mocked_exists.side_effect = lambda path: path == "rules-fr.md"
+            mocked_exists.side_effect = lambda path: path == "rules-fr_CA.md"
             resolved = process.detect_default_text_resource("rules", "md", "fr_CA")
 
-        self.assertEqual(resolved, "rules-fr.md")
+        self.assertEqual(resolved, "rules-fr_CA.md")
 
     def test_detect_default_text_resource_supports_vocab_directory(self):
         vocab_dir = os.path.join("data", "locales", "fr", "vocab")
@@ -1545,7 +1546,7 @@ class ProcessSmokeTests(unittest.TestCase):
             resolved = process.detect_default_text_resource(
                 "vocab",
                 "txt",
-                "fr_CA",
+                "fr",
                 allow_directory=True,
             )
 
