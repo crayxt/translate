@@ -11,6 +11,7 @@ class TranslationProvider(Protocol):
     supports_structured_input: bool
     supports_thinking: bool
     supports_flex_mode: bool
+    supports_seed: bool
 
     def create_client_from_env(self, *, flex_mode: bool = False) -> Any:
         ...

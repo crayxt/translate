@@ -48,6 +48,19 @@ class TaskRuntimeSmokeTests(unittest.TestCase):
         self.assertIsNotNone(context.client)
         self.assertTrue(provider.last_flex_mode)
 
+    def test_build_task_runtime_context_rejects_seed_for_unsupported_provider(self):
+        provider = _DummyProvider()
+
+        with self.assertRaises(ValueError) as raised:
+            build_task_runtime_context(
+                provider_name="dummy",
+                target_lang="kk",
+                seed=42,
+                get_translation_provider_fn=lambda name: provider,
+            )
+
+        self.assertEqual(str(raised.exception), "Provider 'dummy' does not support --seed.")
+
     def test_print_startup_configuration_prints_label_value_pairs(self):
         with patch("builtins.print") as mocked_print:
             print_startup_configuration(

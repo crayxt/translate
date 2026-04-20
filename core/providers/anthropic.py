@@ -41,6 +41,7 @@ class AnthropicTranslationProvider:
     supports_structured_input = False
     supports_thinking = True
     supports_flex_mode = False
+    supports_seed = False
 
     _THINKING_BUDGETS = {
         "minimal": 1024,

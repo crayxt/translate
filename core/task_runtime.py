@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Callable
 
-from core.providers import TranslationProvider, get_translation_provider
+from core.providers import TranslationProvider, get_translation_provider, validate_provider_seed
 from core.task_resources import TaskResourceContext, load_task_resource_context
 
 
@@ -20,6 +20,7 @@ def build_task_runtime_context(
     provider_name: str | None,
     target_lang: str,
     flex_mode: bool = False,
+    seed: int | None = None,
     explicit_vocab_path: str | None = None,
     explicit_rules_path: str | None = None,
     inline_rules: str | None = None,
@@ -31,6 +32,7 @@ def build_task_runtime_context(
 ) -> TaskRuntimeContext:
     """Create the provider client and load any task-level resource files."""
     provider = get_translation_provider_fn(provider_name)
+    validate_provider_seed(provider, seed)
     client = provider.create_client_from_env(flex_mode=flex_mode)
     resources = load_task_resource_context_fn(
         target_lang=target_lang,

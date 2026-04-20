@@ -21,6 +21,7 @@ class GeminiTranslationProvider:
     supports_structured_input = True
     supports_thinking = True
     supports_flex_mode = True
+    supports_seed = True
     flex_timeout_seconds = 600
 
     _SCHEMA_TYPE_MAP = {

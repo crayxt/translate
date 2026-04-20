@@ -941,6 +941,7 @@ def run_translation(config: TranslationRunConfig) -> None:
         provider_name=config.provider,
         target_lang=config.target_lang,
         flex_mode=config.flex_mode,
+        seed=config.seed,
         explicit_vocab_path=config.glossary,
         explicit_rules_path=config.rules,
         inline_rules=config.rules_str,

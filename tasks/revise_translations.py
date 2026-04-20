@@ -942,6 +942,7 @@ def run_from_args(args: argparse.Namespace) -> None:
         provider_name=args.provider,
         target_lang=args.target_lang,
         flex_mode=args.flex_mode,
+        seed=args.seed,
         explicit_vocab_path=args.glossary,
         explicit_rules_path=args.rules,
         inline_rules=args.rules_str,

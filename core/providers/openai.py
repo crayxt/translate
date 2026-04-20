@@ -41,6 +41,7 @@ class OpenAITranslationProvider:
     supports_structured_input = False
     supports_thinking = True
     supports_flex_mode = True
+    supports_seed = False
 
     def _read_timeout_seconds(self) -> float:
         raw_timeout = str(os.getenv(self.timeout_env, "")).strip()

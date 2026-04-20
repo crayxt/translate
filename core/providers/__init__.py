@@ -26,6 +26,11 @@ def get_translation_provider(name: str | None = None) -> TranslationProvider:
     return provider
 
 
+def validate_provider_seed(provider: TranslationProvider, seed: int | None) -> None:
+    if seed is not None and not getattr(provider, "supports_seed", False):
+        raise ValueError(f"Provider '{provider.name}' does not support --seed.")
+
+
 __all__ = [
     "DEFAULT_PROVIDER",
     "DEFAULT_PROVIDER_NAME",
@@ -35,4 +40,5 @@ __all__ = [
     "SUPPORTED_TRANSLATION_PROVIDERS",
     "TranslationProvider",
     "get_translation_provider",
+    "validate_provider_seed",
 ]

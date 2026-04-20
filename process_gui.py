@@ -865,14 +865,14 @@ def _append_common_cli_args(
     if thinking_level_value:
         command.extend(["--thinking-level", thinking_level_value])
 
-    seed_value = _validate_optional_non_negative_int(seed, "Seed")
-    if seed_value:
-        command.extend(["--seed", seed_value])
-
     try:
         provider_spec = get_translation_provider(provider_name)
     except ValueError:
         provider_spec = None
+
+    seed_value = _validate_optional_non_negative_int(seed, "Seed")
+    if seed_value and getattr(provider_spec, "supports_seed", False):
+        command.extend(["--seed", seed_value])
     if provider_name == "gemini":
         backend_value = _clean(gemini_backend).lower()
         location_value = _clean(google_cloud_location)
@@ -1693,7 +1693,7 @@ class BaseToolTab(ttk.Frame):
         else:
             flex_state = "normal" if getattr(provider_spec, "supports_flex_mode", False) else "disabled"
             thinking_state = "normal" if getattr(provider_spec, "supports_thinking", False) else "disabled"
-            seed_state = "normal"
+            seed_state = "normal" if getattr(provider_spec, "supports_seed", False) else "disabled"
             gemini_state = "normal" if provider_name == "gemini" else "disabled"
         if self.flex_mode_button is not None:
             self.flex_mode_button.configure(state=flex_state)
@@ -1703,6 +1703,8 @@ class BaseToolTab(ttk.Frame):
             self.thinking_level_combo.configure(state=thinking_state)
         if self.seed_entry is not None:
             self.seed_entry.configure(state=seed_state)
+        if seed_state == "disabled":
+            self.seed_var.set("")
         if thinking_state == "disabled":
             self.thinking_level_var.set("")
         for widget in (
