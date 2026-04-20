@@ -394,7 +394,6 @@ class TranslationRunConfig:
     provider: str
     model: str
     thinking_level: str | None
-    seed: int | None
     batch_size: int | None
     parallel_requests: int | None
     glossary: str | None
@@ -403,6 +402,7 @@ class TranslationRunConfig:
     retranslate_all: bool
     flex_mode: bool
     warnings_report: bool
+    seed: int | None = None
 
 
 @dataclass
