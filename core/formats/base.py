@@ -30,6 +30,17 @@ class EntryStatus(str, Enum):
     SKIPPED = "skipped"
 
 
+TRANSLATION_SCOPE_UNFINISHED = "unfinished"
+TRANSLATION_SCOPE_UNTRANSLATED = "untranslated"
+TRANSLATION_SCOPE_ALL = "all"
+TRANSLATION_SCOPE_CHOICES = (
+    TRANSLATION_SCOPE_UNFINISHED,
+    TRANSLATION_SCOPE_UNTRANSLATED,
+    TRANSLATION_SCOPE_ALL,
+)
+DEFAULT_TRANSLATION_SCOPE = TRANSLATION_SCOPE_UNFINISHED
+
+
 @dataclass
 class UnifiedEntry:
     file_kind: FileKind
@@ -205,15 +216,27 @@ def _entry_has_source_text(entry: Any) -> bool:
     return bool(str(getattr(entry, "msgid", "") or "").strip())
 
 
-def select_work_items(entries: List[Any], retranslate_all: bool = False) -> List[Any]:
+def select_work_items(
+    entries: List[Any],
+    translation_scope: str = DEFAULT_TRANSLATION_SCOPE,
+) -> List[Any]:
+    if translation_scope not in TRANSLATION_SCOPE_CHOICES:
+        supported = ", ".join(TRANSLATION_SCOPE_CHOICES)
+        raise ValueError(
+            f"Unsupported translation scope: {translation_scope!r}. Supported scopes: {supported}"
+        )
     selected: List[Any] = []
     for entry in entries:
         if bool(getattr(entry, "obsolete", False)):
             continue
         if getattr(entry, "status", None) == EntryStatus.SKIPPED:
             continue
-        if retranslate_all:
+        if translation_scope == TRANSLATION_SCOPE_ALL:
             if _entry_has_source_text(entry):
+                selected.append(entry)
+            continue
+        if translation_scope == TRANSLATION_SCOPE_UNTRANSLATED:
+            if getattr(entry, "status", None) == EntryStatus.UNTRANSLATED:
                 selected.append(entry)
             continue
         if not entry.translated():

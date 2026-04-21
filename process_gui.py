@@ -132,7 +132,7 @@ class ProcessGuiConfig:
     rules_str: str = ""
     api_key: str = ""
     flex_mode: bool = False
-    retranslate_all: bool = False
+    translation_scope: str = translate_task.DEFAULT_TRANSLATION_SCOPE
     warnings_report: bool = False
 
 
@@ -610,6 +610,19 @@ def validate_process_gui_config(
     )
 
     cleaned_source_file = _clean(config.source_file)
+    cleaned_translation_scope = (
+        _clean(config.translation_scope).lower()
+        or translate_task.DEFAULT_TRANSLATION_SCOPE
+    )
+    try:
+        _validate_choice(
+            cleaned_translation_scope,
+            translate_task.TRANSLATION_SCOPE_CHOICES,
+            "Translate scope",
+        )
+    except ValueError as exc:
+        errors.append(str(exc))
+
     if translation_requires_source_file(input_files):
         if not cleaned_source_file:
             errors.append("Source file is required for Android .xml translation runs.")
@@ -949,8 +962,12 @@ def build_process_command(
     if source_file:
         command.extend(["--source-file", source_file])
 
-    if config.retranslate_all:
-        command.append("--retranslate-all")
+    translation_scope = (
+        _clean(config.translation_scope).lower()
+        or translate_task.DEFAULT_TRANSLATION_SCOPE
+    )
+    if translation_scope != translate_task.DEFAULT_TRANSLATION_SCOPE:
+        command.extend(["--translation-scope", translation_scope])
     if config.warnings_report:
         command.append("--warnings-report")
 
@@ -1834,7 +1851,7 @@ class BaseToolTab(ttk.Frame):
 class ProcessToolTab(BaseToolTab):
     def __init__(self, app: "ProcessGuiApp", notebook: ttk.Notebook) -> None:
         self.source_file_var = tk.StringVar()
-        self.retranslate_all_var = tk.BooleanVar(value=False)
+        self.translation_scope_var = tk.StringVar(value=translate_task.DEFAULT_TRANSLATION_SCOPE)
         self.warnings_report_var = tk.BooleanVar(value=True)
         self.selected_input_files: tuple[str, ...] = ()
         self._selected_input_files_display = ""
@@ -1926,11 +1943,13 @@ class ProcessToolTab(BaseToolTab):
             parent,
             text="Required for Android .xml translation runs.",
         ).grid(row=start_row + 1, column=0, columnspan=3, sticky="w", pady=(0, 8))
-        ttk.Checkbutton(
+        self._add_combo_row(
             parent,
-            text="Retranslate all entries",
-            variable=self.retranslate_all_var,
-        ).grid(row=start_row + 2, column=0, columnspan=3, sticky="w", pady=(4, 8))
+            row=start_row + 2,
+            label="Translate scope",
+            variable=self.translation_scope_var,
+            values=translate_task.TRANSLATION_SCOPE_CHOICES,
+        )
         ttk.Checkbutton(
             parent,
             text="Write translation warnings JSON report",
@@ -1967,7 +1986,7 @@ class ProcessToolTab(BaseToolTab):
             rules_str=self.rules_text.get("1.0", "end-1c") if self.rules_text else "",
             api_key=self.api_key_var.get(),
             flex_mode=self.flex_mode_var.get(),
-            retranslate_all=self.retranslate_all_var.get(),
+            translation_scope=self.translation_scope_var.get(),
             warnings_report=self.warnings_report_var.get(),
         )
 

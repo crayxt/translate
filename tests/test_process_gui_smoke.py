@@ -399,7 +399,7 @@ class ProcessGuiSmokeTests(unittest.TestCase):
                 rules_path=script_path,
                 rules_str="Use imperative tone.",
                 api_key="test-key",
-                retranslate_all=True,
+                translation_scope="all",
             )
 
             command = process_gui.build_process_command(
@@ -442,9 +442,39 @@ class ProcessGuiSmokeTests(unittest.TestCase):
                     script_path,
                     "--rules-str",
                     "Use imperative tone.",
-                    "--retranslate-all",
+                    "--translation-scope",
+                    "all",
                 ],
             )
+        finally:
+            for path in (input_path, script_path):
+                if os.path.exists(path):
+                    os.remove(path)
+
+    def test_build_process_command_can_limit_translation_to_untranslated_only(self):
+        input_path = os.path.join(os.getcwd(), "_tmp_gui_scope_input.po")
+        script_path = os.path.join(os.getcwd(), "_tmp_process_script.py")
+        try:
+            with open(input_path, "w", encoding="utf-8") as handle:
+                handle.write('msgid "Open"\nmsgstr ""\n')
+            with open(script_path, "w", encoding="utf-8") as handle:
+                handle.write("print('stub')\n")
+
+            config = process_gui.ProcessGuiConfig(
+                input_file=input_path,
+                target_lang="fr",
+                api_key="test-key",
+                translation_scope="untranslated",
+            )
+
+            command = process_gui.build_process_command(
+                config,
+                python_executable="python",
+                script_path=script_path,
+            )
+
+            self.assertIn("--translation-scope", command)
+            self.assertIn("untranslated", command)
         finally:
             for path in (input_path, script_path):
                 if os.path.exists(path):

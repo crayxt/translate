@@ -68,6 +68,7 @@ Useful options:
 - `--glossary`
 - `--rules`
 - `--rules-str`
+- `--translation-scope`
 - `--retranslate-all`
 - `--warnings-report`
 
@@ -214,8 +215,11 @@ Translation warnings use:
 
 ## Important Behavior
 
-- by default, only unfinished or fuzzy entries are translated
-- `--retranslate-all` forces all translatable entries back through the model
+- by default, only unfinished entries are translated; for this task, `unfinished` means fuzzy plus untranslated
+- `--translation-scope unfinished` translates fuzzy plus untranslated entries
+- `--translation-scope untranslated` translates only untranslated entries
+- `--translation-scope all` forces all translatable entries back through the model
+- `--retranslate-all` remains available as a compatibility alias for `--translation-scope all`
 - recursive directory translation skips generated toolkit artifacts such as `*.ai-translated.*`, `*.glossary.po`, `*.missing-terms.po`, and `*.prototype-*.po`
 - when the scan root is this toolkit repository itself, recursive translation also skips toolkit-owned directories such as `data/`, `logs/`, `docs/`, `tests/`, `tasks/`, and `core/`
 - placeholders and protected tokens are preserved

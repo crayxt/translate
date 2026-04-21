@@ -565,7 +565,7 @@ class ProcessSmokeTests(unittest.TestCase):
                         glossary=None,
                         rules=None,
                         rules_str=None,
-                        retranslate_all=False,
+                        translation_scope=process.DEFAULT_TRANSLATION_SCOPE,
                         flex_mode=False,
                         warnings_report=False,
                     )
@@ -1033,7 +1033,7 @@ class ProcessSmokeTests(unittest.TestCase):
             if os.path.exists(ts_path):
                 os.remove(ts_path)
 
-    def test_select_work_items_respects_retranslate_all(self):
+    def test_select_work_items_respects_translation_scope(self):
         entries = [
             process.UnifiedEntry(
                 file_kind=process.FileKind.PO,
@@ -1068,11 +1068,22 @@ class ProcessSmokeTests(unittest.TestCase):
             ),
         ]
 
-        default_items = process.select_work_items(entries, retranslate_all=False)
-        forced_items = process.select_work_items(entries, retranslate_all=True)
+        unfinished_items = process.select_work_items(
+            entries,
+            translation_scope=process.TRANSLATION_SCOPE_UNFINISHED,
+        )
+        untranslated_items = process.select_work_items(
+            entries,
+            translation_scope=process.TRANSLATION_SCOPE_UNTRANSLATED,
+        )
+        all_items = process.select_work_items(
+            entries,
+            translation_scope=process.TRANSLATION_SCOPE_ALL,
+        )
 
-        self.assertEqual([e.msgid for e in default_items], ["Untranslated", "Fuzzy"])
-        self.assertEqual([e.msgid for e in forced_items], ["Untranslated", "Fuzzy", "Translated"])
+        self.assertEqual([e.msgid for e in unfinished_items], ["Untranslated", "Fuzzy"])
+        self.assertEqual([e.msgid for e in untranslated_items], ["Untranslated"])
+        self.assertEqual([e.msgid for e in all_items], ["Untranslated", "Fuzzy", "Translated"])
 
     def test_run_translation_batches_routes_results_to_correct_files(self):
         saved: list[str] = []
@@ -1699,7 +1710,7 @@ class ProcessSmokeTests(unittest.TestCase):
                     glossary=None,
                     rules=None,
                     rules_str=None,
-                    retranslate_all=False,
+                    translation_scope=process.DEFAULT_TRANSLATION_SCOPE,
                     flex_mode=False,
                     warnings_report=True,
                 )
@@ -1752,7 +1763,7 @@ class ProcessSmokeTests(unittest.TestCase):
                     glossary=None,
                     rules=None,
                     rules_str=None,
-                    retranslate_all=False,
+                    translation_scope=process.DEFAULT_TRANSLATION_SCOPE,
                     flex_mode=False,
                     warnings_report=True,
                 )

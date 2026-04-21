@@ -110,7 +110,8 @@ Useful controls:
 python translate_cli.py translate source.po --target-lang kk
 python translate_cli.py translate source.po --target-lang kk --thinking-level medium
 python translate_cli.py translate source.po --target-lang kk --batch-size 100 --parallel-requests 4
-python translate_cli.py translate source.po --target-lang kk --retranslate-all
+python translate_cli.py translate source.po --target-lang kk --translation-scope untranslated
+python translate_cli.py translate source.po --target-lang kk --translation-scope all
 python translate_cli.py translate source.po --target-lang kk --flex
 python translate_cli.py translate source.po --target-lang kk --warnings-report
 ```
@@ -118,8 +119,11 @@ python translate_cli.py translate source.po --target-lang kk --warnings-report
 Behavior:
 
 - target language is explicit; pass `--target-lang` for translation, revision, checking, and model-based extraction
-- by default, only unfinished messages are translated
-- `--retranslate-all` forces already translated messages through translation again
+- by default, only unfinished messages are translated; in this task, `unfinished` means fuzzy plus untranslated
+- `--translation-scope unfinished` translates fuzzy plus untranslated entries
+- `--translation-scope untranslated` translates only untranslated entries
+- `--translation-scope all` forces already translated messages through translation again
+- `--retranslate-all` remains available as a compatibility alias for `--translation-scope all`
 - recursive directory translation skips generated toolkit artifacts such as `*.ai-translated.*`, `*.glossary.po`, `*.missing-terms.po`, and `*.prototype-*.po`
 - when the scan root is this toolkit repository itself, recursive translation also skips toolkit-owned directories such as `data/`, `logs/`, `docs/`, `tests/`, `tasks/`, and `core/`
 - translated output is written as `*.ai-translated.<ext>`

@@ -39,6 +39,14 @@ class TranslateCliSmokeTests(unittest.TestCase):
         self.assertEqual(mocked_main.call_args.args[0].command, "translate")
         self.assertEqual(mocked_main.call_args.args[0].files, ["one.po", "two.po"])
 
+    def test_translate_subcommand_accepts_translation_scope(self):
+        with patch("translate_cli.run_translate") as mocked_main:
+            translate_cli.main(
+                ["translate", "input.po", "--target-lang", "fr", "--translation-scope", "untranslated"]
+            )
+        mocked_main.assert_called_once()
+        self.assertEqual(mocked_main.call_args.args[0].translation_scope, "untranslated")
+
     def test_translate_subcommand_applies_gemini_environment_overrides(self):
         with patch.dict(os.environ, {}, clear=True):
             with patch("translate_cli.run_translate") as mocked_main:

@@ -32,10 +32,15 @@ from core.entries import (
     translation_has_content,
 )
 from core.formats import (
+    DEFAULT_TRANSLATION_SCOPE,
     PO_WRAP_WIDTH,
     EntryStatus,
     FileKind,
     ResxEntryAdapter,
+    TRANSLATION_SCOPE_ALL,
+    TRANSLATION_SCOPE_CHOICES,
+    TRANSLATION_SCOPE_UNFINISHED,
+    TRANSLATION_SCOPE_UNTRANSLATED,
     StringsEntryAdapter,
     TSEntryAdapter,
     UnifiedEntry,
@@ -399,7 +404,7 @@ class TranslationRunConfig:
     glossary: str | None
     rules: str | None
     rules_str: str | None
-    retranslate_all: bool
+    translation_scope: str
     flex_mode: bool
     warnings_report: bool
     seed: int | None = None
@@ -451,9 +456,20 @@ def configure_parser(parser: argparse.ArgumentParser) -> argparse.ArgumentParser
         rules_str_help="Optional inline translation rules/instructions",
     )
     parser.add_argument(
+        "--translation-scope",
+        choices=TRANSLATION_SCOPE_CHOICES,
+        default=DEFAULT_TRANSLATION_SCOPE,
+        help=(
+            "Which entries to translate: "
+            f"{TRANSLATION_SCOPE_UNFINISHED}=fuzzy+untranslated (default), "
+            f"{TRANSLATION_SCOPE_UNTRANSLATED}=untranslated only, "
+            f"{TRANSLATION_SCOPE_ALL}=all translatable entries"
+        ),
+    )
+    parser.add_argument(
         "--retranslate-all",
         action="store_true",
-        help="Force translation of all translatable messages, not only unfinished/fuzzy ones",
+        help=f"Compatibility alias for --translation-scope {TRANSLATION_SCOPE_ALL}",
     )
     parser.add_argument(
         "--warnings-report",
@@ -470,6 +486,14 @@ def build_parser() -> argparse.ArgumentParser:
 
 def config_from_args(args: argparse.Namespace) -> TranslationRunConfig:
     """Convert parsed CLI arguments into the normalized runtime config."""
+    translation_scope = str(args.translation_scope or DEFAULT_TRANSLATION_SCOPE).strip().lower()
+    if args.retranslate_all:
+        if translation_scope not in (DEFAULT_TRANSLATION_SCOPE, TRANSLATION_SCOPE_ALL):
+            raise ValueError(
+                "--retranslate-all cannot be combined with --translation-scope "
+                f"{translation_scope!r}"
+            )
+        translation_scope = TRANSLATION_SCOPE_ALL
     return TranslationRunConfig(
         files=list(args.files),
         source_file=args.source_file,
@@ -484,7 +508,7 @@ def config_from_args(args: argparse.Namespace) -> TranslationRunConfig:
         glossary=args.glossary,
         rules=args.rules,
         rules_str=args.rules_str,
-        retranslate_all=args.retranslate_all,
+        translation_scope=translation_scope,
         flex_mode=args.flex_mode,
         warnings_report=args.warnings_report,
     )
@@ -759,12 +783,12 @@ def load_translation_jobs(file_paths: List[str], source_file: str | None = None)
 def build_translation_queue(
     jobs: List[TranslationFileJob],
     *,
-    retranslate_all: bool,
+    translation_scope: str,
 ) -> List[TranslationQueueItem]:
     """Flatten loaded file jobs into the actual per-entry translation queue."""
     queue: List[TranslationQueueItem] = []
     for job in jobs:
-        for entry in select_work_items(job.entries, retranslate_all=retranslate_all):
+        for entry in select_work_items(job.entries, translation_scope=translation_scope):
             queue.append(TranslationQueueItem(job=job, entry=entry))
     return queue
 
@@ -947,10 +971,15 @@ def run_translation(config: TranslationRunConfig) -> None:
     client = runtime_context.client
     resource_context = runtime_context.resources
 
-    work_items = build_translation_queue(file_jobs, retranslate_all=config.retranslate_all)
+    work_items = build_translation_queue(file_jobs, translation_scope=config.translation_scope)
     total = len(work_items)
     if total == 0:
-        print("No translatable messages found." if config.retranslate_all else "No untranslated or fuzzy messages found.")
+        if config.translation_scope == TRANSLATION_SCOPE_ALL:
+            print("No translatable messages found.")
+        elif config.translation_scope == TRANSLATION_SCOPE_UNTRANSLATED:
+            print("No untranslated messages found.")
+        else:
+            print("No untranslated or fuzzy messages found.")
         return
 
     try:
@@ -981,7 +1010,7 @@ def run_translation(config: TranslationRunConfig) -> None:
         ("Parallel requests", parallel_requests),
         ("Batch size", batch_size),
         ("Limits mode", limits_mode),
-        ("Retranslate all", "yes" if config.retranslate_all else "no"),
+        ("Translation scope", config.translation_scope),
         ("Warnings report", "yes" if config.warnings_report else "no"),
         ("Glossary source", resource_context.glossary_source),
         ("Scoped vocabulary entries", len(scoped_vocabulary_entries)),
