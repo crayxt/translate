@@ -31,7 +31,7 @@ from core.formats import (
     load_ts,
 )
 from core.formats.strings import _detect_text_encoding, _write_text_with_encoding_fallback
-from core.entries import normalize_model_escaped_text
+from core.entries import normalize_model_escaped_text, tags_preserved
 from core.providers import DEFAULT_PROVIDER, DEFAULT_PROVIDER_NAME, TranslationProvider
 from core.request_contents import TaskRequestSpec, build_task_request_contents, render_text_fallback_prompt
 from core.task_cli import (
@@ -787,6 +787,12 @@ def apply_revision_to_item(item: ReviewItem, result: RevisionResult) -> bool:
             return False
         if candidate_forms == item.current_plural_texts:
             return False
+        singular_source = str(item.entry.msgid or "")
+        plural_source = str(item.entry.msgid_plural or singular_source)
+        for index, text in enumerate(candidate_forms):
+            reference_source = singular_source if index == 0 else plural_source
+            if not tags_preserved(reference_source, text):
+                return False
 
         plural_keys = sorted(item.entry.msgstr_plural.keys(), key=plural_key_sort_key)
         if not plural_keys:
@@ -799,6 +805,8 @@ def apply_revision_to_item(item: ReviewItem, result: RevisionResult) -> bool:
         if not _clean(candidate):
             return False
         if candidate == item.current_text:
+            return False
+        if not tags_preserved(str(item.entry.msgid or item.source_text or ""), candidate):
             return False
         item.entry.msgstr = candidate
 

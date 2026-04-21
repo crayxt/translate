@@ -115,6 +115,34 @@ class ReviseTranslationsSmokeTests(unittest.TestCase):
         self.assertEqual(entry.msgstr, "Keep me")
         self.assertNotIn("fuzzy", entry.flags)
 
+    def test_apply_revision_to_item_rejects_missing_source_tags(self):
+        entry = UnifiedEntry(
+            file_kind=FileKind.PO,
+            msgid="Open <b>File</b>",
+            msgstr="Ashu <b>Fail</b>",
+            status=EntryStatus.TRANSLATED,
+        )
+        item = revise_translations.ReviewItem(
+            entry=entry,
+            source_text="Open <b>File</b>",
+            current_text="Ashu <b>Fail</b>",
+            current_plural_texts=[],
+            plural_form_count=0,
+            pair_key="Open",
+        )
+
+        changed = revise_translations.apply_revision_to_item(
+            item,
+            revise_translations.RevisionResult(
+                action="update",
+                text="Ashu fail",
+            ),
+        )
+
+        self.assertFalse(changed)
+        self.assertEqual(entry.msgstr, "Ashu <b>Fail</b>")
+        self.assertNotIn("fuzzy", entry.flags)
+
     def test_get_plural_form_count_matches_existing_slots(self):
         entry = UnifiedEntry(
             file_kind=FileKind.PO,

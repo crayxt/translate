@@ -14,7 +14,7 @@ from core.review_common import (
     json_load_maybe,
     plural_key_sort_key,
 )
-from core.entries import build_source_message_payload
+from core.entries import build_source_message_payload, tags_preserved
 from core.formats import (
     FileKind,
     UnifiedEntry,
@@ -394,6 +394,59 @@ def build_check_message_payload(entry: Any) -> Dict[str, Any]:
     return payload
 
 
+def build_deterministic_issues(entry: Any) -> List[CheckIssue]:
+    """Return non-model QA issues that can be checked exactly."""
+    plural_forms = get_translation_plural_forms(entry)
+    singular_source = str(getattr(entry, "msgid", "") or "")
+    plural_source = str(getattr(entry, "msgid_plural", "") or singular_source)
+
+    if plural_forms:
+        plural_map = getattr(entry, "msgstr_plural", None)
+        if isinstance(plural_map, dict) and plural_map:
+            plural_slots = [str(key) for key in sorted(plural_map.keys(), key=plural_key_sort_key)]
+        else:
+            plural_slots = [str(index) for index in range(len(plural_forms))]
+
+        bad_slots: List[str] = []
+        source_fragment = ""
+        translation_fragment = ""
+        for index, text in enumerate(plural_forms):
+            reference_source = singular_source if index == 0 else plural_source
+            if tags_preserved(reference_source, text):
+                continue
+            bad_slots.append(plural_slots[index] if index < len(plural_slots) else str(index))
+            if not source_fragment:
+                source_fragment = reference_source
+                translation_fragment = text
+
+        if bad_slots:
+            return [
+                CheckIssue(
+                    code="check.tag",
+                    message=f"Tags are not preserved in plural translation slot(s): {', '.join(bad_slots)}.",
+                    severity="error",
+                    origin="deterministic",
+                    source_fragment=source_fragment,
+                    translation_fragment=translation_fragment,
+                )
+            ]
+        return []
+
+    translation = get_entry_translation_text(entry)
+    if not translation or tags_preserved(singular_source, translation):
+        return []
+    return [
+        CheckIssue(
+            code="check.tag",
+            message="Tags are not preserved in the translation.",
+            severity="error",
+            origin="deterministic",
+            source_fragment=singular_source,
+            translation_fragment=translation,
+        )
+    ]
+
+
 def parse_check_response(response_payload: Any) -> Dict[str, List[CheckIssue]]:
     """Normalize a provider response into issue lists keyed by item id."""
     if isinstance(response_payload, dict):
@@ -595,7 +648,7 @@ def run_from_args(args: argparse.Namespace) -> None:
 
             for i, entry in enumerate(batch):
                 item_id = str(i)
-                issues = dedupe_issues(model_issues_by_id.get(item_id, []))
+                issues = dedupe_issues(model_issues_by_id.get(item_id, []) + build_deterministic_issues(entry))
                 if not issues and not args.include_ok:
                     continue
 

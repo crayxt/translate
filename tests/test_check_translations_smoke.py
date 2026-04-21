@@ -98,6 +98,23 @@ class CheckTranslationsSmokeTests(unittest.TestCase):
         self.assertEqual(payload["translation_plural_forms"], ["Файл", "Файлдар"])
         self.assertNotIn("source", payload)
 
+    def test_build_deterministic_issues_flags_missing_tags(self):
+        entry = process.UnifiedEntry(
+            file_kind=process.FileKind.PO,
+            msgid="Open <b>File</b>",
+            msgstr="Ashu fail",
+            status=process.EntryStatus.TRANSLATED,
+        )
+
+        issues = check_translations.build_deterministic_issues(entry)
+
+        self.assertEqual(len(issues), 1)
+        self.assertEqual(issues[0].code, "check.tag")
+        self.assertEqual(issues[0].severity, "error")
+        self.assertEqual(issues[0].origin, "deterministic")
+        self.assertEqual(issues[0].source_fragment, "Open <b>File</b>")
+        self.assertEqual(issues[0].translation_fragment, "Ashu fail")
+
     def test_parse_check_response_uses_parsed_payload(self):
         payload = {
             "results": [
@@ -282,6 +299,49 @@ class CheckTranslationsSmokeTests(unittest.TestCase):
             codes = [issue["code"] for issue in payload["results"][0]["issues"]]
             self.assertIn("check.meaning", codes)
             self.assertTrue(all(issue["origin"] == "model" for issue in payload["results"][0]["issues"]))
+        finally:
+            if os.path.exists(out_path):
+                os.remove(out_path)
+
+    def test_main_writes_json_report_with_deterministic_tag_issue(self):
+        out_path = os.path.join(os.getcwd(), "_tmp_translation_check_tags.json")
+        entries = [
+            process.UnifiedEntry(
+                file_kind=process.FileKind.PO,
+                msgid="Open <b>File</b>",
+                msgstr="Ashu fail",
+                status=process.EntryStatus.TRANSLATED,
+            )
+        ]
+
+        try:
+            provider = _DummyProvider()
+            runtime_context = SimpleNamespace(
+                provider=provider,
+                client=object(),
+                resources=SimpleNamespace(
+                    glossary_text="",
+                    project_rules="",
+                    glossary_source=os.path.join("data", "locales", "kk", "glossary.po"),
+                    rules_source=os.path.join("data", "locales", "kk", "rules.md"),
+                ),
+            )
+            with (
+                patch.dict(os.environ, {"GOOGLE_API_KEY": "test-key"}, clear=False),
+                patch("tasks.check_translations.build_task_runtime_context", return_value=runtime_context),
+                patch("tasks.check_translations.detect_file_kind", return_value=process.FileKind.PO),
+                patch("tasks.check_translations.load_po", return_value=(entries, None, None)),
+                patch("builtins.print"),
+            ):
+                check_translations.main(["input.po", "--target-lang", "kk", "--out", out_path])
+
+            with open(out_path, "r", encoding="utf-8") as f:
+                payload = json.load(f)
+
+            self.assertEqual(payload["entries_with_issues"], 1)
+            self.assertEqual(payload["issue_count"], 1)
+            self.assertEqual(payload["results"][0]["issues"][0]["code"], "check.tag")
+            self.assertEqual(payload["results"][0]["issues"][0]["origin"], "deterministic")
         finally:
             if os.path.exists(out_path):
                 os.remove(out_path)
