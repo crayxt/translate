@@ -3,6 +3,7 @@ from __future__ import annotations
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from typing import Callable, Dict, List, Tuple
+from xml.sax.saxutils import escape, quoteattr
 
 from core.entries import is_non_empty_text
 from core.formats.base import EntryStatus, FileKind, UnifiedEntry, build_output_path
@@ -43,7 +44,7 @@ def load_android_xml(file_path: str) -> Tuple[list[UnifiedEntry], Callable[[], N
 
     for node in nodes:
         if node.kind == "string":
-            source_text = _serialize_inner_xml(node.element)
+            source_text = _serialize_inner_xml(node.element, namespaces)
             note = _build_note(node)
             status = EntryStatus.UNTRANSLATED if node.translatable and _clean(source_text) else EntryStatus.SKIPPED
 
@@ -74,7 +75,7 @@ def load_android_xml(file_path: str) -> Tuple[list[UnifiedEntry], Callable[[], N
             )
             continue
 
-        source_plural_map = _build_plural_map(node.item_elements)
+        source_plural_map = _build_plural_map(node.item_elements, namespaces)
         source_text, plural_text = _choose_plural_source_texts(source_plural_map)
         note = _build_note(node, source_plural_map)
         status = (
@@ -141,6 +142,7 @@ def load_paired_android_xml(
     if _strip_ns(source_root.tag) != "resources" or _strip_ns(translated_root.tag) != "resources":
         raise ValueError("Paired Android XML workflow requires Android <resources> XML files.")
 
+    source_namespaces = _collect_namespaces(source_file)
     translated_namespaces = _collect_namespaces(translated_file)
     source_nodes = _collect_resource_nodes(source_root)
     translated_nodes = _collect_resource_nodes(translated_root)
@@ -167,8 +169,8 @@ def load_paired_android_xml(
             continue
 
         if translated_node.kind == "string":
-            source_text = _serialize_inner_xml(source_node.element)
-            current_text = _serialize_inner_xml(translated_node.element)
+            source_text = _serialize_inner_xml(source_node.element, source_namespaces)
+            current_text = _serialize_inner_xml(translated_node.element, translated_namespaces)
             note = _join_non_empty(_build_note(source_node), _build_note(translated_node))
             status = EntryStatus.TRANSLATED if _clean(current_text) else EntryStatus.UNTRANSLATED
 
@@ -196,8 +198,8 @@ def load_paired_android_xml(
             )
             continue
 
-        source_plural_map = _build_plural_map(source_node.item_elements)
-        current_plural_map = _build_plural_map(translated_node.item_elements)
+        source_plural_map = _build_plural_map(source_node.item_elements, source_namespaces)
+        current_plural_map = _build_plural_map(translated_node.item_elements, translated_namespaces)
         source_text, plural_text = _choose_plural_source_texts(source_plural_map)
         note = _join_non_empty(
             _build_note(source_node, source_plural_map),
@@ -390,13 +392,57 @@ def _collect_resource_nodes(root: ET.Element) -> List[AndroidResourceNode]:
     return nodes
 
 
-def _serialize_inner_xml(elem: ET.Element) -> str:
+def _build_namespace_prefix_map(
+    namespaces: Tuple[Tuple[str, str], ...] | None,
+) -> Dict[str, str]:
+    prefix_map: Dict[str, str] = {}
+    for prefix, uri in namespaces or ():
+        if uri and uri not in prefix_map:
+            prefix_map[uri] = prefix
+    return prefix_map
+
+
+def _serialize_qname(name: str, prefix_map: Dict[str, str]) -> str:
+    if not isinstance(name, str) or not name:
+        return ""
+    if not name.startswith("{") or "}" not in name:
+        return name
+    uri, local_name = name[1:].split("}", 1)
+    prefix = prefix_map.get(uri, "")
+    if prefix:
+        return f"{prefix}:{local_name}"
+    return local_name
+
+
+def _serialize_inner_xml(
+    elem: ET.Element,
+    namespaces: Tuple[Tuple[str, str], ...] | None = None,
+) -> str:
+    prefix_map = _build_namespace_prefix_map(namespaces)
+    return _serialize_inner_xml_with_prefix_map(elem, prefix_map)
+
+
+def _serialize_inner_xml_with_prefix_map(elem: ET.Element, prefix_map: Dict[str, str]) -> str:
     parts: List[str] = []
     if elem.text:
-        parts.append(elem.text)
+        parts.append(escape(elem.text))
     for child in list(elem):
-        parts.append(ET.tostring(child, encoding="unicode"))
+        parts.append(_serialize_element(child, prefix_map))
+        if child.tail:
+            parts.append(escape(child.tail))
     return "".join(parts)
+
+
+def _serialize_element(elem: ET.Element, prefix_map: Dict[str, str]) -> str:
+    tag = _serialize_qname(str(elem.tag), prefix_map)
+    attrs = "".join(
+        f" {_serialize_qname(str(name), prefix_map)}={quoteattr(str(value))}"
+        for name, value in elem.attrib.items()
+    )
+    inner = _serialize_inner_xml_with_prefix_map(elem, prefix_map)
+    if inner:
+        return f"<{tag}{attrs}>{inner}</{tag}>"
+    return f"<{tag}{attrs}/>"
 
 
 def _set_inner_xml(
@@ -430,9 +476,12 @@ def _set_inner_xml(
         elem.append(child)
 
 
-def _build_plural_map(item_elements: Tuple[Tuple[str, ET.Element], ...]) -> Dict[str, str]:
+def _build_plural_map(
+    item_elements: Tuple[Tuple[str, ET.Element], ...],
+    namespaces: Tuple[Tuple[str, str], ...] | None = None,
+) -> Dict[str, str]:
     return {
-        quantity: _serialize_inner_xml(item_elem)
+        quantity: _serialize_inner_xml(item_elem, namespaces)
         for quantity, item_elem in item_elements
     }
 
