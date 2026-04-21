@@ -285,6 +285,7 @@ def build_translation_request_spec(force_non_empty: bool = False) -> TaskRequest
             "For plural entries, return `plural_texts` with exactly `item.plural_forms` entries aligned to `item.plural_slots`; repeat wording if the target language has fewer distinct forms.",
             "Translate both `source_singular` and `source_plural` consistently; put forms in `plural_texts` only, not inside `text`.",
             "When `relevant_vocabulary` is present for a message, prefer those entries; use `context` and `note` to select the best match.",
+            "Before returning each item, self-check that all source HTML/XML tags are present and that paired-tag segment order is preserved (do not swap content between different tag pairs).",
             *non_empty_block,
         ),
     )

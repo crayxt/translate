@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import re
+from collections import Counter
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Tuple
 
@@ -21,6 +23,8 @@ TRANSLATION_WARNING_CODES: Tuple[str, ...] = (
 DEFAULT_TRANSLATION_WARNING_CODE = "translate.unclear_source_meaning"
 TranslationWarning = TaskIssue
 PluralKey = int | str
+TAG_TOKEN_RE = re.compile(r"</?[A-Za-z_][\w:.-]*(?:\s[^<>]*?)?/?>")
+TAG_NAME_RE = re.compile(r"^</?\s*([A-Za-z_][\w:.-]*)")
 
 
 @dataclass
@@ -46,6 +50,67 @@ def sanitize_model_text(text: str) -> str:
             continue
         sanitized_chars.append(char)
     return "".join(sanitized_chars)
+
+
+def _extract_tag_tokens(text: str) -> List[str]:
+    if not isinstance(text, str) or not text:
+        return []
+    return TAG_TOKEN_RE.findall(text)
+
+
+def _extract_tag_name(tag_token: str) -> str:
+    match = TAG_NAME_RE.match(tag_token.strip())
+    return match.group(1) if match else ""
+
+
+def _is_closing_tag(tag_token: str) -> bool:
+    return tag_token.lstrip().startswith("</")
+
+
+def _is_self_closing_tag(tag_token: str) -> bool:
+    return tag_token.rstrip().endswith("/>")
+
+
+def _collect_paired_tag_names(source_tokens: List[str]) -> set[str]:
+    opening_counts: Counter[str] = Counter()
+    closing_counts: Counter[str] = Counter()
+    for token in source_tokens:
+        name = _extract_tag_name(token)
+        if not name or _is_self_closing_tag(token):
+            continue
+        if _is_closing_tag(token):
+            closing_counts[name] += 1
+        else:
+            opening_counts[name] += 1
+    return {
+        name
+        for name, opening_count in opening_counts.items()
+        if opening_count > 0 and opening_count == closing_counts.get(name, 0)
+    }
+
+
+def _has_valid_tag_pairing(tokens: List[str], paired_names: set[str]) -> bool:
+    stack: List[str] = []
+    for token in tokens:
+        name = _extract_tag_name(token)
+        if not name or _is_self_closing_tag(token) or name not in paired_names:
+            continue
+        if _is_closing_tag(token):
+            if not stack or stack[-1] != name:
+                return False
+            stack.pop()
+        else:
+            stack.append(name)
+    return not stack
+
+
+def tags_preserved(source_text: str, candidate_text: str) -> bool:
+    source_tokens = _extract_tag_tokens(source_text)
+    candidate_tokens = _extract_tag_tokens(candidate_text)
+    if Counter(source_tokens) != Counter(candidate_tokens):
+        return False
+    paired_names = _collect_paired_tag_names(source_tokens)
+    return _has_valid_tag_pairing(candidate_tokens, paired_names)
 
 
 def json_load_maybe(text: str) -> Any:
@@ -225,6 +290,8 @@ def build_entry_source_text(entry: Any) -> str:
 
 def apply_translation_to_entry(entry: Any, result: TranslationResult) -> bool:
     source_text = build_entry_source_text(entry)
+    singular_source_text = str(getattr(entry, "msgid", "") or "")
+    plural_source_text = str(getattr(entry, "msgid_plural", "") or "")
 
     if is_plural_entry(entry):
         plural_map = getattr(entry, "msgstr_plural", None)
@@ -240,6 +307,10 @@ def apply_translation_to_entry(entry: Any, result: TranslationResult) -> bool:
             target_count = max(get_plural_form_count(entry), len(usable_forms), 1)
             plural_keys = list(range(target_count))
         if usable_forms:
+            for idx, text in enumerate(usable_forms):
+                reference_source = singular_source_text if idx == 0 else plural_source_text
+                if not tags_preserved(reference_source, text):
+                    return False
             for idx, key in enumerate(plural_keys):
                 plural_map[key] = usable_forms[idx] if idx < len(usable_forms) else usable_forms[-1]
             if hasattr(entry, "mark_translated"):
@@ -251,6 +322,10 @@ def apply_translation_to_entry(entry: Any, result: TranslationResult) -> bool:
             if "singular:" in lowered_text and "plural:" in lowered_text:
                 return False
             normalized_text = normalize_model_escaped_text(source_text, result.text)
+            if not tags_preserved(singular_source_text, normalized_text):
+                return False
+            if not tags_preserved(plural_source_text, normalized_text):
+                return False
             for key in plural_keys:
                 plural_map[key] = normalized_text
             if hasattr(entry, "mark_translated"):
@@ -260,7 +335,10 @@ def apply_translation_to_entry(entry: Any, result: TranslationResult) -> bool:
 
     if not result.text:
         return False
-    entry.msgstr = normalize_model_escaped_text(source_text, result.text)
+    normalized_text = normalize_model_escaped_text(source_text, result.text)
+    if not tags_preserved(source_text, normalized_text):
+        return False
+    entry.msgstr = normalized_text
     if hasattr(entry, "mark_translated"):
         entry.mark_translated()
     return True

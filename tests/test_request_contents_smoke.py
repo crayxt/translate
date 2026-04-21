@@ -171,6 +171,10 @@ class RequestContentsSmokeTests(unittest.TestCase):
             "Translate both `source_singular` and `source_plural` consistently; put forms in `plural_texts` only, not inside `text`.",
             spec.output_lines,
         )
+        self.assertIn(
+            "Before returning each item, self-check that all source HTML/XML tags are present and that paired-tag segment order is preserved (do not swap content between different tag pairs).",
+            spec.output_lines,
+        )
 
     def test_translate_system_instruction_uses_structured_plural_wording(self):
         self.assertIn("source_singular", translate.SYSTEM_INSTRUCTION)

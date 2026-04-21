@@ -15,6 +15,7 @@ SHARED_LOCALIZATION_INVARIANTS = render_instruction_section(
     "MANDATORY LOCALIZATION INVARIANTS",
     "Placeholders must be preserved exactly (%s, %d, %(name)s, %1, %n, {var}, {{var}})",
     "HTML/XML tags must be preserved exactly and remain well-formed",
+    "For paired tags, keep tagged segment ownership and pair order (do not swap text between different tag pairs such as `<b>...</b>` and `<i>...</i>`)",
     "Keyboard accelerators/hotkeys must be preserved exactly and remain usable (`_`, `&`)",
     "Leading and trailing spaces must be preserved exactly",
     "Escapes, entities, and meaningful punctuation must be preserved when they carry formatting or structure",

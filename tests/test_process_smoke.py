@@ -32,6 +32,7 @@ class ProcessSmokeTests(unittest.TestCase):
         self.assertIn("line-wrapping markers", process.SYSTEM_INSTRUCTION)
         self.assertIn("Determine the intended sense of the source text", process.SYSTEM_INSTRUCTION)
         self.assertIn("Do not rely on source-token overlap alone", process.SYSTEM_INSTRUCTION)
+        self.assertIn("keep tagged segment ownership and pair order", process.SYSTEM_INSTRUCTION)
 
     def test_merge_project_rules_combines_file_and_inline(self):
         merged = process.merge_project_rules("Rule A", "Rule B")
@@ -799,6 +800,27 @@ class ProcessSmokeTests(unittest.TestCase):
         self.assertEqual(entry.msgstr_plural[0], "Single Form")
         self.assertEqual(entry.msgstr_plural[1], "Plural Form")
 
+    def test_apply_translation_to_plural_entry_validates_tags_per_plural_basis(self):
+        entry = polib.POEntry(
+            msgid="<b>%d item</b> selected",
+            msgid_plural="<b>%d items</b> selected",
+        )
+        entry.msgstr_plural = {0: "", 1: ""}
+
+        applied = process.apply_translation_to_entry(
+            entry,
+            process.TranslationResult(
+                plural_texts=[
+                    "<b>%d элемент</b> таңдалды",
+                    "<b>%d элемент</b> таңдалды",
+                ],
+            ),
+        )
+
+        self.assertTrue(applied)
+        self.assertEqual(entry.msgstr_plural[0], "<b>%d элемент</b> таңдалды")
+        self.assertEqual(entry.msgstr_plural[1], "<b>%d элемент</b> таңдалды")
+
     def test_apply_translation_to_plural_entry_falls_back_to_text(self):
         entry = polib.POEntry(msgid="Day", msgid_plural="Days")
         entry.msgstr_plural = {0: "", 1: "", 2: ""}
@@ -823,6 +845,39 @@ class ProcessSmokeTests(unittest.TestCase):
 
         self.assertTrue(applied)
         self.assertEqual(entry.msgstr, "Saqtau")
+
+    def test_apply_translation_to_entry_rejects_missing_source_tags(self):
+        entry = polib.POEntry(msgid="Open <b>File</b>")
+
+        applied = process.apply_translation_to_entry(
+            entry,
+            process.TranslationResult(text="Faildy ashu"),
+        )
+
+        self.assertFalse(applied)
+        self.assertEqual(entry.msgstr, "")
+
+    def test_apply_translation_to_entry_allows_reordered_tag_pairs(self):
+        entry = polib.POEntry(msgid="<b>Open</b> <i>File</i>")
+
+        applied = process.apply_translation_to_entry(
+            entry,
+            process.TranslationResult(text="<i>Fail</i> <b>Ashu</b>"),
+        )
+
+        self.assertTrue(applied)
+        self.assertEqual(entry.msgstr, "<i>Fail</i> <b>Ashu</b>")
+
+    def test_apply_translation_to_entry_rejects_broken_tag_pairing(self):
+        entry = polib.POEntry(msgid="<b><i>Open</i></b>")
+
+        applied = process.apply_translation_to_entry(
+            entry,
+            process.TranslationResult(text="<b><i>Ashu</b></i>"),
+        )
+
+        self.assertFalse(applied)
+        self.assertEqual(entry.msgstr, "")
 
     def test_apply_translation_to_plural_entry_rejects_labeled_plural_text_in_text(self):
         entry = polib.POEntry(msgid="Day", msgid_plural="Days")
