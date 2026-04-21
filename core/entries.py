@@ -18,6 +18,7 @@ TRANSLATION_WARNING_CODES: Tuple[str, ...] = (
     "translate.glossary_variant_choice",
     "translate.possible_untranslated_token",
     "translate.placeholder_attention",
+    "translate.tag_mismatch",
     "translate.length_or_ui_fit_risk",
 )
 DEFAULT_TRANSLATION_WARNING_CODE = "translate.unclear_source_meaning"
@@ -288,6 +289,41 @@ def build_entry_source_text(entry: Any) -> str:
     return entry.msgid
 
 
+def translation_result_has_tag_mismatch(entry: Any, result: TranslationResult) -> bool:
+    source_text = build_entry_source_text(entry)
+    singular_source_text = str(getattr(entry, "msgid", "") or "")
+    plural_source_text = str(getattr(entry, "msgid_plural", "") or "")
+
+    if is_plural_entry(entry):
+        usable_forms = [
+            normalize_model_escaped_text(source_text, text)
+            for text in result.plural_texts
+            if is_non_empty_text(text)
+        ]
+        if usable_forms:
+            for idx, text in enumerate(usable_forms):
+                reference_source = singular_source_text if idx == 0 else plural_source_text
+                if not tags_preserved(reference_source, text):
+                    return True
+            return False
+
+        if is_non_empty_text(result.text):
+            lowered_text = result.text.lower()
+            if "singular:" in lowered_text and "plural:" in lowered_text:
+                return False
+            normalized_text = normalize_model_escaped_text(source_text, result.text)
+            return (
+                not tags_preserved(singular_source_text, normalized_text)
+                or not tags_preserved(plural_source_text, normalized_text)
+            )
+        return False
+
+    if not result.text:
+        return False
+    normalized_text = normalize_model_escaped_text(source_text, result.text)
+    return not tags_preserved(source_text, normalized_text)
+
+
 def apply_translation_to_entry(entry: Any, result: TranslationResult) -> bool:
     source_text = build_entry_source_text(entry)
     singular_source_text = str(getattr(entry, "msgid", "") or "")
@@ -443,5 +479,6 @@ __all__ = [
     "normalize_model_escaped_text",
     "parse_response",
     "plural_key_sort_key",
+    "translation_result_has_tag_mismatch",
     "translation_has_content",
 ]

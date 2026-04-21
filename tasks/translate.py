@@ -29,6 +29,7 @@ from core.entries import (
     normalize_model_escaped_text as _normalize_model_escaped_text,
     parse_response,
     plural_key_sort_key as _plural_key_sort_key,
+    translation_result_has_tag_mismatch,
     translation_has_content,
 )
 from core.formats import (
@@ -172,6 +173,7 @@ TRANSLATION_WARNING_CODE_GUIDANCE: Dict[str, str] = {
     "translate.glossary_variant_choice": "multiple approved glossary variants existed and one was chosen",
     "translate.possible_untranslated_token": "a token may have been intentionally preserved or may still need review",
     "translate.placeholder_attention": "placeholders or protected tokens required extra care",
+    "translate.tag_mismatch": "source HTML/XML tags were not preserved exactly",
     "translate.length_or_ui_fit_risk": "the translation may be too long or risky for UI fit",
 }
 
@@ -602,6 +604,8 @@ def build_translation_warning_item(
     entry: Any,
     result: TranslationResult,
     scoped_vocabulary_entries: List[ScopedVocabularyEntry],
+    *,
+    applied: bool = True,
 ) -> Dict[str, Any]:
     """Serialize one translated entry and its warnings for the sidecar report."""
     payload = build_translation_message_payload(entry, scoped_vocabulary_entries)
@@ -626,6 +630,8 @@ def build_translation_warning_item(
     }
     if result.plural_texts:
         item["plural_texts"] = list(result.plural_texts)
+    if not applied:
+        item["applied"] = False
     for field_name in (
         "source_singular",
         "source_plural",
@@ -793,6 +799,15 @@ def build_translation_queue(
     return queue
 
 
+def build_tag_mismatch_warning() -> TranslationWarning:
+    return TranslationWarning(
+        code="translate.tag_mismatch",
+        message="Candidate translation was rejected because source HTML/XML tags were not preserved. Translation was not applied.",
+        severity="warning",
+        origin="deterministic",
+    )
+
+
 def build_batches(
     work_items: List[TranslationQueueItem],
     parallel_requests: int,
@@ -917,11 +932,34 @@ async def run_translation_batches(
         for i, item in enumerate(batch):
             result = translations.get(str(i))
             entry = item.entry
-            if result and result.warnings and warning_items_by_output_path is not None:
-                warning_items_by_output_path.setdefault(item.job.output_path, []).append(
-                    build_translation_warning_item(entry, result, scoped_vocabulary_entries)
-                )
-            if result and apply_translation_to_entry(entry, result):
+            if not result:
+                continue
+            applied = apply_translation_to_entry(entry, result)
+            if warning_items_by_output_path is not None:
+                if applied:
+                    if result.warnings:
+                        warning_items_by_output_path.setdefault(item.job.output_path, []).append(
+                            build_translation_warning_item(entry, result, scoped_vocabulary_entries)
+                        )
+                elif translation_result_has_tag_mismatch(entry, result):
+                    rejected_result = TranslationResult(
+                        text=result.text,
+                        plural_texts=list(result.plural_texts),
+                        warnings=[*result.warnings, build_tag_mismatch_warning()],
+                    )
+                    warning_items_by_output_path.setdefault(item.job.output_path, []).append(
+                        build_translation_warning_item(
+                            entry,
+                            rejected_result,
+                            scoped_vocabulary_entries,
+                            applied=False,
+                        )
+                    )
+                elif result.warnings:
+                    warning_items_by_output_path.setdefault(item.job.output_path, []).append(
+                        build_translation_warning_item(entry, result, scoped_vocabulary_entries)
+                    )
+            if applied:
                 if "fuzzy" not in entry.flags:
                     entry.flags.append("fuzzy")
                 batch_translated += 1
@@ -1054,7 +1092,12 @@ def run_translation(config: TranslationRunConfig) -> None:
 
     warning_report_paths: List[str] = []
     if warning_items_by_output_path is not None:
-        for job in saved_jobs:
+        report_jobs = [
+            job
+            for job in file_jobs
+            if job.output_path in touched_output_paths or warning_items_by_output_path.get(job.output_path)
+        ]
+        for job in report_jobs:
             warning_report_paths.append(
                 write_translation_warning_report(
                     job=job,

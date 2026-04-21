@@ -152,7 +152,7 @@ class RequestContentsSmokeTests(unittest.TestCase):
             spec.output_lines,
         )
         self.assertIn(
-            "Allowed warning codes: translate.ambiguous_term, translate.unclear_source_meaning, translate.glossary_variant_choice, translate.possible_untranslated_token, translate.placeholder_attention, translate.length_or_ui_fit_risk.",
+            "Allowed warning codes: translate.ambiguous_term, translate.unclear_source_meaning, translate.glossary_variant_choice, translate.possible_untranslated_token, translate.placeholder_attention, translate.tag_mismatch, translate.length_or_ui_fit_risk.",
             spec.output_lines,
         )
         self.assertIn(

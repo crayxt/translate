@@ -1157,6 +1157,69 @@ class ProcessSmokeTests(unittest.TestCase):
         self.assertIn("fuzzy", entry_b.flags)
         self.assertCountEqual(saved, ["one", "two"])
 
+    def test_run_translation_batches_records_tag_rejection_warning(self):
+        saved: list[str] = []
+        entry = process.UnifiedEntry(
+            file_kind=process.FileKind.PO,
+            msgid="Open <b>File</b>",
+            status=process.EntryStatus.UNTRANSLATED,
+        )
+        job = process.TranslationFileJob(
+            file_path="one.po",
+            file_kind=process.FileKind.PO,
+            entries=[entry],
+            save_callback=lambda: saved.append("one"),
+            output_path="one.ai-translated.po",
+        )
+        provider = _BatchProvider(
+            {
+                "batch 1/1": _DummyResponse(
+                    parsed={
+                        "translations": [
+                            {"id": "0", "text": "Ashu fail"},
+                        ]
+                    }
+                )
+            }
+        )
+        warning_items_by_output_path = {job.output_path: []}
+
+        translated_count, touched_output_paths = process.asyncio.run(
+            process.run_translation_batches(
+                provider=provider,
+                client=object(),
+                model="test-model",
+                translation_config=object(),
+                all_batches=[[process.TranslationQueueItem(job=job, entry=entry)]],
+                total=1,
+                parallel_requests=1,
+                source_lang="en",
+                target_lang="kk",
+                glossary_text=None,
+                project_rules=None,
+                scoped_vocabulary_entries=[],
+                warning_items_by_output_path=warning_items_by_output_path,
+            )
+        )
+
+        self.assertEqual(translated_count, 0)
+        self.assertEqual(touched_output_paths, set())
+        self.assertEqual(entry.msgstr, "")
+        self.assertEqual(saved, [])
+        self.assertEqual(len(warning_items_by_output_path[job.output_path]), 1)
+        self.assertEqual(warning_items_by_output_path[job.output_path][0]["translation"], "Ashu fail")
+        self.assertFalse(warning_items_by_output_path[job.output_path][0]["applied"])
+        self.assertEqual(
+            warning_items_by_output_path[job.output_path][0]["warnings"],
+            [
+                {
+                    "code": "translate.tag_mismatch",
+                    "message": "Candidate translation was rejected because source HTML/XML tags were not preserved. Translation was not applied.",
+                    "severity": "warning",
+                }
+            ],
+        )
+
     def test_write_translation_warning_report_writes_sidecar_json(self):
         entry = polib.POEntry(msgid="Start stream", msgctxt="Button label")
         output_path = os.path.join(os.getcwd(), "_tmp_warning_report.ai-translated.po")
@@ -1720,6 +1783,93 @@ class ProcessSmokeTests(unittest.TestCase):
         idle_job.save_callback.assert_not_called()
         report_mock.assert_called_once()
         self.assertEqual(report_mock.call_args.kwargs["job"], active_job)
+
+    def test_run_translation_writes_warning_report_for_rejected_tag_only_job(self):
+        active_entry = process.UnifiedEntry(
+            file_kind=process.FileKind.PO,
+            msgid="Open <b>File</b>",
+            status=process.EntryStatus.UNTRANSLATED,
+        )
+        active_job = process.TranslationFileJob(
+            file_path="active.po",
+            file_kind=process.FileKind.PO,
+            entries=[active_entry],
+            save_callback=Mock(),
+            output_path="active.ai-translated.po",
+        )
+        runtime_context = SimpleNamespace(
+            provider=SimpleNamespace(name="gemini", supports_flex_mode=False),
+            client=object(),
+            resources=SimpleNamespace(
+                glossary_text=None,
+                project_rules=None,
+                glossary_source="none",
+                rules_source=None,
+            ),
+        )
+        active_item = process.TranslationQueueItem(job=active_job, entry=active_entry)
+
+        async def fake_run_translation_batches(**kwargs):
+            kwargs["warning_items_by_output_path"][active_job.output_path].append(
+                {
+                    "source": "Open <b>File</b>",
+                    "translation": "Ashu fail",
+                    "applied": False,
+                    "warnings": [
+                        {
+                            "code": "translate.tag_mismatch",
+                            "message": "Candidate translation was rejected because source HTML/XML tags were not preserved. Translation was not applied.",
+                            "severity": "warning",
+                        }
+                    ],
+                }
+            )
+            return 0, set()
+
+        with (
+            patch("tasks.translate.resolve_translation_input_paths", return_value=["active.po"]),
+            patch("tasks.translate.validate_translation_files", return_value=process.FileKind.PO),
+            patch("tasks.translate.load_translation_jobs", return_value=[active_job]),
+            patch("tasks.translate.build_task_runtime_context", return_value=runtime_context),
+            patch("tasks.translate.build_translation_queue", return_value=[active_item]),
+            patch("tasks.translate.resolve_runtime_limits", return_value=(10, 1, "manual")),
+            patch("tasks.translate.build_translation_generation_config", return_value=object()),
+            patch("tasks.translate.build_scoped_vocabulary_entries", return_value=[]),
+            patch("tasks.translate.build_batches", return_value=[[active_item]]),
+            patch("tasks.translate.run_translation_batches", new=AsyncMock(side_effect=fake_run_translation_batches)),
+            patch(
+                "tasks.translate.write_translation_warning_report",
+                return_value="active.translation-warnings.json",
+            ) as report_mock,
+            patch("builtins.print"),
+        ):
+            process.run_translation(
+                process.TranslationRunConfig(
+                    files=["selected-root"],
+                    source_file=None,
+                    source_lang="en",
+                    target_lang="kk",
+                    provider="gemini",
+                    model="gemini-test",
+                    thinking_level=None,
+                    batch_size=None,
+                    parallel_requests=None,
+                    glossary=None,
+                    rules=None,
+                    rules_str=None,
+                    translation_scope=process.DEFAULT_TRANSLATION_SCOPE,
+                    flex_mode=False,
+                    warnings_report=True,
+                )
+            )
+
+        active_job.save_callback.assert_not_called()
+        report_mock.assert_called_once()
+        self.assertEqual(report_mock.call_args.kwargs["job"], active_job)
+        self.assertEqual(
+            report_mock.call_args.kwargs["warning_items"][0]["warnings"][0]["code"],
+            "translate.tag_mismatch",
+        )
 
     def test_run_translation_with_no_work_items_writes_no_outputs(self):
         idle_job = process.TranslationFileJob(
