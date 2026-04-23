@@ -919,6 +919,55 @@ async def run_translation_batches(
                 translations.update(parse_response(retry_resp))
             except Exception as exc:
                 print(f"  Retry failed [batch {batch_index + 1}/{batches}]: {exc}")
+
+        rejected_indices = [
+            i
+            for i in range(len(batch))
+            if (
+                (result := translations.get(str(i))) is not None
+                and translation_has_content(result)
+                and translation_result_has_tag_mismatch(batch[i].entry, result)
+            )
+        ]
+        if rejected_indices:
+            print(
+                f"  Warning [batch {batch_index + 1}/{batches}]: "
+                f"{len(rejected_indices)} items rejected by deterministic tag checks. Retrying them..."
+            )
+            retry_map = {
+                str(idx): build_translation_message_payload(batch[idx].entry, scoped_vocabulary_entries)
+                for idx in rejected_indices
+            }
+            retry_contents = build_translation_request_contents(
+                retry_map,
+                source_lang,
+                target_lang,
+                glossary_text,
+                project_rules,
+                provider=provider,
+                force_non_empty=True,
+            )
+            try:
+                retry_resp = await provider.generate_with_retry(
+                    client=client,
+                    model=model,
+                    contents=retry_contents,
+                    batch_label=f"batch {batch_index + 1}/{batches} tag-rejections",
+                    max_attempts=3,
+                    config=translation_config,
+                )
+                retry_translations = parse_response(retry_resp)
+                for idx in rejected_indices:
+                    retry_result = retry_translations.get(str(idx))
+                    if retry_result is None:
+                        continue
+                    if not translation_has_content(retry_result):
+                        continue
+                    if translation_result_has_tag_mismatch(batch[idx].entry, retry_result):
+                        continue
+                    translations[str(idx)] = retry_result
+            except Exception as exc:
+                print(f"  Retry failed [batch {batch_index + 1}/{batches} tag-rejections]: {exc}")
         return translations
 
     def on_batch_completed(

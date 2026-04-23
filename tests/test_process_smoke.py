@@ -1220,6 +1220,64 @@ class ProcessSmokeTests(unittest.TestCase):
             ],
         )
 
+    def test_run_translation_batches_retries_tag_rejections_and_applies_valid_retry(self):
+        saved: list[str] = []
+        entry = process.UnifiedEntry(
+            file_kind=process.FileKind.PO,
+            msgid="Open <b>File</b>",
+            status=process.EntryStatus.UNTRANSLATED,
+        )
+        job = process.TranslationFileJob(
+            file_path="one.po",
+            file_kind=process.FileKind.PO,
+            entries=[entry],
+            save_callback=lambda: saved.append("one"),
+            output_path="one.ai-translated.po",
+        )
+        provider = _BatchProvider(
+            {
+                "batch 1/1": _DummyResponse(
+                    parsed={
+                        "translations": [
+                            {"id": "0", "text": "Ashu fail"},
+                        ]
+                    }
+                ),
+                "batch 1/1 tag-rejections": _DummyResponse(
+                    parsed={
+                        "translations": [
+                            {"id": "0", "text": "Ashu <b>fail</b>"},
+                        ]
+                    }
+                ),
+            }
+        )
+        warning_items_by_output_path = {job.output_path: []}
+
+        translated_count, touched_output_paths = process.asyncio.run(
+            process.run_translation_batches(
+                provider=provider,
+                client=object(),
+                model="test-model",
+                translation_config=object(),
+                all_batches=[[process.TranslationQueueItem(job=job, entry=entry)]],
+                total=1,
+                parallel_requests=1,
+                source_lang="en",
+                target_lang="kk",
+                glossary_text=None,
+                project_rules=None,
+                scoped_vocabulary_entries=[],
+                warning_items_by_output_path=warning_items_by_output_path,
+            )
+        )
+
+        self.assertEqual(translated_count, 1)
+        self.assertEqual(touched_output_paths, {job.output_path})
+        self.assertEqual(entry.msgstr, "Ashu <b>fail</b>")
+        self.assertEqual(saved, ["one"])
+        self.assertEqual(warning_items_by_output_path[job.output_path], [])
+
     def test_write_translation_warning_report_writes_sidecar_json(self):
         entry = polib.POEntry(msgid="Start stream", msgctxt="Button label")
         output_path = os.path.join(os.getcwd(), "_tmp_warning_report.ai-translated.po")
