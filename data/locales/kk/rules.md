@@ -44,6 +44,9 @@ Approved glossary terms are mandatory. Apply these rules around approved terms, 
 
 ## Grammar and Morphology
 - Prefer natural Kazakh word order and avoid Russian-style preposition calques.
+- Build neutral UI clauses in natural Kazakh flow: object/arguments + complements + action adverbs + main verb (predicate-final tendency).
+- Keep action adverbs (for example `тікелей`, `автоматты түрде`, `жылдам`) attached to the predicate phrase near the main verb, not inside noun/complement groups, unless the source clearly modifies a noun.
+- Before finalizing, do a natural-flow check: if adverb placement sounds like a literal calque, move the adverb to the verb phrase while preserving meaning.
 - Use natural case endings and postpositions.
 - After numerals, prefer natural Kazakh noun usage, usually the singular base form where appropriate in UI text.
 - For plural-capable messages, use natural Kazakh wording rather than literal plural calques.
