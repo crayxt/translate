@@ -2,7 +2,7 @@
 msgid ""
 msgstr ""
 "Project-Id-Version: Glossary\n"
-"POT-Creation-Date: 2026-04-17 14:20+0000\n"
+"POT-Creation-Date: 2026-04-23 02:15+0000\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=utf-8\n"
@@ -1009,6 +1009,13 @@ msgstr ""
 #. Sense: notification
 msgctxt "notification banner"
 msgid "banner"
+msgstr ""
+
+#. ID: bar.noun.panel
+#. POS: noun
+#. Sense: panel
+msgctxt "table bar, toolbar bar, or command bar panel"
+msgid "bar"
 msgstr ""
 
 #. ID: barcode.noun.object
@@ -5176,11 +5183,25 @@ msgctxt "process of combining data or objects"
 msgid "grouping"
 msgstr ""
 
+#. ID: guide.noun.documentation
+#. POS: noun
+#. Sense: documentation
+msgctxt "user or help guide document"
+msgid "guide"
+msgstr ""
+
 #. ID: guide.noun.image
 #. POS: noun
 #. Sense: image
 msgctxt "image guide or guide action"
 msgid "guide"
+msgstr ""
+
+#. ID: guidelines.noun.rules
+#. POS: noun
+#. Sense: rules
+msgctxt "guidelines, recommendations, or writing rules"
+msgid "guidelines"
 msgstr ""
 
 #. ID: gujarati.noun.language

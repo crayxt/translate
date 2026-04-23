@@ -141,6 +141,7 @@
 {"source_term": "band", "part_of_speech": "noun", "sense": "default", "context_note": "band as a UI, document, or technical noun", "id": "band.noun.default", "example": ""}
 {"source_term": "bandwidth", "part_of_speech": "noun", "sense": "default", "context_note": "bandwidth as a media, data, or technical processing term", "id": "bandwidth.noun.default", "example": ""}
 {"source_term": "banner", "part_of_speech": "noun", "sense": "notification", "context_note": "notification banner", "id": "banner.noun.notification", "example": ""}
+{"source_term": "bar", "part_of_speech": "noun", "sense": "panel", "context_note": "table bar, toolbar bar, or command bar panel", "id": "bar.noun.panel", "example": ""}
 {"source_term": "barcode", "part_of_speech": "noun", "sense": "object", "context_note": "barcode object or format", "id": "barcode.noun.object", "example": ""}
 {"source_term": "base", "part_of_speech": "noun", "sense": "value", "context_note": "base value or LibreOffice Base module", "id": "base.noun.value", "example": ""}
 {"source_term": "baseline", "part_of_speech": "noun", "sense": "text", "context_note": "text baseline", "id": "baseline.noun.text", "example": ""}
@@ -737,6 +738,8 @@
 {"source_term": "group", "part_of_speech": "noun", "sense": "default", "context_note": "group as a UI, document, or technical noun", "id": "group.noun.default", "example": ""}
 {"source_term": "grouping", "part_of_speech": "noun", "sense": "process", "context_note": "process of combining data or objects", "id": "grouping.noun.process", "example": ""}
 {"source_term": "guide", "part_of_speech": "noun", "sense": "image", "context_note": "image guide or guide action", "id": "guide.noun.image", "example": ""}
+{"source_term": "guide", "part_of_speech": "noun", "sense": "documentation", "context_note": "user or help guide document", "id": "guide.noun.documentation", "example": ""}
+{"source_term": "guidelines", "part_of_speech": "noun", "sense": "rules", "context_note": "guidelines, recommendations, or writing rules", "id": "guidelines.noun.rules", "example": ""}
 {"source_term": "gujarati", "part_of_speech": "noun", "sense": "language", "context_note": "Gujarati language or Gujarati characters", "id": "gujarati.noun.language", "example": ""}
 {"source_term": "gutter", "part_of_speech": "noun", "sense": "margin", "context_note": "gutter margin in page layout", "id": "gutter.noun.margin", "example": ""}
 {"source_term": "half-width", "part_of_speech": "adjective", "sense": "characters", "context_note": "half-width characters", "id": "half-width.adjective.characters", "example": ""}
