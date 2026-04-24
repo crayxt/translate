@@ -2,8 +2,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import os
-from dataclasses import dataclass
 from typing import Any, Dict
 
 from openai import OpenAI
@@ -12,29 +10,22 @@ from core.entries import json_load_maybe
 from core.providers.openai_base import OpenAIBaseProvider, OpenAICompatibleResponse
 
 
-@dataclass(frozen=True)
-class OpenAIRequestContents:
-    """Separates the per-task instruction from the per-batch payload."""
-    task_instruction: str
-    payload_text: str
-
-
-class OpenAITranslationProvider(OpenAIBaseProvider):
-    name = "openai"
-    default_model = "gpt-5-mini"
-    api_key_env = "OPENAI_API_KEY"
-    base_url_env = "OPENAI_BASE_URL"
-    timeout_env = "OPENAI_TIMEOUT_SECONDS"
+class DeepSeekTranslationProvider(OpenAIBaseProvider):
+    name = "deepseek"
+    default_model = "deepseek-v4-flash"
+    api_key_env = "DEEPSEEK_API_KEY"
+    default_base_url = "https://api.deepseek.com"
+    timeout_env = "DEEPSEEK_TIMEOUT_SECONDS"
     supports_structured_json = True
     supports_structured_input = False
     supports_thinking = True
-    supports_flex_mode = True
+    supports_flex_mode = False
     supports_seed = False
 
     def create_client_from_env(self, *, flex_mode: bool = False) -> OpenAI:
         _ = flex_mode
         api_key = self._read_api_key()
-        base_url = str(os.getenv(self.base_url_env, "")).strip() or None
+        base_url = self.default_base_url
         timeout = self._read_timeout_seconds()
         return OpenAI(
             api_key=api_key,
@@ -50,14 +41,11 @@ class OpenAITranslationProvider(OpenAIBaseProvider):
         function_name: str,
         payload: dict[str, Any],
         fallback_prompt: str,
-    ) -> OpenAIRequestContents:
-        _ = fallback_prompt
+    ) -> str:
         _ = function_name
+        _ = fallback_prompt
         payload_json = json.dumps(payload, ensure_ascii=False, indent=2)
-        return OpenAIRequestContents(
-            task_instruction=task_instruction,
-            payload_text=f"Batch payload (JSON):\n{payload_json}",
-        )
+        return f"{task_instruction.strip()}\n\nBatch payload (JSON):\n{payload_json}"
 
     def build_generation_config(
         self,
@@ -68,26 +56,14 @@ class OpenAITranslationProvider(OpenAIBaseProvider):
         flex_mode: bool = False,
         seed: int | None = None,
     ) -> dict[str, Any]:
+        _ = flex_mode
+        _ = thinking_level
         _ = seed
         config: Dict[str, Any] = {}
         if json_schema is not None:
-            normalized_schema = self._normalize_response_schema(json_schema)
-            config["text"] = {
-                "format": {
-                    "type": "json_schema",
-                    "name": "response_payload",
-                    "schema": normalized_schema,
-                    "strict": True,
-                }
-            }
+            config["response_format"] = {"type": "json_object"}
         if system_instruction and system_instruction.strip():
-            config["instructions"] = system_instruction.strip()
-        if flex_mode:
-            config["service_tier"] = "flex"
-        if thinking_level is not None:
-            normalized = str(thinking_level).strip().lower()
-            if normalized:
-                config["reasoning"] = {"effort": normalized}
+            config["system_instruction_text"] = system_instruction.strip()
         return config
 
     async def generate_with_retry(
@@ -100,30 +76,31 @@ class OpenAITranslationProvider(OpenAIBaseProvider):
         max_attempts: int,
         config: dict[str, Any] | None,
     ) -> OpenAICompatibleResponse:
+        messages = []
         effective_config = dict(config) if config else {}
-        if isinstance(contents, OpenAIRequestContents):
-            input_text = contents.payload_text
-            if "instructions" in effective_config and contents.task_instruction:
-                effective_config["instructions"] = (
-                    f"{effective_config['instructions']}\n\n{contents.task_instruction}"
-                )
-            elif contents.task_instruction:
-                effective_config["instructions"] = contents.task_instruction
-        else:
-            input_text = contents
-        request_kwargs: Dict[str, Any] = {"model": model, "input": input_text}
+        
+        system_instr = effective_config.pop("system_instruction_text", None)
+        if system_instr:
+            messages.append({"role": "system", "content": system_instr})
+            
+        messages.append({"role": "user", "content": str(contents)})
+
+        request_kwargs: Dict[str, Any] = {
+            "model": model,
+            "messages": messages,
+        }
         if effective_config:
             request_kwargs.update(effective_config)
 
         def parse_output(response: Any) -> OpenAICompatibleResponse:
-            text = getattr(response, "output_text", "") or ""
+            text = response.choices[0].message.content or ""
             return OpenAICompatibleResponse(
                 parsed=json_load_maybe(text),
                 text=text,
             )
 
         return await self._perform_retry_loop(
-            async_api_call=lambda: asyncio.to_thread(client.responses.create, **request_kwargs),
+            async_api_call=lambda: asyncio.to_thread(client.chat.completions.create, **request_kwargs),
             batch_label=batch_label,
             max_attempts=max_attempts,
             parse_output_fn=parse_output,

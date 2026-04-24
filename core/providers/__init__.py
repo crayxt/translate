@@ -36,6 +36,18 @@ _PROVIDER_SPECS = {
         supports_flex_mode=False,
         supports_seed=False,
     ),
+    "deepseek": _ProviderSpec(
+        name="deepseek",
+        module_name="core.providers.deepseek",
+        class_name="DeepSeekTranslationProvider",
+        default_model="deepseek-v4-flash",
+        api_key_env="DEEPSEEK_API_KEY",
+        supports_structured_json=True,
+        supports_structured_input=False,
+        supports_thinking=True,
+        supports_flex_mode=False,
+        supports_seed=False,
+    ),
     "gemini": _ProviderSpec(
         name="gemini",
         module_name="core.providers.gemini",
@@ -131,11 +143,14 @@ class LazyTranslationProvider:
 
 
 ANTHROPIC_PROVIDER = LazyTranslationProvider("anthropic")
+DEEPSEEK_PROVIDER = LazyTranslationProvider("deepseek")
 GEMINI_PROVIDER = LazyTranslationProvider("gemini")
 OPENAI_PROVIDER = LazyTranslationProvider("openai")
+
 DEFAULT_PROVIDER = GEMINI_PROVIDER
 SUPPORTED_TRANSLATION_PROVIDERS = {
     ANTHROPIC_PROVIDER.name: ANTHROPIC_PROVIDER,
+    DEEPSEEK_PROVIDER.name: DEEPSEEK_PROVIDER,
     GEMINI_PROVIDER.name: GEMINI_PROVIDER,
     OPENAI_PROVIDER.name: OPENAI_PROVIDER,
 }
@@ -159,6 +174,7 @@ __all__ = [
     "DEFAULT_PROVIDER",
     "DEFAULT_PROVIDER_NAME",
     "ANTHROPIC_PROVIDER",
+    "DEEPSEEK_PROVIDER",
     "GEMINI_PROVIDER",
     "OPENAI_PROVIDER",
     "SUPPORTED_TRANSLATION_PROVIDERS",
